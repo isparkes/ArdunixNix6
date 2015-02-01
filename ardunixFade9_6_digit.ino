@@ -1,5 +1,19 @@
-// 27.11.2014 Added scrollback
-
+//**********************************************************************************
+//**********************************************************************************
+//* Main code for an Arduino based Nixie clock. Features:                          *
+//*  - Real Time Clock interface for DS3231                                        *
+//*  - Digit fading with configurable fade length                                  *
+//*  - Digit scrollback with configurable scroll speed                             *
+//*  - Configuration stored in EEPROM                                              *
+//*  - Low hardware component count (as much as possible done in code)             *
+//*  - Single button operation with software debounce                              *
+//*  - Single 74141 for digit display (other versions use 2 or even 6!)            *
+//*  - Highly modular code                                                         *
+//*                                                                                *
+//*  isparkes@protonmail.ch                                                        *
+//*                                                                                *
+//**********************************************************************************
+//**********************************************************************************
 #include <avr/io.h> 
 #include <avr/interrupt.h> 
 #include <EEPROM.h>
@@ -36,7 +50,7 @@ const int DISPLAY_DIM_MIN = 50;
 
 const int BLINK_COUNT_MAX = 25;                       // The number of impressions between blink state toggle
 
-// How hard we drive the HV Generator
+// How hard we drive the HV Generator, too low burns the MOSFET, too high does not give the coil time to load 
 const int HVGEN_DEFAULT=200;
 const int HVGEN_MIN=100;
 const int HVGEN_MAX=400;
@@ -64,6 +78,7 @@ const byte SECS_MAX = 60;   // 60 Seconds in a Min.
 const byte MINS_MAX = 60;   //60 Mins in an hour.
 const byte HOURS_MAX = 24;  // 24 Hours in a day. > Note: change the 24 to a 12 for non millitary time.
 
+// Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
 const int MODE_MIN = 0;
 const int MODE_TIME = 0;
 const int MODE_MINS_SET = MODE_TIME + 1;
@@ -90,7 +105,7 @@ const int MODE_TUBE_TEST = MODE_VERSION + 1;
 const int MODE_DIGIT_BURN = MODE_TUBE_TEST + 1;
 const int MODE_MAX= MODE_DIGIT_BURN + 1;
 
-// Temporary display modes
+// Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
 const int TEMP_MODE_MIN  = 0;
 const int TEMP_MODE_DATE = 0; // Display the date for 5 S
 const int TEMP_MODE_TEMP = 1; // Display the temperature for 5 S
@@ -193,6 +208,8 @@ int anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPi
 int tccrOff;
 int tccrOn;
 
+int sensorPin = A0;    // select the input pin for the potentiometer
+
 // read from the milliseconds of the system clock
 // does not need to be accurate, but it does have to be
 // synchonised
@@ -249,7 +266,7 @@ boolean mode12or24 = false;
 // State variables for detecting changes
 byte lastSec;
 
-// led management
+// **************************** LED management ***************************
 int ledPWMVal;
 boolean upOrDown;
   
@@ -270,7 +287,11 @@ boolean buttonPressRelease2S = false;
 boolean buttonPressRelease1S = false;
 boolean buttonPressRelease = false;
 
-// ************************** digit healing  **************************
+// **************************** digit healing ****************************
+// This is a special mode which repairs cathode poisoning by driving a
+// single element at full power. To be used with care!
+// In theory, this should not be necessary because we have ACP every 10mins,
+// but some tubes just want to be poisoned
 int digitBurnDigit = 0;
 int digitBurnValue = 0;
 
@@ -303,13 +324,14 @@ void setup()
   // Set the driver pin to putput
   pinMode(hvDriverPin, OUTPUT);
 
-  /* disable global interrupts */
+  /* disable global interrupts while we set up them up */
   cli();
 
   // **************************** HV generator ****************************
   
   // Enable timer 1 Compare Output channel A in reset mode: TCCR1A.COM1A1 = 1, TCCR1A.COM1A0 = 0
-  // forces the MOSFET into the off state
+  // forces the MOSFET into the off state, we cache these values in tccrOff and one, because we
+  // use them very frequently
   TCCR1A = bit(COM1A1);
   
   // Get thecontrol register 1A with the HV generation on
@@ -336,11 +358,14 @@ void setup()
   // Read EEPROM values
   readEEPROMValues();
   
-  // Start the RTC  
+  // Start the RTC communication
   Wire.begin();
   
   // Recover the time from the RTC
   getRTCTime();
+
+  // debugging support  
+  //Serial.begin(9600);
 }
 
 //**********************************************************************************
@@ -359,7 +384,7 @@ void loop()
   // See if we are in blanking time
   boolean dimmedNow = getDimmed();
 
-  // Check button
+  // Check button, we evaluate below
   checkButton1();
   
   // ******* Preview the next display mode *******
@@ -805,6 +830,9 @@ void loop()
      
   // Set leds
   setLeds();
+  
+  // Check the voltage
+  //checkHVVoltage();  
 }
 
 // ************************************************************
@@ -1173,7 +1201,6 @@ void outputDisplay()
 // ************************************************************
 void digitOn(int digit, int value) {
   SetSN74141Chip(value);
-  TCCR1A = tccrOn;
   digitalWrite(anodePins[digit], HIGH);
 }
 
@@ -1182,7 +1209,6 @@ void digitOn(int digit, int value) {
 // ************************************************************
 void digitOff(int digit) {
   digitalWrite(anodePins[digit], LOW);
-  TCCR1A = tccrOff;
 }
 
 // ************************************************************
@@ -1407,8 +1433,8 @@ void displayConfig() {
   if (displayType[1] != NORMAL) displayType[1] = NORMAL;
   if (displayType[2] != NORMAL) displayType[2] = NORMAL;
   if (displayType[3] != NORMAL) displayType[3] = NORMAL;
-  if (displayType[4] != BLINK) displayType[4] = BLINK;
-  if (displayType[5] != BLINK) displayType[5] = BLINK;
+  if (displayType[4] != BLINK)  displayType[4] = BLINK;
+  if (displayType[5] != BLINK)  displayType[5] = BLINK;
 }
 
 // ************************************************************
@@ -1609,3 +1635,22 @@ boolean getDimmed() {
     return false;
   }
 }
+
+// ************************************************************
+// Adjust the HV gen to achieve the voltage we require
+// ************************************************************
+double checkHVVoltage() {
+  int rawSensorVal = analogRead(sensorPin);  
+  double sensorVoltage = rawSensorVal * 5.0  / 1024.0;
+  double externalVoltage = sensorVoltage * 394.7 / 4.7;
+
+  if (externalVoltage > 200) {
+  Serial.println(externalVoltage);
+    TCCR1A = tccrOff;
+  } 
+  else {
+    TCCR1A = tccrOn;
+  }
+  
+  return externalVoltage;
+}  
