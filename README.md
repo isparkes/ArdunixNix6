@@ -17,4 +17,10 @@ Nixie Clock based on Arduino<br>
 //*                                                                                *<br>
 //**********************************************************************************<br>
 //**********************************************************************************<br>
+
+ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
+<br>
+<strong>Construction and prototyping:</strong><br>
+hvTest.ino: code for testing the HV generation<br>
+buttonTest.ino: Code for testing button presses<br>
 <br>
