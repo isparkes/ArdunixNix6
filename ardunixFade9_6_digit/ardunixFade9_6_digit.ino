@@ -12,6 +12,8 @@
 //*                                                                                *
 //*  isparkes@protonmail.ch                                                        *
 //*                                                                                *
+//* TODO: Make target HVGen voltage configurable, currently hardcoded              *
+//*                                                                                *
 //**********************************************************************************
 //**********************************************************************************
 #include <avr/io.h> 
@@ -34,9 +36,10 @@ const int EE_SCROLLBACK = 10;      // if we use scollback or not
 const int EE_HVGEN_HI = 11;        // The HV generator value
 const int EE_HVGEN_LO = 12;        // The HV generator value
 const int EE_SCROLL_STEPS = 13;    // The steps in a scrollback
+const int EE_SECS_MIDNIGHT = 14;   // Display mode secs since midnight
 
 // Software version shown in config menu
-const int softwareVersion = 0003;
+const int softwareVersion = 0004;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
@@ -86,23 +89,24 @@ const int MODE_HOURS_SET = MODE_MINS_SET + 1;
 const int MODE_DAYS_SET = MODE_HOURS_SET + 1;
 const int MODE_MONTHS_SET = MODE_DAYS_SET + 1;
 const int MODE_YEARS_SET = MODE_MONTHS_SET + 1;
-const int MODE_FADE_STEPS_UP = MODE_YEARS_SET + 1;
-const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;
-const int MODE_DISPLAY_DIM_UP = MODE_FADE_STEPS_DOWN + 1;
-const int MODE_DISPLAY_DIM_DOWN = MODE_DISPLAY_DIM_UP + 1;
-const int MODE_DISPLAY_HVGEN_UP = MODE_DISPLAY_DIM_DOWN + 1;
-const int MODE_DISPLAY_HVGEN_DOWN = MODE_DISPLAY_HVGEN_UP + 1;
-const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_DISPLAY_HVGEN_DOWN + 1;
-const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;
-const int MODE_DIM_START = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;
-const int MODE_DIM_END = MODE_DIM_START + 1;
-const int MODE_12_24 = MODE_DIM_END + 1;
-const int MODE_LEAD_BLANK = MODE_12_24 + 1;
-const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;
-const int MODE_TEMP = MODE_SCROLLBACK + 1;
-const int MODE_VERSION = MODE_TEMP + 1;
-const int MODE_TUBE_TEST = MODE_VERSION + 1;
-const int MODE_DIGIT_BURN = MODE_TUBE_TEST + 1;
+const int MODE_FADE_STEPS_UP = MODE_YEARS_SET + 1;                            // Mode "00"
+const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;                      // Mode "01"
+const int MODE_DISPLAY_DIM_UP = MODE_FADE_STEPS_DOWN + 1;                     // Mode "02"
+const int MODE_DISPLAY_DIM_DOWN = MODE_DISPLAY_DIM_UP + 1;                    // Mode "03"
+const int MODE_DISPLAY_HVGEN_UP = MODE_DISPLAY_DIM_DOWN + 1;                  // Mode "04"
+const int MODE_DISPLAY_HVGEN_DOWN = MODE_DISPLAY_HVGEN_UP + 1;                // Mode "05"
+const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_DISPLAY_HVGEN_DOWN + 1;         // Mode "06"
+const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "07"
+const int MODE_DIM_START = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;                // Mode "08"
+const int MODE_DIM_END = MODE_DIM_START + 1;                                  // Mode "09"
+const int MODE_12_24 = MODE_DIM_END + 1;                                      // Mode "10" 0 = 24, 1 = 12
+const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "11" 1 = blanked
+const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "12" 1 = use scrollback
+const int MODE_SECS_SINCE_MIDNIGHT = MODE_SCROLLBACK + 1;                     // Mode "13" 1 = use secs
+const int MODE_TEMP = MODE_SECS_SINCE_MIDNIGHT + 1;                           // Mode "14"
+const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "15"
+const int MODE_TUBE_TEST = MODE_VERSION + 1;                                  // Mode "16" - not displayed
+const int MODE_DIGIT_BURN = MODE_TUBE_TEST + 1;                               // Mode "17" - not displayed
 const int MODE_MAX= MODE_DIGIT_BURN + 1;
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
@@ -185,8 +189,7 @@ int ledPin_a_1 = 5; // high - Hours tens
 int inputPin1 = 7;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
-int decodeDigit[16] = {
-  0,1,2,3,4,5,6,7,8,9,10,10,10,10,10,10};
+int decodeDigit[16] = {0,1,2,3,4,5,6,7,8,9,10,10,10,10,10,10};
 
 // *********** COMMON PINS ****** COMMON PINS ****** COMMON PINS *******************
 
@@ -202,8 +205,7 @@ int colonsLed = 6;
 //**********************************************************************************
 
 // Driver pins for the anodes
-int anodePins[6] = {
-  ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
+int anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
 
 // precalculated values for turning on and off the HV generator
 // Put these in TCCR1B to turn off and on
@@ -215,18 +217,14 @@ int sensorPin = A0;    // select the input pin for the potentiometer
 // read from the milliseconds of the system clock
 // does not need to be accurate, but it does have to be
 // synchonised
-long lastMIinMillis = 0;
+long lastMillis = 0;
 int intTick = 0;
 
 // ************************ Display management ************************
-int NumberArray[6]    = {
-  0,0,0,0,0,0};
-int currNumberArray[6]= {
-  0,0,0,0,0,0};
-int displayType[6]    = {
-  FADE,FADE,FADE,FADE,FADE,FADE};
-int fadeState[6]      = {
-  0,0,0,0,0,0};
+int NumberArray[6]    = {0,0,0,0,0,0};
+int currNumberArray[6]= {0,0,0,0,0,0};
+int displayType[6]    = {FADE,FADE,FADE,FADE,FADE,FADE};
+int fadeState[6]      = {0,0,0,0,0,0};
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
@@ -243,6 +241,9 @@ boolean blinkState = true;
 
 // leading digit blanking
 boolean blankLeading = false;
+
+// show time as secs since midnight
+boolean secsSinceMidnight = false;
 
 // Dimming value
 int dimValue = dispCount/5;
@@ -356,7 +357,7 @@ void setup()
   TCCR1B |= bit(CS10); 
 
   // Set the divider to the value we have chosen
-  OCR1A   = divider;  
+  OCR1A   = divider;
 
   /* enable global interrupts */
   sei();
@@ -369,9 +370,6 @@ void setup()
 
   // Recover the time from the RTC
   getRTCTime();
-
-  // debugging support  
-  //Serial.begin(9600);
 }
 
 //**********************************************************************************
@@ -382,12 +380,10 @@ void setup()
 void loop()     
 {
   // Get an approximate mS time for internal control. Does not have to be exact!
-  intTick = (millis() - lastMIinMillis) % 1000;
+  intTick = (millis() - lastMillis) % 1000;
 
-  // Get the time - we don't want to do this every time, so we do it every 0.1S more or less
-  if ((intTick % 100) == 0) {
-    getRTCTime();
-  }
+  // Get the time
+  getRTCTime();
 
   // See if we are in blanking time
   boolean dimmedNow = getDimmed();
@@ -399,8 +395,7 @@ void loop()
   if (is1Pressed2S()) {
     // Just jump back to the start
     nextMode = MODE_MIN;
-  } 
-  else if (is1Pressed1S()) {
+  } else if (is1Pressed1S()) {
     nextMode = currentMode + 1;
 
     if (nextMode > MODE_MAX) {
@@ -419,8 +414,7 @@ void loop()
     allFade();
 
     nextMode = currentMode;
-  } 
-  else if(is1PressedRelease1S()) {
+  } else if(is1PressedRelease1S()) {
     currentMode++;
 
     if (currentMode > MODE_MAX) {
@@ -533,6 +527,11 @@ void loop()
       displayConfig();
     }
 
+    if (nextMode == MODE_SECS_SINCE_MIDNIGHT) {
+      loadNumberArrayConfBool(secsSinceMidnight,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+
     if (nextMode == MODE_TEMP) {
       loadNumberArrayTemp(nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
@@ -552,22 +551,20 @@ void loop()
       digitOn(digitBurnDigit,digitBurnValue);
     }
 
-  } 
-  else {
+  } else {
     if (currentMode == MODE_TIME) {
       if(is1PressedRelease()) {
-        secsDisplayEnd = millis() + 5000;
-
         // Always start from the first mode, or increment the temp mode if we are already in a display
         if (millis() < secsDisplayEnd) {
           tempDisplayMode++;
-        } 
-        else {
+        } else {
           tempDisplayMode = TEMP_MODE_MIN;
         }
         if (tempDisplayMode > TEMP_MODE_MAX) {
           tempDisplayMode = TEMP_MODE_MIN;
         }
+        
+        secsDisplayEnd = millis() + 5000;
       }
 
       if (millis() < secsDisplayEnd) {
@@ -579,20 +576,20 @@ void loop()
           loadNumberArrayTemp(12);
         }
         allFade();
-      } 
-      else {
+      } else {
         if (acpOffset > 0) {
           loadNumberArrayACP();
           allNormal();
-        } 
-        else {
+        } else {
           loadNumberArrayTime();
           if(dimmedNow) {
             allDimmed();
-          } 
-          else {
+          } else {
             allFade();
           }
+          
+          // Apply leading blanking
+          applyBlanking();
         }
       }    
     }
@@ -782,6 +779,14 @@ void loop()
       displayConfig();
     }
 
+    if (currentMode == MODE_SECS_SINCE_MIDNIGHT) {
+      if(is1PressedRelease()) {
+        secsSinceMidnight = !secsSinceMidnight;
+      }
+      loadNumberArrayConfBool(secsSinceMidnight,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+
     if (currentMode == MODE_TEMP) {
       loadNumberArrayTemp(currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
@@ -834,8 +839,7 @@ void loop()
         if (acpOffset == 50) {
           acpOffset = 0;
         }
-      } 
-      else {
+      } else {
         acpTick++;
       }
     }
@@ -848,7 +852,7 @@ void loop()
   setLeds();
 
   // Check the voltage
-  //checkHVVoltage();  
+  checkHVVoltage();  
 }
 
 // ************************************************************
@@ -866,7 +870,7 @@ void setLeds()
     lastSec = secs;
 
     if (secs == 0) {
-      lastMIinMillis = millis();
+      lastMillis = millis();
     }
 
     upOrDown = (secs % 2 == 0);
@@ -882,12 +886,11 @@ void setLeds()
 
   // PWM led output
   switch (nextMode) {
-  case MODE_TIME:
+    case MODE_TIME:
     {
       if (upOrDown) {
         ledPWMVal++;
-      } 
-      else {
+      } else {
         ledPWMVal--;
       }
 
@@ -902,8 +905,7 @@ void setLeds()
 
       if (dimmedNow) {
         analogWrite(colonsLed,ledPWMVal/10);
-      } 
-      else {
+      } else {
         analogWrite(colonsLed,ledPWMVal);
       }
       break;
@@ -924,8 +926,7 @@ void setLeds()
       if (ledBlinkNumber < nextMode) {
         if (ledBlinkCtr < 3) {
           analogWrite(colonsLed,50);
-        } 
-        else {
+        } else {
           analogWrite(colonsLed,0);
         }
       }
@@ -943,12 +944,22 @@ void setLeds()
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayTime() {
-  NumberArray[5] = secs % 10;
-  NumberArray[4] = secs / 10;
-  NumberArray[3] = mins % 10;
-  NumberArray[2] = mins / 10;
-  NumberArray[1] = hours % 10;
-  NumberArray[0] = hours / 10;
+  if(secsSinceMidnight & (currentMode == MODE_TIME)) {
+    long secsCount = secs + (mins*60L) + (hours*3600L);
+    NumberArray[5] = (secsCount / 1L) % 10;
+    NumberArray[4] = (secsCount / 10L) % 10;
+    NumberArray[3] = (secsCount / 100L) % 10;
+    NumberArray[2] = (secsCount / 1000L) % 10;
+    NumberArray[1] = (secsCount / 10000L) % 10;
+    NumberArray[0] = (secsCount / 100000L) % 10;
+  } else {
+    NumberArray[5] = secs % 10;
+    NumberArray[4] = secs / 10;
+    NumberArray[3] = mins % 10;
+    NumberArray[2] = mins / 10;
+    NumberArray[1] = hours % 10;
+    NumberArray[0] = hours / 10;
+  }    
 }
 
 // ************************************************************
@@ -1045,12 +1056,7 @@ void loadNumberArrayConfInt(int confValue, int confNum) {
 // ************************************************************
 void loadNumberArrayConfBool(boolean confValue, int confNum) {
   int boolInt;
-  if (confValue) {
-    boolInt = 1;
-  } 
-  else {
-    boolInt = 0;
-  }
+  if (confValue) {boolInt = 1;} else {boolInt = 0;}
   NumberArray[5] = (confNum) % 10;
   NumberArray[4] = (confNum / 10) % 10;
   NumberArray[3] = boolInt;
@@ -1070,11 +1076,21 @@ void SetSN74141Chip(int num1)
 
   // Load the a,b,c,d.. to send to the SN74141 IC
   int decodedDigit = decodeDigit[num1];
-
-  a = decodedDigit & 0x01;
-  b = (decodedDigit > 1) & 0x01;
-  c = (decodedDigit > 2) & 0x01;
-  d = (decodedDigit > 3) & 0x01;
+  
+  switch( decodedDigit )
+  {
+    case 0: a=0;b=0;c=0;d=0;break;
+    case 1: a=1;b=0;c=0;d=0;break;
+    case 2: a=0;b=1;c=0;d=0;break;
+    case 3: a=1;b=1;c=0;d=0;break;
+    case 4: a=0;b=0;c=1;d=0;break;
+    case 5: a=1;b=0;c=1;d=0;break;
+    case 6: a=0;b=1;c=1;d=0;break;
+    case 7: a=1;b=1;c=1;d=0;break;
+    case 8: a=0;b=0;c=0;d=1;break;
+    case 9: a=1;b=0;c=0;d=1;break;
+    default: a=1;b=1;c=1;d=1;break;
+  }  
 
   // Write to output pins.
   setDigit(d,c,b,a);
@@ -1100,54 +1116,45 @@ void outputDisplay()
 
   for( int i = 0 ; i < 6 ; i ++ )
   {
-    // deal with leading zeros - suppress the digit display until we have a non-zero value
-    leadingZeros = leadingZeros & (currNumberArray[i] == 0);
-    
-    int tmpDispType;
-    if (leadingZeros) {
-      tmpDispType = BLANKED;
-    } else {
-      tmpDispType = displayType[i];
-    }
+    int tmpDispType = displayType[i];
 
     switch(tmpDispType) {
-    case BLANKED:
-      {
-        digitOnTime = DIGIT_DISPLAY_NEVER;
-        digitOffTime = DIGIT_DISPLAY_ON;
-        break;
-      }
-    case DIMMED:
-      {
-        digitOnTime = DIGIT_DISPLAY_ON;
-        digitOffTime = dimValue;
-        break;
-      }
-    case FADE:
-    case NORMAL:
-      {
-        digitOnTime = DIGIT_DISPLAY_ON;
-        digitOffTime = digitOffCount;
-        break;
-      }
-    case BLINK:
-      {
-        if (blinkState) {
-          digitOnTime = DIGIT_DISPLAY_ON;
-          digitOffTime = digitOffCount;
-        } 
-        else {
+      case BLANKED:
+        {
           digitOnTime = DIGIT_DISPLAY_NEVER;
           digitOffTime = DIGIT_DISPLAY_ON;
+          break;
         }
-        break;
-      }
-    case SCROLL:
-      {
-        digitOnTime = DIGIT_DISPLAY_ON;
-        digitOffTime = digitOffCount;
-        break;
-      }
+        case DIMMED:
+        {
+          digitOnTime = DIGIT_DISPLAY_ON;
+          digitOffTime = dimValue;
+          break;
+        }
+        case FADE:
+        case NORMAL:
+        {
+          digitOnTime = DIGIT_DISPLAY_ON;
+          digitOffTime = digitOffCount;
+          break;
+        }
+        case BLINK:
+        {
+          if (blinkState) {
+            digitOnTime = DIGIT_DISPLAY_ON;
+            digitOffTime = digitOffCount;
+          } else {
+            digitOnTime = DIGIT_DISPLAY_NEVER;
+            digitOffTime = DIGIT_DISPLAY_ON;
+          }
+          break;
+        }
+        case SCROLL:
+        {
+          digitOnTime = DIGIT_DISPLAY_ON;
+          digitOffTime = digitOffCount;
+          break;
+        }
     }
 
     // Do scrollback when we are going to 0
@@ -1173,14 +1180,12 @@ void outputDisplay()
           // finish the fade
           fadeState[i] = 0;
           currNumberArray[i] = currNumberArray[i] - 1;
-        } 
-        else if (fadeState[i] > 1) {
+        } else if (fadeState[i] > 1) {
           // Continue the scroll countdown
           fadeState[i] =fadeState[i]-1;
         }
       }
-    } 
-    else if (tmpDispType == FADE) {
+    } else if (tmpDispType == FADE) {
       if (NumberArray[i] != currNumberArray[i]) {
         if (fadeState[i] == 0) {
           // Start the fade
@@ -1194,14 +1199,12 @@ void outputDisplay()
         fadeState[i] =0;
         currNumberArray[i] = NumberArray[i];
         digitSwitchTime = DIGIT_DISPLAY_COUNT;
-      } 
-      else if (fadeState[i] > 1) {
+      } else if (fadeState[i] > 1) {
         // Continue the fade
         fadeState[i] =fadeState[i]-1;
         digitSwitchTime = (int) fadeState[i] * fadeStep;
       }
-    } 
-    else {
+    } else {
       digitSwitchTime = DIGIT_DISPLAY_COUNT;
       currNumberArray[i] = NumberArray[i];
     }
@@ -1235,12 +1238,14 @@ void outputDisplay()
 void digitOn(int digit, int value) {
   SetSN74141Chip(value);
   digitalWrite(anodePins[digit], HIGH);
+  TCCR1A = tccrOn;
 }
 
 // ************************************************************
 // Finish displaying a digit and turn the HVGen on
 // ************************************************************
 void digitOff(int digit) {
+  TCCR1A = tccrOff;
   digitalWrite(anodePins[digit], LOW);
 }
 
@@ -1260,27 +1265,23 @@ void checkButton1() {
       if (button1PressedCount == debounceCounter) {
         button1PressStartMillis = millis();
       }
-    } 
-    else {
+    } else {
       // We are pressed and held, maintain the press states
       if ((millis() - button1PressStartMillis) > 2000) {
         buttonPress2S = true;
         buttonPress1S = true;
         buttonPress = true;
-      } 
-      else if ((millis() - button1PressStartMillis) > 1000) {
+      } else if ((millis() - button1PressStartMillis) > 1000) {
         buttonPress2S = false;
         buttonPress1S = true;
         buttonPress = true;
-      } 
-      else {
+      } else {
         buttonPress2S = false;
         buttonPress1S = false;
         buttonPress = true;
       }
     }
-  } 
-  else {
+  } else {
     // mark this as a press and release if we were pressed for less than a long press
     if (button1PressedCount == debounceCounter) {
       buttonWasReleased = true;
@@ -1291,11 +1292,9 @@ void checkButton1() {
 
       if (buttonPress2S) {
         buttonPressRelease2S = true;
-      } 
-      else if (buttonPress1S) {
+      } else if (buttonPress1S) {
         buttonPressRelease1S = true;
-      } 
-      else if (buttonPress) {
+      } else if (buttonPress) {
         buttonPressRelease = true;
       }
     }
@@ -1336,8 +1335,6 @@ boolean is1Pressed2S() {
   return buttonPress2S;
 }
 
-
-
 // ************************************************************
 // Check if button is pressed for a short time (> 200mS) and released
 // ************************************************************
@@ -1345,8 +1342,7 @@ boolean is1PressedRelease() {
   if (buttonPressRelease) {
     buttonPressRelease = false;
     return true;
-  } 
-  else {
+  } else {
     return false;
   }
 }
@@ -1358,8 +1354,7 @@ boolean is1PressedRelease1S() {
   if (buttonPressRelease1S) {
     buttonPressRelease1S = false;
     return true;
-  } 
-  else {
+  } else {
     return false;
   }
 }
@@ -1371,8 +1366,7 @@ boolean is1PressedRelease2S() {
   if (buttonPressRelease2S) {
     buttonPressRelease2S = false;
     return true;
-  } 
-  else {
+  } else {
     return false;
   }
 }
@@ -1385,6 +1379,36 @@ void setDigit(int segD, int segC, int segB, int segA) {
   digitalWrite(ledPin_0_b, segB);
   digitalWrite(ledPin_0_c, segC);
   digitalWrite(ledPin_0_d, segD);  
+}
+
+// ************************************************************
+// Display preset - apply leading zero blanking
+// ************************************************************
+void applyBlanking() {
+  // If we are not blanking, just get out
+  if (blankLeading == false) {
+    return;
+  }
+  
+  if (secsSinceMidnight) {
+    // blank as many digits as we can
+    for (int blankingIdx = 0 ; blankingIdx <6 ; blankingIdx++) {
+      if (NumberArray[blankingIdx] == 0) {
+        if (displayType[blankingIdx] != BLANKED) {
+          displayType[blankingIdx] = BLANKED;
+        }
+      } else {
+        return;
+      }
+    }
+  } else {
+    // We only want to blank the hours tens digit
+    if (NumberArray[0] == 0) {
+      if (displayType[0] != BLANKED) {
+        displayType[0] = BLANKED;
+      }
+    }
+  }
 }
 
 // ************************************************************
@@ -1439,12 +1463,7 @@ void highlight4and5() {
 // Display preset
 // ************************************************************
 void allDimmed() {
-  if ((currentMode == MODE_TIME) && (blankLeading) && (hours < 10)) {
-    displayType[0] = BLANKED;
-  } 
-  else {
-    if (displayType[0] != DIMMED) displayType[0] = DIMMED;
-  }
+  if (displayType[0] != DIMMED) displayType[0] = DIMMED;
   if (displayType[1] != DIMMED) displayType[1] = DIMMED;
   if (displayType[2] != DIMMED) displayType[2] = DIMMED;
   if (displayType[3] != DIMMED) displayType[3] = DIMMED;
@@ -1616,6 +1635,7 @@ void saveEEPROMValues() {
   EEPROM.write(EE_HVGEN_HI,divider / 256);
   EEPROM.write(EE_HVGEN_LO,divider % 256);
   EEPROM.write(EE_SCROLL_STEPS,scrollSteps);
+  EEPROM.write(EE_SECS_MIDNIGHT,secsSinceMidnight);
 }
 
 // ************************************************************
@@ -1647,6 +1667,7 @@ void readEEPROMValues() {
   mode12or24 = EEPROM.read(EE_12_24);
   blankLeading = EEPROM.read(EE_BLANK_LEAD_ZERO);
   scrollback = EEPROM.read(EE_SCROLLBACK);
+  secsSinceMidnight = EEPROM.read(EE_SECS_MIDNIGHT);
 
   divider = EEPROM.read(EE_HVGEN_HI)*256 + EEPROM.read(EE_HVGEN_LO);
   if ((divider < HVGEN_MIN) || (divider > HVGEN_MAX)) {
@@ -1666,12 +1687,10 @@ boolean getDimmed() {
   if (dimStart > dimEnd) {
     // dim before midnight
     return ((hours >= dimStart) || (hours < dimEnd));
-  } 
-  else if (dimStart < dimEnd) {
+  } else if (dimStart < dimEnd) {
     // dim at or after midnight
     return ((hours >= dimStart) && (hours < dimEnd));
-  } 
-  else {
+  } else {
     // no dimming if dimStart = dimEnd
     return false;
   }
@@ -1685,8 +1704,8 @@ double checkHVVoltage() {
   double sensorVoltage = rawSensorVal * 5.0  / 1024.0;
   double externalVoltage = sensorVoltage * 394.7 / 4.7;
 
-  if (externalVoltage > 200) {
-    Serial.println(externalVoltage);
+  if (externalVoltage > 180) {
+  //Serial.println(externalVoltage);
     TCCR1A = tccrOff;
   } 
   else {
