@@ -185,7 +185,8 @@ int ledPin_a_1 = 5; // high - Hours tens
 int inputPin1 = 7;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
-int decodeDigit[16] = {0,1,2,3,4,5,6,7,8,9,10,10,10,10,10,10};
+int decodeDigit[16] = {
+  0,1,2,3,4,5,6,7,8,9,10,10,10,10,10,10};
 
 // *********** COMMON PINS ****** COMMON PINS ****** COMMON PINS *******************
 
@@ -201,7 +202,8 @@ int colonsLed = 6;
 //**********************************************************************************
 
 // Driver pins for the anodes
-int anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
+int anodePins[6] = {
+  ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
 
 // precalculated values for turning on and off the HV generator
 // Put these in TCCR1B to turn off and on
@@ -217,10 +219,14 @@ long lastMIinMillis = 0;
 int intTick = 0;
 
 // ************************ Display management ************************
-int NumberArray[6]    = {0,0,0,0,0,0};
-int currNumberArray[6]= {0,0,0,0,0,0};
-int displayType[6]    = {FADE,FADE,FADE,FADE,FADE,FADE};
-int fadeState[6]      = {0,0,0,0,0,0};
+int NumberArray[6]    = {
+  0,0,0,0,0,0};
+int currNumberArray[6]= {
+  0,0,0,0,0,0};
+int displayType[6]    = {
+  FADE,FADE,FADE,FADE,FADE,FADE};
+int fadeState[6]      = {
+  0,0,0,0,0,0};
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
@@ -269,7 +275,7 @@ byte lastSec;
 // **************************** LED management ***************************
 int ledPWMVal;
 boolean upOrDown;
-  
+
 // Blinking colons led in settings modes
 int ledBlinkCtr = 0;
 int ledBlinkNumber = 0;
@@ -306,16 +312,16 @@ void setup()
   pinMode(ledPin_0_b, OUTPUT);      
   pinMode(ledPin_0_c, OUTPUT);      
   pinMode(ledPin_0_d, OUTPUT);    
-  
+
   pinMode(ledPin_a_1, OUTPUT);      
   pinMode(ledPin_a_2, OUTPUT);      
   pinMode(ledPin_a_3, OUTPUT);     
   pinMode(ledPin_a_4, OUTPUT);     
   pinMode(ledPin_a_5, OUTPUT);     
   pinMode(ledPin_a_6, OUTPUT);     
-  
+
   pinMode(tickLed, OUTPUT);     
- 
+
   // NOTE:
   // Grounding the input pin causes it to actuate
   pinMode(inputPin1, INPUT ); // set the input pin 1
@@ -328,39 +334,39 @@ void setup()
   cli();
 
   // **************************** HV generator ****************************
-  
+
   // Enable timer 1 Compare Output channel A in reset mode: TCCR1A.COM1A1 = 1, TCCR1A.COM1A0 = 0
   // forces the MOSFET into the off state, we cache these values in tccrOff and one, because we
   // use them very frequently
   TCCR1A = bit(COM1A1);
-  
+
   // Get thecontrol register 1A with the HV generation on
   tccrOff = TCCR1A;
-  
+
   // Enable timer 1 Compare Output channel A in toggle mode: TCCR1A.COM1A1 = 0, TCCR1A.COM1A0 = 1
   TCCR1A = bit(COM1A0);
-  
+
   // Get thecontrol register 1A with the HV generation off
   tccrOn = TCCR1A;
-  
+
   // Configure timer 1 for CTC mode: TCCR1B.WGM13 = 0, TCCR1B.WGM12 = 1, TCCR1A.WGM11 = 0, TCCR1A.WGM10 = 0
   TCCR1B = bit(WGM12); 
-  
+
   // Set up prescaler to x1: TCCR1B.CS12 = 0, TCCR1B.CS11 = 0, TCCR1B.CS10 = 1
   TCCR1B |= bit(CS10); 
-  
+
   // Set the divider to the value we have chosen
   OCR1A   = divider;  
- 
+
   /* enable global interrupts */
   sei();
 
   // Read EEPROM values
   readEEPROMValues();
-  
+
   // Start the RTC communication
   Wire.begin();
-  
+
   // Recover the time from the RTC
   getRTCTime();
 
@@ -378,71 +384,75 @@ void loop()
   // Get an approximate mS time for internal control. Does not have to be exact!
   intTick = (millis() - lastMIinMillis) % 1000;
 
-  // Get the time
-  getRTCTime();
-  
+  // Get the time - we don't want to do this every time, so we do it every 0.1S more or less
+  if ((intTick % 100) == 0) {
+    getRTCTime();
+  }
+
   // See if we are in blanking time
   boolean dimmedNow = getDimmed();
 
   // Check button, we evaluate below
   checkButton1();
-  
+
   // ******* Preview the next display mode *******
   if (is1Pressed2S()) {
     // Just jump back to the start
     nextMode = MODE_MIN;
-  } else if (is1Pressed1S()) {
+  } 
+  else if (is1Pressed1S()) {
     nextMode = currentMode + 1;
-    
+
     if (nextMode > MODE_MAX) {
       nextMode = MODE_MIN;
     }
   }
-  
+
   // ******* Set the display mode *******
   if(is1PressedRelease2S()) {
     currentMode = MODE_MIN;
-    
+
     // Store the EEPROM
     saveEEPROMValues();
-      
+
     // Preset the display
     allFade();
-      
+
     nextMode = currentMode;
-  } else if(is1PressedRelease1S()) {
+  } 
+  else if(is1PressedRelease1S()) {
     currentMode++;
-    
+
     if (currentMode > MODE_MAX) {
       currentMode = MODE_MIN;
-      
+
       // Store the EEPROM
       saveEEPROMValues();
-      
+
       // Preset the display
       allFade();
     }
-      
+
     nextMode = currentMode;
   }
-  
+
   // ************* Process the modes *************
   if (nextMode != currentMode) {
     if (nextMode == MODE_TIME) {
       loadNumberArrayTime();
       allFade();
     }
-    
+
     if (nextMode == MODE_HOURS_SET) {
       loadNumberArrayTime();
       highlight0and1();
     }
-    
+
     if (nextMode == MODE_MINS_SET) {
       loadNumberArrayTime();
       highlight2and3();
     }
-    
+
     if (nextMode == MODE_DAYS_SET) {
       loadNumberArrayDate();
       highlight0and1();
@@ -457,22 +467,22 @@ void loop()
       loadNumberArrayDate();
       highlight4and5();
     }
-    
+
     if (nextMode == MODE_FADE_STEPS_UP) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_FADE_STEPS_DOWN) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DISPLAY_DIM_UP) {
       loadNumberArrayConfInt(dimValue,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DISPLAY_DIM_DOWN) {
       loadNumberArrayConfInt(dimValue,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
@@ -482,106 +492,111 @@ void loop()
       loadNumberArrayConfInt(divider,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DISPLAY_HVGEN_DOWN) {
       loadNumberArrayConfInt(divider,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
       loadNumberArrayConfInt(scrollSteps,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
       loadNumberArrayConfInt(scrollSteps,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DIM_START) {
       loadNumberArrayConfInt(dimStart,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_DIM_END) {
       loadNumberArrayConfInt(dimEnd,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_12_24) {
       loadNumberArrayConfBool(mode12or24,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_LEAD_BLANK) {
       loadNumberArrayConfBool(blankLeading,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_SCROLLBACK) {
       loadNumberArrayConfBool(scrollback,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TEMP) {
       loadNumberArrayTemp(nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_VERSION) {
       loadNumberArrayConfInt(softwareVersion,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TUBE_TEST) {
       loadNumberArrayTestDigits();
       allNormal();
     }
-    
+
     if (nextMode == MODE_DIGIT_BURN) {
       digitOn(digitBurnDigit,digitBurnValue);
     }
-    
-  } else {
+
+  } 
+  else {
     if (currentMode == MODE_TIME) {
       if(is1PressedRelease()) {
         secsDisplayEnd = millis() + 5000;
-        
+
         // Always start from the first mode, or increment the temp mode if we are already in a display
         if (millis() < secsDisplayEnd) {
           tempDisplayMode++;
-        } else {
+        } 
+        else {
           tempDisplayMode = TEMP_MODE_MIN;
         }
         if (tempDisplayMode > TEMP_MODE_MAX) {
           tempDisplayMode = TEMP_MODE_MIN;
         }
       }
-      
+
       if (millis() < secsDisplayEnd) {
         if (tempDisplayMode == TEMP_MODE_DATE) {
           loadNumberArrayDate();
         }
-        
+
         if (tempDisplayMode == TEMP_MODE_TEMP) {
           loadNumberArrayTemp(12);
         }
         allFade();
-      } else {
+      } 
+      else {
         if (acpOffset > 0) {
           loadNumberArrayACP();
           allNormal();
-        } else {
+        } 
+        else {
           loadNumberArrayTime();
           if(dimmedNow) {
             allDimmed();
-          } else {
+          } 
+          else {
             allFade();
           }
         }
       }    
     }
-    
+
     if (currentMode == MODE_MINS_SET) {
       if(is1PressedRelease()) {
         incMins();
@@ -590,7 +605,7 @@ void loop()
       loadNumberArrayTime();
       highlight2and3();
     }
-  
+
     if (currentMode == MODE_HOURS_SET) {
       if(is1PressedRelease()) {
         incHours();
@@ -638,7 +653,7 @@ void loop()
       displayConfig();
       fadeStep = dispCount / fadeSteps;
     }
-      
+
     if (currentMode == MODE_FADE_STEPS_DOWN) {
       if(is1PressedRelease()) {
         fadeSteps--;
@@ -650,7 +665,7 @@ void loop()
       displayConfig();
       fadeStep = dispCount / fadeSteps;
     }
-    
+
     if (currentMode == MODE_DISPLAY_DIM_UP) {
       if(is1PressedRelease()) {
         dimValue++;
@@ -661,7 +676,7 @@ void loop()
       loadNumberArrayConfInt(dimValue,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-      
+
     if (currentMode == MODE_DISPLAY_DIM_DOWN) {
       if(is1PressedRelease()) {
         dimValue--;
@@ -672,7 +687,7 @@ void loop()
       loadNumberArrayConfInt(dimValue,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_DISPLAY_HVGEN_DOWN) {
       if(is1PressedRelease()) {
         divider-=10;
@@ -684,7 +699,7 @@ void loop()
       loadNumberArrayConfInt(divider,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-      
+
     if (currentMode == MODE_DISPLAY_HVGEN_UP) {
       if(is1PressedRelease()) {
         divider+=10;
@@ -696,7 +711,7 @@ void loop()
       loadNumberArrayConfInt(divider,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
       if(is1PressedRelease()) {
         scrollSteps--;
@@ -707,7 +722,7 @@ void loop()
       loadNumberArrayConfInt(scrollSteps,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
       if(is1PressedRelease()) {
         scrollSteps++;
@@ -718,7 +733,7 @@ void loop()
       loadNumberArrayConfInt(scrollSteps,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_DIM_START) {
       if(is1PressedRelease()) {
         dimStart++;
@@ -729,10 +744,10 @@ void loop()
       loadNumberArrayConfInt(dimStart,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_DIM_END) {
       if(is1PressedRelease()) {
-        
+
         dimEnd++;
         if (dimEnd >= HOURS_MAX) {
           dimEnd = 0;
@@ -741,7 +756,7 @@ void loop()
       loadNumberArrayConfInt(dimEnd,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_12_24) {
       if(is1PressedRelease()) {
         mode12or24 = !mode12or24;
@@ -750,7 +765,7 @@ void loop()
       loadNumberArrayConfBool(mode12or24,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_LEAD_BLANK) {
       if(is1PressedRelease()) {
         blankLeading = !blankLeading;
@@ -758,7 +773,7 @@ void loop()
       loadNumberArrayConfBool(blankLeading,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_SCROLLBACK) {
       if(is1PressedRelease()) {
         scrollback = !scrollback;
@@ -766,31 +781,31 @@ void loop()
       loadNumberArrayConfBool(scrollback,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_TEMP) {
       loadNumberArrayTemp(currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     // We are setting calibration
     if (currentMode == MODE_VERSION) {
       loadNumberArrayConfInt(softwareVersion,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-    
+
     // We are setting calibration
     if (currentMode == MODE_TUBE_TEST) {
       allNormal();
       loadNumberArrayTestDigits();
     }
-    
+
     // We arerepairing cathode poisoning
     if (currentMode == MODE_DIGIT_BURN) {
       if(is1PressedRelease()) {
         digitBurnValue += 1;
         if (digitBurnValue > 9) {
           digitBurnValue = 0;
-          
+
           digitOff(digitBurnDigit);
           digitBurnDigit += 1;
           if (digitBurnDigit > 5) {
@@ -801,7 +816,7 @@ void loop()
       digitOn(digitBurnDigit,digitBurnValue);
     }  
   }
-  
+
   // Display.
   if ((currentMode != MODE_DIGIT_BURN) && (nextMode != MODE_DIGIT_BURN)) {
     // One armed bandit trigger every 10th minute
@@ -810,7 +825,7 @@ void loop()
         acpOffset = 1;
       }
     }
-    
+
     // One armed bandit handling
     if (acpOffset > 0) {
       if (acpTick >= acpOffset) {
@@ -819,18 +834,19 @@ void loop()
         if (acpOffset == 50) {
           acpOffset = 0;
         }
-      } else {
+      } 
+      else {
         acpTick++;
       }
     }
-    
+
     // Set normal output display
     outputDisplay();
   }
-     
+
   // Set leds
   setLeds();
-  
+
   // Check the voltage
   //checkHVVoltage();  
 }
@@ -848,68 +864,71 @@ void setLeds()
   // tick led: Only update it on a second change (not every time round the loop)
   if (secs != lastSec) {
     lastSec = secs;
-    
+
     if (secs == 0) {
       lastMIinMillis = millis();
     }
-    
+
     upOrDown = (secs % 2 == 0);
-    
+
     // Reset the PWM every now and again, otherwise it drifts
     if (upOrDown) {
       ledPWMVal = 0;
     }
-    
+
     // Do the tick led, on 1S, off 1S
     digitalWrite(tickLed,upOrDown);
   }
-  
+
   // PWM led output
   switch (nextMode) {
-    case MODE_TIME:
+  case MODE_TIME:
     {
       if (upOrDown) {
         ledPWMVal++;
-      } else {
+      } 
+      else {
         ledPWMVal--;
       }
-    
+
       // Stop it underflowing: This would cause a short, bright flash
       // Which interrupts the flow of zen
       if (ledPWMVal < 0) {
         ledPWMVal = 0;
       }
-      
+
       // See if we are in blanking time
       boolean dimmedNow = getDimmed();
 
       if (dimmedNow) {
         analogWrite(colonsLed,ledPWMVal/10);
-      } else {
+      } 
+      else {
         analogWrite(colonsLed,ledPWMVal);
       }
       break;
     }
-    
-    default:
+
+  default:
     {
       ledBlinkCtr++;
       if (ledBlinkCtr > 40) {
         ledBlinkCtr = 0;
-            
+
         ledBlinkNumber++;
         if (ledBlinkNumber > (nextMode + 2)) {
           ledBlinkNumber = 0;
         }
       }
-      
+
       if (ledBlinkNumber < nextMode) {
-      if (ledBlinkCtr < 3) {
+        if (ledBlinkCtr < 3) {
           analogWrite(colonsLed,50);
-        } else {
+        } 
+        else {
           analogWrite(colonsLed,0);
         }
-    }
+      }
     }
   }
 }
@@ -954,7 +973,7 @@ void loadNumberArrayTemp(int confNum) {
   int wholeDegrees = int(temp);
   temp=(temp-float(wholeDegrees))*100.0;
   int fractDegrees = int(temp);
-  
+
   NumberArray[3] = fractDegrees % 10;
   NumberArray[2] =  fractDegrees / 10;
   NumberArray[1] =  wholeDegrees% 10;
@@ -1026,7 +1045,12 @@ void loadNumberArrayConfInt(int confValue, int confNum) {
 // ************************************************************
 void loadNumberArrayConfBool(boolean confValue, int confNum) {
   int boolInt;
-  if (confValue) {boolInt = 1;} else {boolInt = 0;}
+  if (confValue) {
+    boolInt = 1;
+  } 
+  else {
+    boolInt = 0;
+  }
   NumberArray[5] = (confNum) % 10;
   NumberArray[4] = (confNum / 10) % 10;
   NumberArray[3] = boolInt;
@@ -1043,25 +1067,15 @@ void loadNumberArrayConfBool(boolean confValue, int confNum) {
 void SetSN74141Chip(int num1)
 {
   int a,b,c,d;
-  
+
   // Load the a,b,c,d.. to send to the SN74141 IC
   int decodedDigit = decodeDigit[num1];
-  
-  switch( decodedDigit )
-  {
-    case 0: a=0;b=0;c=0;d=0;break;
-    case 1: a=1;b=0;c=0;d=0;break;
-    case 2: a=0;b=1;c=0;d=0;break;
-    case 3: a=1;b=1;c=0;d=0;break;
-    case 4: a=0;b=0;c=1;d=0;break;
-    case 5: a=1;b=0;c=1;d=0;break;
-    case 6: a=0;b=1;c=1;d=0;break;
-    case 7: a=1;b=1;c=1;d=0;break;
-    case 8: a=0;b=0;c=0;d=1;break;
-    case 9: a=1;b=0;c=0;d=1;break;
-    default: a=1;b=1;c=1;d=1;break;
-  }  
-  
+
+  a = decodedDigit & 0x01;
+  b = (decodedDigit > 1) & 0x01;
+  c = (decodedDigit > 2) & 0x01;
+  d = (decodedDigit > 3) & 0x01;
+
   // Write to output pins.
   setDigit(d,c,b,a);
 }
@@ -1070,6 +1084,9 @@ void SetSN74141Chip(int num1)
 // Do a single complete display, including any fading and
 // dimming requested. Performs the display loop
 // DIGIT_DISPLAY_COUNT times for each digit, with no delays.
+//
+// Possibly we will split this down to be one digit per call
+// if we need more reactiveness. 
 // ************************************************************
 void outputDisplay()
 {
@@ -1077,57 +1094,69 @@ void outputDisplay()
   int digitOffTime;
   int digitSwitchTime;
   float digitSwitchTimeFloat;  
-  
+
+  // used to blank all leading digits if 0
+  boolean leadingZeros = true;
+
   for( int i = 0 ; i < 6 ; i ++ )
   {
-    int tmpDispType = displayType[i];
+    // deal with leading zeros - suppress the digit display until we have a non-zero value
+    leadingZeros = leadingZeros & (currNumberArray[i] == 0);
     
+    int tmpDispType;
+    if (leadingZeros) {
+      tmpDispType = BLANKED;
+    } else {
+      tmpDispType = displayType[i];
+    }
+
     switch(tmpDispType) {
-      case BLANKED:
-        {
+    case BLANKED:
+      {
+        digitOnTime = DIGIT_DISPLAY_NEVER;
+        digitOffTime = DIGIT_DISPLAY_ON;
+        break;
+      }
+    case DIMMED:
+      {
+        digitOnTime = DIGIT_DISPLAY_ON;
+        digitOffTime = dimValue;
+        break;
+      }
+    case FADE:
+    case NORMAL:
+      {
+        digitOnTime = DIGIT_DISPLAY_ON;
+        digitOffTime = digitOffCount;
+        break;
+      }
+    case BLINK:
+      {
+        if (blinkState) {
+          digitOnTime = DIGIT_DISPLAY_ON;
+          digitOffTime = digitOffCount;
+        } 
+        else {
           digitOnTime = DIGIT_DISPLAY_NEVER;
           digitOffTime = DIGIT_DISPLAY_ON;
-          break;
         }
-        case DIMMED:
-        {
-          digitOnTime = DIGIT_DISPLAY_ON;
-          digitOffTime = dimValue;
-          break;
-        }
-        case FADE:
-        case NORMAL:
-        {
-          digitOnTime = DIGIT_DISPLAY_ON;
-          digitOffTime = digitOffCount;
-          break;
-        }
-        case BLINK:
-        {
-          if (blinkState) {
-            digitOnTime = DIGIT_DISPLAY_ON;
-            digitOffTime = digitOffCount;
-          } else {
-            digitOnTime = DIGIT_DISPLAY_NEVER;
-            digitOffTime = DIGIT_DISPLAY_ON;
-          }
-          break;
-        }
-        case SCROLL:
-        {
-          digitOnTime = DIGIT_DISPLAY_ON;
-          digitOffTime = digitOffCount;
-          break;
-        }
+        break;
+      }
+    case SCROLL:
+      {
+        digitOnTime = DIGIT_DISPLAY_ON;
+        digitOffTime = digitOffCount;
+        break;
+      }
     }
-    
+
     // Do scrollback when we are going to 0
     if ((NumberArray[i] != currNumberArray[i]) && 
-        (NumberArray[i] == 0) &&
-        scrollback) {
+      (NumberArray[i] == 0) &&
+      scrollback) {
       tmpDispType = SCROLL;
     }
-    
+
     // manage fading, each impression we show 1 fade step less of the old
     // digit and 1 fade step more of the new
     // manage fading, each impression we show 1 fade step less of the old
@@ -1139,17 +1168,19 @@ void outputDisplay()
           // Start the fade
           fadeState[i] = scrollSteps;
         }
-     
+
         if (fadeState[i] == 1) {
           // finish the fade
           fadeState[i] = 0;
           currNumberArray[i] = currNumberArray[i] - 1;
-        } else if (fadeState[i] > 1) {
+        } 
+        else if (fadeState[i] > 1) {
           // Continue the scroll countdown
           fadeState[i] =fadeState[i]-1;
         }
       }
-    } else if (tmpDispType == FADE) {
+    } 
+    else if (tmpDispType == FADE) {
       if (NumberArray[i] != currNumberArray[i]) {
         if (fadeState[i] == 0) {
           // Start the fade
@@ -1157,37 +1188,39 @@ void outputDisplay()
           digitSwitchTime = (int) fadeState[i] * fadeStep;
         }
       }
-     
+
       if (fadeState[i] == 1) {
         // finish the fade
         fadeState[i] =0;
         currNumberArray[i] = NumberArray[i];
         digitSwitchTime = DIGIT_DISPLAY_COUNT;
-      } else if (fadeState[i] > 1) {
+      } 
+      else if (fadeState[i] > 1) {
         // Continue the fade
         fadeState[i] =fadeState[i]-1;
         digitSwitchTime = (int) fadeState[i] * fadeStep;
       }
-    } else {
+    } 
+    else {
       digitSwitchTime = DIGIT_DISPLAY_COUNT;
       currNumberArray[i] = NumberArray[i];
     }
-      
+
     for (int timer = 0 ; timer < DIGIT_DISPLAY_COUNT ; timer++) {
       if (timer == digitOnTime) {
         digitOn(i,currNumberArray[i]);
       }
-      
+
       if  (timer == digitSwitchTime) {
         SetSN74141Chip(NumberArray[i]);
       }
-      
+
       if (timer == digitOffTime ) {
         digitOff(i);
       }
     }
   }
-  
+
   // Deal with blink, calculate if we are on or off
   blinkCounter++;
   if (blinkCounter == BLINK_COUNT_MAX) {
@@ -1219,7 +1252,7 @@ void digitOff(int digit) {
 void checkButton1() {
   if (digitalRead(inputPin1) == 0) {
     buttonWasReleased = false;
-    
+
     // We need consecutive pressed counts to treat this is pressed    
     if (button1PressedCount < debounceCounter) {
       button1PressedCount += 1;
@@ -1227,40 +1260,46 @@ void checkButton1() {
       if (button1PressedCount == debounceCounter) {
         button1PressStartMillis = millis();
       }
-    } else {
+    } 
+    else {
       // We are pressed and held, maintain the press states
       if ((millis() - button1PressStartMillis) > 2000) {
         buttonPress2S = true;
         buttonPress1S = true;
         buttonPress = true;
-      } else if ((millis() - button1PressStartMillis) > 1000) {
+      } 
+      else if ((millis() - button1PressStartMillis) > 1000) {
         buttonPress2S = false;
         buttonPress1S = true;
         buttonPress = true;
-      } else {
+      } 
+      else {
         buttonPress2S = false;
         buttonPress1S = false;
         buttonPress = true;
       }
     }
-  } else {
+  } 
+  else {
     // mark this as a press and release if we were pressed for less than a long press
     if (button1PressedCount == debounceCounter) {
       buttonWasReleased = true;
-      
+
       buttonPressRelease2S = false;
       buttonPressRelease1S = false;
       buttonPressRelease = false;
-      
+
       if (buttonPress2S) {
         buttonPressRelease2S = true;
-      } else if (buttonPress1S) {
+      } 
+      else if (buttonPress1S) {
         buttonPressRelease1S = true;
-      } else if (buttonPress) {
+      } 
+      else if (buttonPress) {
         buttonPressRelease = true;
       }
     }
-    
+
     // Reset the switch flags debounce counter      
     buttonPress2S = false;
     buttonPress1S = false;
@@ -1306,7 +1345,8 @@ boolean is1PressedRelease() {
   if (buttonPressRelease) {
     buttonPressRelease = false;
     return true;
-  } else {
+  } 
+  else {
     return false;
   }
 }
@@ -1318,7 +1358,8 @@ boolean is1PressedRelease1S() {
   if (buttonPressRelease1S) {
     buttonPressRelease1S = false;
     return true;
-  } else {
+  } 
+  else {
     return false;
   }
 }
@@ -1330,7 +1371,8 @@ boolean is1PressedRelease2S() {
   if (buttonPressRelease2S) {
     buttonPressRelease2S = false;
     return true;
-  } else {
+  } 
+  else {
     return false;
   }
 }
@@ -1339,21 +1381,17 @@ boolean is1PressedRelease2S() {
 // Output the digit to the 74141
 // ************************************************************
 void setDigit(int segD, int segC, int segB, int segA) {
-    digitalWrite(ledPin_0_a, segA);
-    digitalWrite(ledPin_0_b, segB);
-    digitalWrite(ledPin_0_c, segC);
-    digitalWrite(ledPin_0_d, segD);  
+  digitalWrite(ledPin_0_a, segA);
+  digitalWrite(ledPin_0_b, segB);
+  digitalWrite(ledPin_0_c, segC);
+  digitalWrite(ledPin_0_d, segD);  
 }
 
 // ************************************************************
 // Display preset
 // ************************************************************
 void allFade() {
-  if ((currentMode == MODE_TIME) && (blankLeading) && (hours < 10)) {
-    displayType[0] = BLANKED;
-  } else {
-    if (displayType[0] != FADE) displayType[0] = FADE;
-  }
+  if (displayType[0] != FADE) displayType[0] = FADE;
   if (displayType[1] != FADE) displayType[1] = FADE;
   if (displayType[2] != FADE) displayType[2] = FADE;
   if (displayType[3] != FADE) displayType[3] = FADE;
@@ -1403,7 +1441,8 @@ void highlight4and5() {
 void allDimmed() {
   if ((currentMode == MODE_TIME) && (blankLeading) && (hours < 10)) {
     displayType[0] = BLANKED;
-  } else {
+  } 
+  else {
     if (displayType[0] != DIMMED) displayType[0] = DIMMED;
   }
   if (displayType[1] != DIMMED) displayType[1] = DIMMED;
@@ -1451,56 +1490,56 @@ void incSecs() {
 // increment the time by 1 min
 // ************************************************************
 void incMins() {
-    mins++;
-    secs=0;
-    
-    if (mins >= MINS_MAX) {  
-      mins = 0;
-    }
+  mins++;
+  secs=0;
+
+  if (mins >= MINS_MAX) {  
+    mins = 0;
+  }
 }
 
 // ************************************************************
 // increment the time by 1 hour
 // ************************************************************
 void incHours() {
-    hours++;
-        
-    if (hours >= HOURS_MAX) {
-      hours = 0;
-    }
+  hours++;
+
+  if (hours >= HOURS_MAX) {
+    hours = 0;
+  }
 }
 
 // ************************************************************
 // increment the date by 1 day
 // ************************************************************
 void incDays() {
-    days++;
-    
-    int maxDays;
-    switch (months)
+  days++;
+
+  int maxDays;
+  switch (months)
+  {
+  case 4:
+  case 6:
+  case 9:
+  case 11:
     {
-      case 4:
-      case 6:
-      case 9:
-      case 11:
-      {
-        maxDays = 31;
-        break;
-      }
-      case 2:
-      {
-        maxDays = 28;
-        break;
-      }
-      default:
-      {
-        maxDays = 31;
-      }
+      maxDays = 31;
+      break;
     }
-    
-    if (days > maxDays) {
-      days = 1;
+  case 2:
+    {
+      maxDays = 28;
+      break;
     }
+  default:
+    {
+      maxDays = 31;
+    }
+  }
+
+  if (days > maxDays) {
+    days = 1;
+  }
 }
 
 // ************************************************************
@@ -1508,7 +1547,7 @@ void incDays() {
 // ************************************************************
 void incMonths() {
   months++;
-  
+
   if (months > 12) {
     months = 1;
   }
@@ -1519,7 +1558,7 @@ void incMonths() {
 // ************************************************************
 void incYears() {
   years++;
-  
+
   if (years > 50) {
     years = 14;
   }
@@ -1584,36 +1623,36 @@ void saveEEPROMValues() {
 // ************************************************************
 void readEEPROMValues() {
   dimStart = EEPROM.read(EE_DIM_START);
-  
+
   if ((dimStart < 0) || (dimStart > 23)) {
     dimStart = 0;
   }
-  
+
   dimEnd = EEPROM.read(EE_DIM_END);
-  
+
   if ((dimEnd < 0) || (dimEnd > 23)) {
     dimEnd = 7;
   }
-  
+
   fadeSteps = EEPROM.read(EE_FADE_STEPS);
   if ((fadeSteps < FADE_STEPS_MIN) || (fadeSteps > FADE_STEPS_MAX)) {
     fadeSteps = FADE_STEPS_DEFAULT;
   }
-  
+
   dimValue = EEPROM.read(EE_DIM_VALUE_HI)*256 + EEPROM.read(EE_DIM_VALUE_LO);
   if ((dimValue < DISPLAY_DIM_MIN) || (dimValue > DISPLAY_DIM_MAX)) {
     dimValue = dispCount/5;
   }
-  
+
   mode12or24 = EEPROM.read(EE_12_24);
   blankLeading = EEPROM.read(EE_BLANK_LEAD_ZERO);
   scrollback = EEPROM.read(EE_SCROLLBACK);
-  
+
   divider = EEPROM.read(EE_HVGEN_HI)*256 + EEPROM.read(EE_HVGEN_LO);
   if ((divider < HVGEN_MIN) || (divider > HVGEN_MAX)) {
     divider = HVGEN_DEFAULT;
   }
-  
+
   scrollSteps = EEPROM.read(EE_SCROLL_STEPS);
   if ((scrollSteps < SCROLL_STEPS_MIN) || (scrollSteps > SCROLL_STEPS_MAX)) {
     scrollSteps = SCROLL_STEPS_DEFAULT;
@@ -1627,10 +1666,12 @@ boolean getDimmed() {
   if (dimStart > dimEnd) {
     // dim before midnight
     return ((hours >= dimStart) || (hours < dimEnd));
-  } else if (dimStart < dimEnd) {
+  } 
+  else if (dimStart < dimEnd) {
     // dim at or after midnight
     return ((hours >= dimStart) && (hours < dimEnd));
-  } else {
+  } 
+  else {
     // no dimming if dimStart = dimEnd
     return false;
   }
@@ -1645,12 +1686,13 @@ double checkHVVoltage() {
   double externalVoltage = sensorVoltage * 394.7 / 4.7;
 
   if (externalVoltage > 200) {
-  Serial.println(externalVoltage);
+    Serial.println(externalVoltage);
     TCCR1A = tccrOff;
   } 
   else {
     TCCR1A = tccrOn;
   }
-  
+
   return externalVoltage;
 }  
+
