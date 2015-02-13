@@ -24,3 +24,8 @@ ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
 hvTest.ino: code for testing the HV generation<br>
 buttonTest.ino: Code for testing button presses<br>
 <br>
+<br>
+YouTube video of the clock in action:<br>
+<br>
+https://www.youtube.com/watch?v=Js-7MJpCtvI<br>
+<br>
