@@ -26,10 +26,10 @@
 
 const int EE_12_24 = 1;            // 12 or 24 hour mode
 const int EE_FADE_STEPS = 2;       // How quickly we fade, higher = slower
-//const int EE_DIM_VALUE_LO = 3;     // How bright dimmed is
-//const int EE_DIM_VALUE_HI = 4;     // How bright dimmed is
-//const int EE_DIM_START = 5;        // When we start dimming, hour
-//const int EE_DIM_END = 6;          // When we end dimming, hour
+const int EE_DATE_FORMAT = 3;      // Date format to display
+const int EE_DAY_BLANKING = 4;     // Blanking setting
+const int EE_DIM_DARK_LO = 5;      // Dimming dark value
+const int EE_DIM_DARK_HI = 6;      // Dimming dark value
 const int EE_BLANK_LEAD_ZERO = 7;  // If we blank leading zero on hours
 const int EE_DIGIT_COUNT_HI = 8;   // The number of times we go round the main loop
 const int EE_DIGIT_COUNT_LO = 9;   // The number of times we go round the main loop
@@ -38,9 +38,11 @@ const int EE_HVGEN_HI = 11;        // The HV generator value
 const int EE_HVGEN_LO = 12;        // The HV generator value
 const int EE_SCROLL_STEPS = 13;    // The steps in a scrollback
 const int EE_SECS_MIDNIGHT = 14;   // Display mode secs since midnight
+const int EE_DIM_BRIGHT_LO = 15;   // Dimming bright value
+const int EE_DIM_BRIGHT_HI = 16;   // Dimming bright value
 
 // Software version shown in config menu
-const int softwareVersion = 0004;
+const int softwareVersion = 0005;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
@@ -49,8 +51,10 @@ const int DIGIT_DISPLAY_OFF = DIGIT_DISPLAY_COUNT-1;  // Switch off the digit at
 const int DIGIT_DISPLAY_NEVER = -1;                   // When we don't want to switch on or off (i.e. blanking)
 const int DISPLAY_COUNT_MAX = 2000;
 const int DISPLAY_COUNT_MIN = 500;
-//const int DISPLAY_DIM_MAX = 400;
-//const int DISPLAY_DIM_MIN = 50;
+
+const int SENSOR_LOW_THRESHOLD = 100;  // Dark
+const int SENSOR_HIGH_THRESHOLD = 700; // Bright  
+const int SENSOR_SMOOTH_READINGS = 100;// Speed at which the brighness adapts to changes
 
 const int BLINK_COUNT_MAX = 25;                       // The number of impressions between blink state toggle
 
@@ -94,14 +98,10 @@ const int MODE_MONTHS_SET = MODE_DAYS_SET + 1;
 const int MODE_YEARS_SET = MODE_MONTHS_SET + 1;
 const int MODE_FADE_STEPS_UP = MODE_YEARS_SET + 1;                            // Mode "00"
 const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;                      // Mode "01"
-//const int MODE_DISPLAY_DIM_UP = MODE_FADE_STEPS_DOWN + 1;                     // Mode "02"
-//const int MODE_DISPLAY_DIM_DOWN = MODE_DISPLAY_DIM_UP + 1;                    // Mode "03"
 const int MODE_DISPLAY_HVGEN_UP = MODE_FADE_STEPS_DOWN + 1;                   // Mode "02"
 const int MODE_DISPLAY_HVGEN_DOWN = MODE_DISPLAY_HVGEN_UP + 1;                // Mode "03"
 const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_DISPLAY_HVGEN_DOWN + 1;         // Mode "04"
 const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "05"
-//const int MODE_DIM_START = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;                // Mode "08"
-//const int MODE_DIM_END = MODE_DIM_START + 1;                                  // Mode "09"
 const int MODE_12_24 = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;                    // Mode "06" 0 = 24, 1 = 12
 const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "07" 1 = blanked
 const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "08" 1 = use scrollback
@@ -109,14 +109,16 @@ const int MODE_SECS_SINCE_MIDNIGHT = MODE_SCROLLBACK + 1;                     //
 const int MODE_TEMP = MODE_SECS_SINCE_MIDNIGHT + 1;                           // Mode "10"
 const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "11"
 const int MODE_TUBE_TEST = MODE_VERSION + 1;                                  // Mode "12" - not displayed
-const int MODE_DIGIT_BURN = MODE_TUBE_TEST + 1;                               // Mode "13" - not displayed
-const int MODE_MAX= MODE_DIGIT_BURN + 1;
+const int MODE_MAX= MODE_TUBE_TEST + 1;
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
 const int TEMP_MODE_MIN  = 0;
 const int TEMP_MODE_DATE = 0; // Display the date for 5 S
 const int TEMP_MODE_TEMP = 1; // Display the temperature for 5 S
-const int TEMP_MODE_MAX  = 1;
+const int TEMP_MODE_LDR  = 2; // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
+const int TEMP_MODE_MAX  = 2;
+
+const int MODE_DIGIT_BURN = 99; // Digit burn mode
 
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
 DS3231 Clock;
@@ -222,9 +224,10 @@ int currentMode = MODE_TIME;   // Initial cold start mode
 int nextMode = currentMode; 
 
 // ************************ Night time dimming ************************
-int dimStart;
-int dimEnd;
+int dimDark = SENSOR_LOW_THRESHOLD;
+int dimBright = SENSOR_HIGH_THRESHOLD;
 double sensorSmoothed = 0;
+double sensorFactor = (double)(DIGIT_DISPLAY_OFF)/(double)(dimBright-dimDark);
 
 // Time initial values, overwritten on startup if an RTC is there
 byte hours = 12;
@@ -252,9 +255,11 @@ int  button1PressedCount = 0;
 long button1PressStartMillis = 0;
 int  debounceCounter = 5; // Number of successive reads before we say the switch is down
 boolean buttonWasReleased = false;
+boolean buttonPress8S = false;
 boolean buttonPress2S = false;
 boolean buttonPress1S = false;
 boolean buttonPress = false;
+boolean buttonPressRelease8S = false;
 boolean buttonPressRelease2S = false;
 boolean buttonPressRelease1S = false;
 boolean buttonPressRelease = false;
@@ -338,6 +343,18 @@ void setup()
   
   // temporary debugging
   //Serial.begin(9600);
+  
+  // Test if the button is pressed for factory reset
+  checkButton1();
+  if (is1Pressed()) {
+    // Flash that we have accepted the factory reset
+    for (int i = 0 ; i < 5 ; i++ ) {
+      digitalWrite(tickLed, HIGH);
+      delay(100);
+      digitalWrite(tickLed, LOW);
+      delay(100);
+    }
+  }
 }
 
 //**********************************************************************************
@@ -352,9 +369,6 @@ void loop()
 
   // Get the time
   getRTCTime();
-
-  // See if we are in blanking time
-//  boolean dimmedNow = getDimmed();
 
   // Check button, we evaluate below
   checkButton1();
@@ -440,16 +454,6 @@ void loop()
       displayConfig();
     }
 
-//    if (nextMode == MODE_DISPLAY_DIM_UP) {
-//      loadNumberArrayConfInt(dimValue,nextMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
-
-//    if (nextMode == MODE_DISPLAY_DIM_DOWN) {
-//      loadNumberArrayConfInt(dimValue,nextMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
-
     if (nextMode == MODE_DISPLAY_HVGEN_UP) {
       loadNumberArrayConfInt(divider,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
@@ -469,16 +473,6 @@ void loop()
       loadNumberArrayConfInt(scrollSteps,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-
-//    if (nextMode == MODE_DIM_START) {
-//      loadNumberArrayConfInt(dimStart,nextMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
-
-//    if (nextMode == MODE_DIM_END) {
-//      loadNumberArrayConfInt(dimEnd,nextMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
 
     if (nextMode == MODE_12_24) {
       loadNumberArrayConfBool(mode12or24,nextMode-MODE_FADE_STEPS_UP);
@@ -541,20 +535,22 @@ void loop()
         }
 
         if (tempDisplayMode == TEMP_MODE_TEMP) {
-          loadNumberArrayTemp(12);
+          loadNumberArrayTemp(MODE_TEMP);
         }
+        
+        if (tempDisplayMode == TEMP_MODE_LDR) {
+          loadNumberArrayLDR();
+        }
+
         allFade();
+        
       } else {
         if (acpOffset > 0) {
           loadNumberArrayACP();
-          allNormal();
+          allBright();
         } else {
           loadNumberArrayTime();
-//          if(dimmedNow) {
-//            allDimmed();
-//          } else {
-            allFade();
-//          }
+          allFade();
           
           // Apply leading blanking
           applyBlanking();
@@ -631,28 +627,6 @@ void loop()
       fadeStep = dispCount / fadeSteps;
     }
 
-//    if (currentMode == MODE_DISPLAY_DIM_UP) {
-//      if(is1PressedRelease()) {
-//        dimValue++;
-//        if (dimValue > DISPLAY_DIM_MAX) {
-//          dimValue = DISPLAY_DIM_MIN;
-//        }
-//      }
-//      loadNumberArrayConfInt(dimValue,currentMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
-
-//    if (currentMode == MODE_DISPLAY_DIM_DOWN) {
-//      if(is1PressedRelease()) {
-//        dimValue--;
-//        if (dimValue < DISPLAY_DIM_MIN) {
-//          dimValue = DISPLAY_DIM_MAX;
-//        }
-//      }
-//      loadNumberArrayConfInt(dimValue,currentMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
-
     if (currentMode == MODE_DISPLAY_HVGEN_DOWN) {
       if(is1PressedRelease()) {
         divider-=10;
@@ -698,29 +672,6 @@ void loop()
       loadNumberArrayConfInt(scrollSteps,currentMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
-
-//    if (currentMode == MODE_DIM_START) {
-//      if(is1PressedRelease()) {
-//        dimStart++;
-//        if (dimStart >= HOURS_MAX) {
-//          dimStart = 0;
-//        }
-//      }
-//      loadNumberArrayConfInt(dimStart,currentMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
-
-//    if (currentMode == MODE_DIM_END) {
-//      if(is1PressedRelease()) {
-
-//        dimEnd++;
-//        if (dimEnd >= HOURS_MAX) {
-//          dimEnd = 0;
-//        }
-//      }
-//      loadNumberArrayConfInt(dimEnd,currentMode-MODE_FADE_STEPS_UP);
-//      displayConfig();
-//    }
 
     if (currentMode == MODE_12_24) {
       if(is1PressedRelease()) {
@@ -818,6 +769,7 @@ void loop()
 
   // get the LDR ambient light reading
   digitOffCount = getDimmingFromLDR();
+  fadeStep = digitOffCount / fadeSteps;
   
   // Set leds
   setLeds();
@@ -959,6 +911,18 @@ void loadNumberArrayTemp(int confNum) {
 }
 
 // ************************************************************
+// Break the LDR reading into displayable digits
+// ************************************************************
+void loadNumberArrayLDR() {
+  NumberArray[5] = 0;
+  NumberArray[4] = 0;
+  
+  NumberArray[3] = (digitOffCount / 1) % 10;
+  NumberArray[2] = (digitOffCount / 10) % 10;
+  NumberArray[1] = (digitOffCount / 100) % 10;
+  NumberArray[0] = (digitOffCount / 1000) % 10;}
+
+// ************************************************************
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayTestDigits() {
@@ -983,31 +947,7 @@ void loadNumberArrayACP() {
 }
 
 // ************************************************************
-// dim start time
-// ************************************************************
-void loadNumberArrayDimStart() {
-  NumberArray[5] = 0;
-  NumberArray[4] = 0;
-  NumberArray[3] = (dimStart) % 10;
-  NumberArray[2] = (dimStart / 10) % 10;
-  NumberArray[1] = 0;
-  NumberArray[0] = 0;
-}
-
-// ************************************************************
-// dim end time
-// ************************************************************
-void loadNumberArrayDimEnd() {
-  NumberArray[5] = 0;
-  NumberArray[4] = 0;
-  NumberArray[3] = (dimEnd) % 10;
-  NumberArray[2] = (dimEnd / 10) % 10;
-  NumberArray[1] = 0;
-  NumberArray[0] = 0;
-}
-
-// ************************************************************
-// dim end time
+// Show an integer configuration value
 // ************************************************************
 void loadNumberArrayConfInt(int confValue, int confNum) {
   NumberArray[5] = (confNum) % 10;
@@ -1019,7 +959,7 @@ void loadNumberArrayConfInt(int confValue, int confNum) {
 }
 
 // ************************************************************
-// dim end time
+// Show an boolean configuration value
 // ************************************************************
 void loadNumberArrayConfBool(boolean confValue, int confNum) {
   int boolInt;
@@ -1230,25 +1170,35 @@ void digitOff(int digit) {
 void checkButton1() {
   if (digitalRead(inputPin1) == 0) {
     buttonWasReleased = false;
+    
+    long nowMillis = millis();
 
     // We need consecutive pressed counts to treat this is pressed    
     if (button1PressedCount < debounceCounter) {
       button1PressedCount += 1;
       // If we reach the debounce point, mark the start time
       if (button1PressedCount == debounceCounter) {
-        button1PressStartMillis = millis();
+        button1PressStartMillis = nowMillis;
       }
     } else {
       // We are pressed and held, maintain the press states
-      if ((millis() - button1PressStartMillis) > 2000) {
+      if ((nowMillis - button1PressStartMillis) > 8000) {
+        buttonPress8S = true;
         buttonPress2S = true;
         buttonPress1S = true;
         buttonPress = true;
-      } else if ((millis() - button1PressStartMillis) > 1000) {
+      } else if ((nowMillis - button1PressStartMillis) > 2000) {
+        buttonPress8S = false;
+        buttonPress2S = true;
+        buttonPress1S = true;
+        buttonPress = true;
+      } else if ((nowMillis - button1PressStartMillis) > 1000) {
+        buttonPress8S = false;
         buttonPress2S = false;
         buttonPress1S = true;
         buttonPress = true;
       } else {
+        buttonPress8S = false;
         buttonPress2S = false;
         buttonPress1S = false;
         buttonPress = true;
@@ -1259,11 +1209,14 @@ void checkButton1() {
     if (button1PressedCount == debounceCounter) {
       buttonWasReleased = true;
 
+      buttonPressRelease8S = false;
       buttonPressRelease2S = false;
       buttonPressRelease1S = false;
       buttonPressRelease = false;
 
-      if (buttonPress2S) {
+      if (buttonPress8S) {
+        buttonPressRelease8S = true;
+      } else if (buttonPress2S) {
         buttonPressRelease2S = true;
       } else if (buttonPress1S) {
         buttonPressRelease1S = true;
@@ -1273,6 +1226,7 @@ void checkButton1() {
     }
 
     // Reset the switch flags debounce counter      
+    buttonPress8S = false;
     buttonPress2S = false;
     buttonPress1S = false;
     buttonPress = false;      
@@ -1295,17 +1249,24 @@ boolean is1Pressed() {
 }
 
 // ************************************************************
-// Check if button is pressed for a long time (> 2S)
+// Check if button is pressed for a long time (> 1S)
 // ************************************************************
 boolean is1Pressed1S() {
   return buttonPress1S;
 }
 
 // ************************************************************
-// Check if button is pressed for a very long time (> 4S)
+// Check if button is pressed for a moderately long time (> 2S)
 // ************************************************************
 boolean is1Pressed2S() {
   return buttonPress2S;
+}
+
+// ************************************************************
+// Check if button is pressed for a very long time (> 8S)
+// ************************************************************
+boolean is1Pressed8S() {
+  return buttonPress8S;
 }
 
 // ************************************************************
@@ -1333,11 +1294,23 @@ boolean is1PressedRelease1S() {
 }
 
 // ************************************************************
-// Check if button is pressed for a very long time (> 2) and released
+// Check if button is pressed for a very moderately time (> 2) and released
 // ************************************************************
 boolean is1PressedRelease2S() {
   if (buttonPressRelease2S) {
     buttonPressRelease2S = false;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+// ************************************************************
+// Check if button is pressed for a very long time (> 8) and released
+// ************************************************************
+boolean is1PressedRelease8S() {
+  if (buttonPressRelease8S) {
+    buttonPressRelease8S = false;
     return true;
   } else {
     return false;
@@ -1397,11 +1370,23 @@ void allFade() {
 }
 
 // ************************************************************
+// Display preset
+// ************************************************************
+void allBright() {
+  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
+  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
+  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
+  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
+  if (displayType[4] != BRIGHT) displayType[4] = BRIGHT;
+  if (displayType[5] != BRIGHT) displayType[5] = BRIGHT;
+}
+
+// ************************************************************
 // Display preset, highlight digits 0 and 1
 // ************************************************************
 void highlight0and1() {
-  if (displayType[0] != NORMAL) displayType[0] = BRIGHT;
-  if (displayType[1] != NORMAL) displayType[1] = BRIGHT;
+  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
+  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
   if (displayType[2] != DIMMED) displayType[2] = DIMMED;
   if (displayType[3] != DIMMED) displayType[3] = DIMMED;
   if (displayType[4] != DIMMED) displayType[4] = DIMMED;
@@ -1414,8 +1399,8 @@ void highlight0and1() {
 void highlight2and3() {
   if (displayType[0] != DIMMED) displayType[0] = DIMMED;
   if (displayType[1] != DIMMED) displayType[1] = DIMMED;
-  if (displayType[2] != NORMAL) displayType[2] = BRIGHT;
-  if (displayType[3] != NORMAL) displayType[3] = BRIGHT;
+  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
+  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
   if (displayType[4] != DIMMED) displayType[4] = DIMMED;
   if (displayType[5] != DIMMED) displayType[5] = DIMMED;
 }
@@ -1428,8 +1413,8 @@ void highlight4and5() {
   if (displayType[1] != DIMMED) displayType[1] = DIMMED;
   if (displayType[2] != DIMMED) displayType[2] = DIMMED;
   if (displayType[3] != DIMMED) displayType[3] = DIMMED;
-  if (displayType[4] != NORMAL) displayType[4] = BRIGHT;
-  if (displayType[5] != NORMAL) displayType[5] = BRIGHT;
+  if (displayType[4] != BRIGHT) displayType[4] = BRIGHT;
+  if (displayType[5] != BRIGHT) displayType[5] = BRIGHT;
 }
 
 // ************************************************************
@@ -1585,11 +1570,7 @@ float getRTCTemp() {
 // Save current values back to EEPROM 
 // ************************************************************
 void saveEEPROMValues() {
-//  EEPROM.write(EE_DIM_START,dimStart);
-//  EEPROM.write(EE_DIM_END,dimEnd);
   EEPROM.write(EE_FADE_STEPS,fadeSteps);
-//  EEPROM.write(EE_DIM_VALUE_HI,dimValue / 256);
-//  EEPROM.write(EE_DIM_VALUE_LO,dimValue % 256);
   EEPROM.write(EE_12_24,mode12or24);
   EEPROM.write(EE_BLANK_LEAD_ZERO,blankLeading);
   EEPROM.write(EE_SCROLLBACK,scrollback);
@@ -1603,27 +1584,10 @@ void saveEEPROMValues() {
 // read EEPROM values
 // ************************************************************
 void readEEPROMValues() {
-//  dimStart = EEPROM.read(EE_DIM_START);
-
-//  if ((dimStart < 0) || (dimStart > 23)) {
-//    dimStart = 0;
-//  }
-
-//  dimEnd = EEPROM.read(EE_DIM_END);
-
-//  if ((dimEnd < 0) || (dimEnd > 23)) {
-//    dimEnd = 7;
-//  }
-
   fadeSteps = EEPROM.read(EE_FADE_STEPS);
   if ((fadeSteps < FADE_STEPS_MIN) || (fadeSteps > FADE_STEPS_MAX)) {
     fadeSteps = FADE_STEPS_DEFAULT;
   }
-
-//  dimValue = EEPROM.read(EE_DIM_VALUE_HI)*256 + EEPROM.read(EE_DIM_VALUE_LO);
-//  if ((dimValue < DISPLAY_DIM_MIN) || (dimValue > DISPLAY_DIM_MAX)) {
-//    dimValue = dispCount/5;
-//  }
 
   mode12or24 = EEPROM.read(EE_12_24);
   blankLeading = EEPROM.read(EE_BLANK_LEAD_ZERO);
@@ -1686,17 +1650,21 @@ double checkHVVoltage() {
 // The return value is the dimming count we are using. 999 is full
 // brightness, 100 is very dim.
 // 
+// Because the floating point calculation may return more than the
+// maximzm value, we have to clamp it as the final step
 // ******************************************************************
 int getDimmingFromLDR() {
-  const int SENSOR_SMOOTH_READINGS = 20;
-  int rawSensorVal = analogRead(LDRPin);
+  int rawSensorVal = 1023-analogRead(LDRPin);
   double sensorDiff = rawSensorVal - sensorSmoothed;
   sensorSmoothed += (sensorDiff/SENSOR_SMOOTH_READINGS);
   
-  // Anything under 100 gives full brighness, above that we dim progressively
-  if (sensorSmoothed < 100) {
-   return DIGIT_DISPLAY_COUNT-1;
-  } else {
-    return DIGIT_DISPLAY_COUNT - 1 - (sensorSmoothed - 100);
-  } 
+  double sensorSmoothedResult = sensorSmoothed - dimDark;
+  if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
+  if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
+  sensorSmoothedResult = (sensorSmoothedResult-dimDark)*sensorFactor;
+  
+  int returnValue = sensorSmoothedResult+dimDark;
+  if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
+  
+  return returnValue;
 }  
