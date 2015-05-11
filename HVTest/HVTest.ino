@@ -32,11 +32,6 @@ int hvDriverPin = 9;
 int tickLed = 13;
 int sensorPin = A0;    // select the input pin for the potentiometer
 
-int secs = 0;
-const int SECS_MAX = 60;
-int intTick = 0;
-int lastSec = secs;
-
 // precalculated values for turning on and off the HV generator
 // Put these in TCCR1B to turn off and on
 int tccrOff;
@@ -99,7 +94,7 @@ void loop()
   double externalVoltage = sensorVoltage * 394.7 / 4.7;
   //Serial.println(externalVoltage);
 
-  if (externalVoltage > 200) {
+  if (externalVoltage > 180) {
     TCCR1A = tccrOff;
     digitalWrite(tickLed,0);
   } 
