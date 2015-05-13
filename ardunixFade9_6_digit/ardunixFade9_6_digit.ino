@@ -64,7 +64,7 @@ const int SENSOR_HIGH_DEFAULT = 700; // Bright
 
 const int SENSOR_SMOOTH_READINGS_MIN = 1;
 const int SENSOR_SMOOTH_READINGS_MAX = 255;
-const int SENSOR_SMOOTH_READINGS_DEFAULT = 100;// Speed at which the brighness adapts to changes
+const int SENSOR_SMOOTH_READINGS_DEFAULT = 100;       // Speed at which the brighness adapts to changes
 
 const int BLINK_COUNT_MAX = 25;                       // The number of impressions between blink state toggle
 
@@ -483,6 +483,9 @@ void loop()
 
   // ************* Process the modes *************
   if (nextMode != currentMode) {
+    // turn off blanking
+    blanked = false;
+    
     if (nextMode == MODE_TIME) {
       loadNumberArrayTime();
       allFade();
@@ -606,24 +609,22 @@ void loop()
     if (currentMode == MODE_TIME) {
       
       if(is1PressedRelease()) {
-        // Always start from the first mode, or increment the temp mode if we are already in a display
-        if (millis() < secsDisplayEnd) {
-          tempDisplayMode++;
-        } else {
-          tempDisplayMode = TEMP_MODE_MIN;
-        }
-        if (tempDisplayMode > TEMP_MODE_MAX) {
-          tempDisplayMode = TEMP_MODE_MIN;
-        }
-        
-        // turn off blanking - it will turn back on on it's own
-        // and set the mode to time
         if (blanked) {
+          // just turn off blanking - it will turn back on on it's own
           blanked = false;
-          tempDisplayMode = TEMP_MODE_MIN;
-        }
+        } else {
+          // Always start from the first mode, or increment the temp mode if we are already in a display
+          if (millis() < secsDisplayEnd) {
+            tempDisplayMode++;
+          } else {
+            tempDisplayMode = TEMP_MODE_MIN;
+          }
+          if (tempDisplayMode > TEMP_MODE_MAX) {
+            tempDisplayMode = TEMP_MODE_MIN;
+          }
         
-        secsDisplayEnd = millis() + 5000;
+          secsDisplayEnd = millis() + 5000;
+        }
       }
 
       if (millis() < secsDisplayEnd) {
