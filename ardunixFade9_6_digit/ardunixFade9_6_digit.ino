@@ -44,7 +44,7 @@ const int EE_GRN_INTENSITY= 19;    // Green channel backlight max intensity
 const int EE_BLU_INTENSITY= 20;    // Blue channel backlight max intensity
 
 // Software version shown in config menu
-const int softwareVersion = 0006;
+const int softwareVersion = 0007;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
@@ -119,12 +119,14 @@ const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  //
 const int MODE_12_24 = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;                    // Mode "06" 0 = 24, 1 = 12
 const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "07" 1 = blanked
 const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "08" 1 = use scrollback
-const int MODE_RED_CNL = MODE_SCROLLBACK + 1;                                 // Mode "09"
-const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "10"
-const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "11"
-const int MODE_TEMP = MODE_BLU_CNL + 1;                                       // Mode "12"
-const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "13"
-const int MODE_TUBE_TEST = MODE_VERSION + 1;                                  // Mode "14" - not displayed
+const int MODE_DATE_FORMAT = MODE_SCROLLBACK + 1;                             // Mode "09"
+const int MODE_DAY_BLANKING = MODE_DATE_FORMAT + 1;                           // Mode "10"
+const int MODE_RED_CNL = MODE_DAY_BLANKING + 1;                               // Mode "11"
+const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "12"
+const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "13"
+const int MODE_TEMP = MODE_BLU_CNL + 1;                                       // Mode "14"
+const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "15"
+const int MODE_TUBE_TEST = MODE_VERSION + 1;                                  // Mode "16" - not displayed
 const int MODE_MAX = MODE_TUBE_TEST + 1;
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
@@ -137,11 +139,11 @@ const int TEMP_MODE_MAX  = 2;
 const int MODE_DIGIT_BURN = 99; // Digit burn mode
 
 const int DATE_FORMAT_MIN = 0;
-const int DATE_FORMAT_YYYYMMDD = 0;
-const int DATE_FORMAT_MMDDYYYY = 1;
-const int DATE_FORMAT_DDMMYYYY = 2;
+const int DATE_FORMAT_YYMMDD = 0;
+const int DATE_FORMAT_MMDDYY = 1;
+const int DATE_FORMAT_DDMMYY = 2;
 const int DATE_FORMAT_MAX = 2;
-const int DATE_FORMAT_DEFAULT = DATE_FORMAT_YYYYMMDD;
+const int DATE_FORMAT_DEFAULT = DATE_FORMAT_DDMMYY;
 
 const int DAY_BLANKING_MIN = 0;
 const int DAY_BLANKING_NEVER = 0;
@@ -268,13 +270,15 @@ byte secs = 0;
 byte days = 1;
 byte months = 1;
 byte years = 14;
+byte dow = 0;
 boolean mode12or24 = false;
 
 // State variables for detecting changes
 byte lastSec;
 
-int dateFormat;
-int dayBlanking;
+int dateFormat = DATE_FORMAT_DEFAULT;
+int dayBlanking = DAY_BLANKING_DEFAULT;
+boolean blanked = false;
 
 // **************************** LED management ***************************
 int ledPWMVal;
@@ -391,6 +395,9 @@ void setup()
   
   // Detect factory reset: button pressed on start
   if (is1PressedNow()) {
+    loadNumberArrayConfInt(softwareVersion,0);
+    displayConfig();
+    allBlanked();
     // Flash 10 x to signal that we have accepted the factory reset
     for (int i = 0 ; i < 10 ; i++ ) {
       digitalWrite(tickLed, HIGH);
@@ -399,6 +406,11 @@ void setup()
       delay(100);
       
       factoryReset();
+    }
+    
+    allFade();
+    for (int i = 0 ; i < 200 ; i++ ) {
+      outputDisplay();
     }
   }
 }
@@ -546,19 +558,29 @@ void loop()
       displayConfig();
     }
 
+    if (nextMode == MODE_DATE_FORMAT) {
+      loadNumberArrayConfInt(dateFormat,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_DAY_BLANKING) {
+      loadNumberArrayConfInt(dayBlanking,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+
     if (nextMode == MODE_RED_CNL) {
       loadNumberArrayConfInt(redCnl,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig3();
+      displayConfig();
     }
 
     if (nextMode == MODE_GRN_CNL) {
       loadNumberArrayConfInt(grnCnl,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig3();
+      displayConfig();
     }
 
     if (nextMode == MODE_BLU_CNL) {
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig3();
+      displayConfig();
     }
     
     if (nextMode == MODE_TEMP) {
@@ -582,6 +604,7 @@ void loop()
 
   } else {
     if (currentMode == MODE_TIME) {
+      
       if(is1PressedRelease()) {
         // Always start from the first mode, or increment the temp mode if we are already in a display
         if (millis() < secsDisplayEnd) {
@@ -590,6 +613,13 @@ void loop()
           tempDisplayMode = TEMP_MODE_MIN;
         }
         if (tempDisplayMode > TEMP_MODE_MAX) {
+          tempDisplayMode = TEMP_MODE_MIN;
+        }
+        
+        // turn off blanking - it will turn back on on it's own
+        // and set the mode to time
+        if (blanked) {
+          blanked = false;
           tempDisplayMode = TEMP_MODE_MIN;
         }
         
@@ -765,6 +795,28 @@ void loop()
       displayConfig();
     }
 
+    if (currentMode == MODE_DATE_FORMAT) {
+      if(is1PressedRelease()) {
+        dateFormat++;
+        if (dateFormat > DATE_FORMAT_MAX) {
+          dateFormat = DATE_FORMAT_MIN;
+        }
+      }
+      loadNumberArrayConfInt(dateFormat,currentMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+
+    if (currentMode == MODE_DAY_BLANKING) {
+      if(is1PressedRelease()) {
+        dayBlanking++;
+        if (dayBlanking > DAY_BLANKING_MAX) {
+          dayBlanking = DAY_BLANKING_MIN;
+        }
+      }
+      loadNumberArrayConfInt(dayBlanking,currentMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+
     if (currentMode == MODE_RED_CNL) {
       if(is1PressedRelease()) {
         redCnl++;
@@ -773,7 +825,7 @@ void loop()
         }
       }
       loadNumberArrayConfInt(redCnl,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig2();
+      displayConfig();
     }
 
     if (currentMode == MODE_GRN_CNL) {
@@ -784,7 +836,7 @@ void loop()
         }
       }
       loadNumberArrayConfInt(grnCnl,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig2();
+      displayConfig();
     }
 
     if (currentMode == MODE_BLU_CNL) {
@@ -795,7 +847,7 @@ void loop()
         }
       }
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig2();
+      displayConfig();
     }
     
     if (currentMode == MODE_TEMP) {
@@ -971,12 +1023,32 @@ void loadNumberArrayTime() {
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayDate() {
-  NumberArray[5] = years % 10;
-  NumberArray[4] = years / 10;
-  NumberArray[3] = months % 10;
-  NumberArray[2] = months / 10;
-  NumberArray[1] = days % 10;
-  NumberArray[0] = days / 10;
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      NumberArray[5] = days % 10;
+      NumberArray[4] = days / 10;
+      NumberArray[3] = months % 10;
+      NumberArray[2] = months / 10;
+      NumberArray[1] = years % 10;
+      NumberArray[0] = years / 10;
+      break;
+    case DATE_FORMAT_MMDDYY:
+      NumberArray[5] = years % 10;
+      NumberArray[4] = years / 10;
+      NumberArray[3] = days % 10;
+      NumberArray[2] = days / 10;
+      NumberArray[1] = months % 10;
+      NumberArray[0] = months / 10;
+      break;
+    case DATE_FORMAT_DDMMYY:
+      NumberArray[5] = years % 10;
+      NumberArray[4] = years / 10;
+      NumberArray[3] = months % 10;
+      NumberArray[2] = months / 10;
+      NumberArray[1] = days % 10;
+      NumberArray[0] = days / 10;
+      break;
+  }
 }
 
 // ************************************************************
@@ -1102,7 +1174,8 @@ void outputDisplay()
   int digitOnTime;
   int digitOffTime;
   int digitSwitchTime;
-  float digitSwitchTimeFloat;  
+  float digitSwitchTimeFloat;
+  int tmpDispType;
 
   // used to blank all leading digits if 0
   boolean leadingZeros = true;
@@ -1112,7 +1185,11 @@ void outputDisplay()
     // Check the voltage between every digit
     checkHVVoltage();
     
-    int tmpDispType = displayType[i];
+    if (blanked) {
+      tmpDispType = BLANKED;
+    } else {
+      tmpDispType = displayType[i];
+    }
 
     switch(tmpDispType) {
       case BLANKED:
@@ -1540,6 +1617,18 @@ void displayConfig2() {
 }
 
 // ************************************************************
+// Display preset
+// ************************************************************
+void allBlanked() {
+  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
+  if (displayType[1] != BLANKED) displayType[1] = BLANKED;
+  if (displayType[2] != BLANKED) displayType[2] = BLANKED;
+  if (displayType[3] != BLANKED) displayType[3] = BLANKED;
+  if (displayType[4] != BLANKED) displayType[4] = BLANKED;
+  if (displayType[5] != BLANKED) displayType[5] = BLANKED;
+}
+
+// ************************************************************
 // increment the time by 1 Sec
 // ************************************************************
 void incSecs() {
@@ -1657,6 +1746,26 @@ void getRTCTime() {
   bool century = false;
   months=Clock.getMonth(century);
   days=Clock.getDate();
+  dow=Clock.getDoW();
+  
+  // Check day blanking, but only when we are in
+  // normal time mode
+  if ((secs == 0) && (currentMode == MODE_TIME)) {
+    switch(dayBlanking) {
+      case DAY_BLANKING_NEVER:
+        blanked = false;
+        break;
+      case DAY_BLANKING_WEEKEND:
+        blanked = ((dow == 0) || (dow == 6));
+        break;
+      case DAY_BLANKING_WEEKDAY:
+        blanked = ((dow > 0) && (dow < 6));
+        break;
+      case DAY_BLANKING_ALWAYS:
+        blanked = true;
+        break;
+    }
+  }  
 }
 
 // ************************************************************
@@ -1745,6 +1854,16 @@ void readEEPROMValues() {
     sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
   }
   
+  dateFormat = EEPROM.read(EE_DATE_FORMAT);
+  if ((dateFormat < DATE_FORMAT_MIN) || (dateFormat > DATE_FORMAT_MAX)) {
+    dateFormat = DATE_FORMAT_DEFAULT;
+  }
+  
+  dayBlanking = EEPROM.read(EE_DAY_BLANKING);
+  if ((dayBlanking < DAY_BLANKING_MIN) || (dayBlanking > DAY_BLANKING_MAX)) {
+    dayBlanking = DAY_BLANKING_DEFAULT;
+  }
+  
   redCnl = EEPROM.read(EE_RED_INTENSITY);
   if ((redCnl < COLOUR_CNL_MIN) || (redCnl > COLOUR_CNL_MAX)) {
     redCnl = COLOUR_CNL_DEFAULT;
@@ -1776,6 +1895,8 @@ void factoryReset() {
   scrollSteps = SCROLL_STEPS_DEFAULT;
   dimBright = SENSOR_HIGH_DEFAULT;
   sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
+  dateFormat = DATE_FORMAT_DEFAULT;
+  dayBlanking = DAY_BLANKING_DEFAULT;  
   redCnl = COLOUR_CNL_DEFAULT;
   grnCnl = COLOUR_CNL_DEFAULT;
   bluCnl = COLOUR_CNL_DEFAULT;
