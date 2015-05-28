@@ -12,13 +12,25 @@ Nixie Clock based on Arduino<br>
 //*  - Single button operation with software debounce                              *<br>
 //*  - Single 74141 for digit display (other versions use 2 or even 6!)            *<br>
 //*  - Highly modular code                                                         *<br>
+//*  - RGB Back lighting                                                           *<br>
+//*  - Automatic dimming using light sensor                                        *<br>
 //*                                                                                *<br>
 //*  isparkes@protonmail.ch                                                        *<br>
 //*                                                                                *<br>
 //**********************************************************************************<br>
 //**********************************************************************************<br>
-
+<br>
 ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
+<br>
+The instruction manual and construction guidelines are available at:<br>
+    http://www.open-rate.com/Downloads/NixieClockV7InstructionManual.pdf<br>
+<br>
+There is a kit of parts or just the PCB is currently on sale. You can get it on EBay,<br>
+or for a discounted price ($45 full kit, $10 PCB) from me. The contact information is in<br>
+the instruction manual.<br>
+<br>
+Full Kit on EBay: http://www.ebay.com/itm/131505838940?ssPageName=STRK:MESOX:IT&_trksid=p3984.m1561.l2649<br>
+PCB only on EBay: http://www.ebay.com/itm/131519325267?ssPageName=STRK:MESOX:IT&_trksid=p3984.m1561.l2649<br>
 <br>
 <strong>Construction and prototyping:</strong><br>
 hvTest.ino: code for testing the HV generation<br>
@@ -27,5 +39,5 @@ buttonTest.ino: Code for testing button presses<br>
 <br>
 YouTube video of the clock in action:<br>
 <br>
-https://www.youtube.com/watch?v=Js-7MJpCtvI<br>
+    https://www.youtube.com/watch?v=Js-7MJpCtvI<br>
 <br>
