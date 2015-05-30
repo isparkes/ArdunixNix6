@@ -35,6 +35,9 @@ const int SENSOR_HIGH_VALUE = 700;               // Bright threshold value
 const int SENSOR_SMOOTH_READINGS_DEFAULT = 3;    // Speed at which the brighness adapts to changes
 const double SENSOR_RANGE = (double)(SENSOR_HIGH_VALUE - SENSOR_LOW_VALUE);
 
+// Define the digital value we expect when the button is *pressed* 
+const int BUTTON_ACTIVE = 1;                     // 1 = with pull down, 0 = with pull up
+
 //**********************************************************************************
 //**********************************************************************************
 //*                               Variables                                        *
@@ -47,7 +50,7 @@ const int anode1 = 10;
 const int hvDriverPin = 9;
 
 // Internal (inside the box) tick led 
-const int tickLed = 3; // PWM capable, but not using PWM right now
+const int tickLed = 5; // PWM capable
 
 // SN74141
 const int ledPin_0_a = 2;
@@ -59,11 +62,14 @@ const int ledPin_0_d = 8;
 const int sensorPin = A0;
 
 // LDR sense analogue input
-const int LDRPin = A1;
+const int LDRPin = A3;
+// const int LDRPin = A1;
 
 // button input
-const int inputPin1 = 5; // mins
-const int inputPin2 = 6; // hours
+//const int inputPin1 = 5; // mins
+//const int inputPin2 = 6; // hours
+const int inputPin1 = A1; // mins
+const int inputPin2 = A2; // hours
 
 //**********************************************************************************
 
@@ -97,7 +103,8 @@ int dimStep = 0;      // Dimming PWM counter, cycles from 1 to 10
 int dimFactor = 0;    // Current dimming factor, update once per loop
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
-int decodeDigit[16] = {0,1,2,3,4,5,6,7,8,9,10,10,10,10,10,10};
+const int decodeDigit[16] = {0,1,2,3,4,5,6,7,8,9,10,10,10,10,10,10};
+const int PWMDimFunction[10] = {0,2,10,20,30,40,50,80,120,255};
 
 // Time initial values, overwritten on startup if an RTC is there
 byte hours = 12;
@@ -210,7 +217,12 @@ void loop()
   checkButton2();
   
   long timeMs = millis() - lastCheckTimeMs;
-  digitalWrite(tickLed, timeMs % 2000 >= 1000);
+  if (timeMs % 2000 >= 1000) {
+    int tickLedPWMVal = PWMDimFunction[dimFactor];
+    analogWrite(tickLed, tickLedPWMVal);
+  } else {
+    analogWrite(tickLed, 0);
+  }
   
   // Update the time buffer when we are starting a new readout
   if (loopCounter ==  0) {
@@ -366,7 +378,7 @@ double checkHVVoltage() {
 // 3 lengths of button press: momentarily, 1S and 2S. 
 // ************************************************************
 void checkButton1() {
-  if (digitalRead(inputPin1) == 0) {
+  if (digitalRead(inputPin1) == BUTTON_ACTIVE) {
     button1WasReleased = false;
 
     // We need consecutive pressed counts to treat this is pressed    
@@ -497,7 +509,7 @@ boolean is1PressedRelease2S() {
 // 3 lengths of button press: momentarily, 1S and 2S. 
 // ************************************************************
 void checkButton2() {
-  if (digitalRead(inputPin2) == 0) {
+  if (digitalRead(inputPin2) == BUTTON_ACTIVE) {
     button2WasReleased = false;
 
     // We need consecutive pressed counts to treat this is pressed    
@@ -679,7 +691,7 @@ int getDimmingFromLDR() {
   sensorSmoothed += (sensorDiff/SENSOR_SMOOTH_READINGS_DEFAULT);
   
   // Normalise it in the range 1-10
-  double sensorSmoothedResult = ((sensorSmoothed - SENSOR_LOW_VALUE) / SENSOR_RANGE) * 10.0;  
+  double sensorSmoothedResult = ((sensorSmoothed - SENSOR_LOW_VALUE) / SENSOR_RANGE) * 9.0;  
   int returnValue = (int) (sensorSmoothedResult + 1);
   
   return returnValue;
