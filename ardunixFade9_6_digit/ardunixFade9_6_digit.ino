@@ -8,7 +8,8 @@
 //*  - Low hardware component count (as much as possible done in code)             *
 //*  - Single button operation with software debounce                              *
 //*  - Single 74141 for digit display (other versions use 2 or even 6!)            *
-//*  - Automatic dimming, using a Light Dependent Resistor (Needs finishing)       *
+//*  - Automatic dimming, using a Light Dependent Resistor                         *
+//*  - RGB back light management                                                   *
 //*  - Highly modular code                                                         *
 //*                                                                                *
 //*  isparkes@protonmail.ch                                                        *
