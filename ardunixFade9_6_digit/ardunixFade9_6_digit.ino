@@ -17,9 +17,7 @@
 //**********************************************************************************
 //**********************************************************************************
 #include <avr/io.h> 
-#include <avr/interrupt.h> 
 #include <EEPROM.h>
-
 #include <DS3231.h>
 #include <Wire.h>
 
@@ -33,19 +31,20 @@ const int EE_BLANK_LEAD_ZERO = 7;  // If we blank leading zero on hours
 const int EE_DIGIT_COUNT_HI = 8;   // The number of times we go round the main loop
 const int EE_DIGIT_COUNT_LO = 9;   // The number of times we go round the main loop
 const int EE_SCROLLBACK = 10;      // if we use scollback or not
-const int EE_HVGEN_HI = 11;        // The HV generator value
-const int EE_HVGEN_LO = 12;        // The HV generator value
+const int EE_PULSE_LO = 11;        // The pulse on width for the PWM mode
+const int EE_PULSE_HI = 12;        // The pulse on width for the PWM mode
 const int EE_SCROLL_STEPS = 13;    // The steps in a scrollback
-const int EE_BACKLIGHT_MODE= 14;   // free
+const int EE_BACKLIGHT_MODE= 14;   // The back light node
 const int EE_DIM_BRIGHT_LO = 15;   // Dimming bright value
 const int EE_DIM_BRIGHT_HI = 16;   // Dimming bright value
 const int EE_DIM_SMOOTH_SPEED = 17;// Dimming adaptation speed
-const int EE_RED_INTENSITY= 18;    // Red channel backlight max intensity
-const int EE_GRN_INTENSITY= 19;    // Green channel backlight max intensity
-const int EE_BLU_INTENSITY= 20;    // Blue channel backlight max intensity
+const int EE_RED_INTENSITY = 18;   // Red channel backlight max intensity
+const int EE_GRN_INTENSITY = 19;   // Green channel backlight max intensity
+const int EE_BLU_INTENSITY = 20;   // Blue channel backlight max intensity
+const int EE_HV_VOLTAGE = 21;      // The HV voltage we want to use
 
 // Software version shown in config menu
-const int softwareVersion = 0007;
+const int softwareVersion = 8;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
@@ -69,11 +68,21 @@ const int SENSOR_SMOOTH_READINGS_DEFAULT = 100;       // Speed at which the brig
 
 const int BLINK_COUNT_MAX = 25;                       // The number of impressions between blink state toggle
 
-// How hard we drive the HV Generator, too low burns the MOSFET, too high does not give the coil time to load 
-const int HVGEN_DEFAULT=200;
-const int HVGEN_MIN=100;
-const int HVGEN_MAX=400;
-const int HVGEN_TARGET_VOLTAGE=180;
+// The target voltage we want to achieve
+const int HVGEN_TARGET_VOLTAGE_DEFAULT=180;
+const int HVGEN_TARGET_VOLTAGE_MIN=150;
+const int HVGEN_TARGET_VOLTAGE_MAX=200;
+int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
+
+// The PWM parameters
+const int PWM_TOP_DEFAULT = 1000;
+const int PWM_TOP_MIN = 300;
+const int PWM_TOP_MAX = 10000;
+int pwmTop = PWM_TOP_DEFAULT;
+const int PWM_PULSE_DEFAULT = 200;
+const int PWM_PULSE_MIN = 50;
+const int PWM_PULSE_MAX = 500;
+int pulseWidth = PWM_PULSE_DEFAULT;
 
 // How quickly the scroll works
 const int SCROLL_STEPS_DEFAULT=4;
@@ -106,33 +115,51 @@ const byte COLOUR_CNL_MIN = 0;
 // Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
 const int MODE_MIN = 0;
 const int MODE_TIME = 0;
+
+// Time setting, need all six digits, so no flashing mode indicator
 const int MODE_MINS_SET = MODE_TIME + 1;
 const int MODE_HOURS_SET = MODE_MINS_SET + 1;
 const int MODE_DAYS_SET = MODE_HOURS_SET + 1;
 const int MODE_MONTHS_SET = MODE_DAYS_SET + 1;
 const int MODE_YEARS_SET = MODE_MONTHS_SET + 1;
-const int MODE_FADE_STEPS_UP = MODE_YEARS_SET + 1;                            // Mode "00"
-const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;                      // Mode "01"
-const int MODE_DISPLAY_HVGEN_UP = MODE_FADE_STEPS_DOWN + 1;                   // Mode "02"
-const int MODE_DISPLAY_HVGEN_DOWN = MODE_DISPLAY_HVGEN_UP + 1;                // Mode "03"
-const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_DISPLAY_HVGEN_DOWN + 1;         // Mode "04"
-const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "05"
 
-const int MODE_12_24 = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;                    // Mode "06" 0 = 24, 1 = 12
-const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "07" 1 = blanked
-const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "08" 1 = use scrollback
-const int MODE_DATE_FORMAT = MODE_SCROLLBACK + 1;                             // Mode "09"
-const int MODE_DAY_BLANKING = MODE_DATE_FORMAT + 1;                           // Mode "10"
+// Basic settings
+const int MODE_12_24 = MODE_YEARS_SET + 1;                                    // Mode "00" 0 = 24, 1 = 12
+const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "01" 1 = blanked
+const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "02" 1 = use scrollback
+const int MODE_DATE_FORMAT = MODE_SCROLLBACK + 1;                             // Mode "03"
+const int MODE_DAY_BLANKING = MODE_DATE_FORMAT + 1;                           // Mode "04"
 
-const int MODE_BACKLIGHT_MODE = MODE_DAY_BLANKING + 1;                        // Mode "11"
-const int MODE_RED_CNL = MODE_BACKLIGHT_MODE + 1;                             // Mode "12"
-const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "13"
-const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "14"
-const int MODE_TEMP = MODE_BLU_CNL + 1;                                       // Mode "15"
+// Display tricks
+const int MODE_FADE_STEPS_UP = MODE_DAY_BLANKING + 1;                         // Mode "05"
+const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;                      // Mode "06"
+const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_FADE_STEPS_DOWN + 1;            // Mode "07"
+const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "08"
 
-const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "16"
-const int MODE_TUBE_TEST = MODE_VERSION + 1;                                  // Mode "17" - not displayed
+// Back light
+const int MODE_BACKLIGHT_MODE = MODE_DAY_BLANKING + 1;                        // Mode "09"
+const int MODE_RED_CNL = MODE_BACKLIGHT_MODE + 1;                             // Mode "10"
+const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "11"
+const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "12"
+
+// HV generation
+const int MODE_TARGET_HV_UP = MODE_BLU_CNL + 1;                               // Mode "13"
+const int MODE_TARGET_HV_DOWN = MODE_TARGET_HV_UP + 1;                        // Mode "14"
+const int MODE_PULSE_UP = MODE_TARGET_HV_DOWN + 1;                            // Mode "15"
+const int MODE_PULSE_DOWN = MODE_PULSE_UP + 1;                                // Mode "16"
+
+// Temperature
+const int MODE_TEMP =  MODE_PULSE_DOWN + 1;                                   // Mode "17"
+
+// Software Version
+const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "18"
+
+// Tube test - all six digits, so no flashing mode indicator
+const int MODE_TUBE_TEST = MODE_VERSION + 1;
+
 const int MODE_MAX = MODE_TUBE_TEST + 1;
+
+// Pseudo mode
 const int MODE_DIGIT_BURN = 99;                                               // Digit burn mode - accesible by super long press
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
@@ -172,13 +199,6 @@ DS3231 Clock;
 //*                               Variables                                        *
 //**********************************************************************************
 //**********************************************************************************
-// The divider value determines the frequency of the DC-DC converter
-// The output voltage depends on the input voltage and the frequency:
-// For 5V input:
-// at a divider of 200, the frequency is 16MHz / 200 / 2 (final /2 because of toggle mode)
-// Ranges for this are around 800 - 100, with 400 (20KHz) giving about 180V
-// Drive up to 100 (80KHz) giving around 200V
-int divider = HVGEN_DEFAULT;
 
 // ***** Pin Defintions ****** Pin Defintions ****** Pin Defintions ******
 
@@ -365,29 +385,22 @@ void setup()
 
   // **************************** HV generator ****************************
 
-  // Enable timer 1 Compare Output channel A in reset mode: TCCR1A.COM1A1 = 1, TCCR1A.COM1A0 = 0
-  // forces the MOSFET into the off state, we cache these values in tccrOff and one, because we
-  // use them very frequently
-  TCCR1A = bit(COM1A1);
+  TCCR1A = 0;    // disable all PWM on Timer1 whilst we set it up
+  TCCR1B = 0;    // disable all PWM on Timer1 whilst we set it up
+  ICR1 = pwmTop; // Our starting point for the period	
 
-  // Get thecontrol register 1A with the HV generation on
+  // Configure timer 1 for Fast PWM mode via ICR1, with prescaling=1
+  TCCR1A = (1 << WGM11);
+  TCCR1B = (1 << WGM13) | (1<<WGM12) | (1 << CS10);
+
   tccrOff = TCCR1A;
-
-  // Enable timer 1 Compare Output channel A in toggle mode: TCCR1A.COM1A1 = 0, TCCR1A.COM1A0 = 1
-  TCCR1A = bit(COM1A0);
-
-  // Get thecontrol register 1A with the HV generation off
+  
+  TCCR1A |= (1 <<  COM1A1);  // enable PWM on port PD4 in non-inverted compare mode 2
+ 
   tccrOn = TCCR1A;
-
-  // Configure timer 1 for CTC mode: TCCR1B.WGM13 = 0, TCCR1B.WGM12 = 1, TCCR1A.WGM11 = 0, TCCR1A.WGM10 = 0
-  TCCR1B = bit(WGM12); 
-
-  // Set up prescaler to x1: TCCR1B.CS12 = 0, TCCR1B.CS11 = 0, TCCR1B.CS10 = 1
-  TCCR1B |= bit(CS10); 
-
-  // Set the divider to the value we have chosen
-  OCR1A   = divider;
-
+  
+  OCR1A = pulseWidth;  // Pulse width of the on time
+  
   /* enable global interrupts */
   sei();
 
@@ -420,7 +433,7 @@ void setup()
   
   // Pre-calculate the ADC threshold reading, this saves all
   // of the floating point business
-  rawHVADCThreshold = getRawHVADCThreshold(HVGEN_TARGET_VOLTAGE);
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
 }
 
 //**********************************************************************************
@@ -430,13 +443,16 @@ void setup()
 //**********************************************************************************
 void loop()     
 {
-  // Get the time
   getRTCTime();
 
+  checkHVVoltage();
+  
   // Check button, we evaluate below
   checkButton1();
 
   // ******* Preview the next display mode *******
+  // What is previewed here will get actioned when 
+  // the button is released
   if (is1Pressed2S()) {
     // Just jump back to the start
     nextMode = MODE_MIN;
@@ -450,6 +466,7 @@ void loop()
 
   // ******* Set the display mode *******
   if(is1PressedRelease8S()) {
+    // 8 Sec press toggles burn mode
     if (currentMode == MODE_DIGIT_BURN) {
       currentMode = MODE_MIN;
     } else {
@@ -460,7 +477,7 @@ void loop()
   } else if(is1PressedRelease2S()) {
     currentMode = MODE_MIN;
 
-    // Store the EEPROM
+    // Store the EEPROM if we exit the config mode
     saveEEPROMValues();
 
     // Preset the display
@@ -473,7 +490,7 @@ void loop()
     if (currentMode > MODE_MAX) {
       currentMode = MODE_MIN;
 
-      // Store the EEPROM
+      // Store the EEPROM if we exit the config mode
       saveEEPROMValues();
 
       // Preset the display
@@ -525,16 +542,6 @@ void loop()
 
     if (nextMode == MODE_FADE_STEPS_DOWN) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DISPLAY_HVGEN_UP) {
-      loadNumberArrayConfInt(divider,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DISPLAY_HVGEN_DOWN) {
-      loadNumberArrayConfInt(divider,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
 
@@ -590,6 +597,26 @@ void loop()
 
     if (nextMode == MODE_BLU_CNL) {
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (nextMode == MODE_TARGET_HV_UP) {
+      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (nextMode == MODE_TARGET_HV_DOWN) {
+      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (nextMode == MODE_PULSE_UP) {
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (nextMode == MODE_PULSE_DOWN) {
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
     
@@ -734,30 +761,6 @@ void loop()
       fadeStep = dispCount / fadeSteps;
     }
 
-    if (currentMode == MODE_DISPLAY_HVGEN_DOWN) {
-      if(is1PressedRelease()) {
-        divider-=10;
-        if (divider < HVGEN_MIN) {
-          divider = HVGEN_MAX;
-        }
-        OCR1A   = divider;
-      }
-      loadNumberArrayConfInt(divider,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_DISPLAY_HVGEN_UP) {
-      if(is1PressedRelease()) {
-        divider+=10;
-        if (divider > HVGEN_MAX) {
-          divider = HVGEN_MIN;
-        }
-        OCR1A   = divider;
-      }
-      loadNumberArrayConfInt(divider,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
     if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
       if(is1PressedRelease()) {
         scrollSteps--;
@@ -868,6 +871,62 @@ void loop()
         }
       }
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (currentMode == MODE_TARGET_HV_UP) {
+      if(is1PressedRelease()) {
+        hvTargetVoltage+=5;
+        if (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX) {
+          hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
+        }
+      }
+      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (currentMode == MODE_TARGET_HV_DOWN) {
+      if(is1PressedRelease()) {
+        hvTargetVoltage-=5;
+        if (hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) {
+          hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
+        }
+      }
+      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (currentMode == MODE_PULSE_UP) {
+      if(is1PressedRelease()) {
+        pulseWidth+=10;
+        if (pulseWidth > PWM_PULSE_MAX) {
+          pulseWidth = PWM_PULSE_MIN;
+        }
+      }
+      OCR1A = pulseWidth;
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (currentMode == MODE_PULSE_DOWN) {
+      if(is1PressedRelease()) {
+        pulseWidth-=10;
+        if (pulseWidth < PWM_PULSE_MIN) {
+          pulseWidth = PWM_PULSE_MAX;
+        }
+      }
+      OCR1A = pulseWidth;
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (nextMode == MODE_PULSE_UP) {
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      displayConfig();
+    }
+    
+    if (nextMode == MODE_PULSE_DOWN) {
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
       displayConfig();
     }
     
@@ -1364,8 +1423,7 @@ void outputDisplay()
 // Set a digit with the given value and turn the HVGen on
 // ************************************************************
 void digitOn(int digit, int value) {
-  // Turn on the HV only if we need it
-  checkHVVoltage();
+  TCCR1A = tccrOn;
   SetSN74141Chip(value);
   digitalWrite(anodePins[digit], HIGH);
 }
@@ -1375,7 +1433,7 @@ void digitOn(int digit, int value) {
 // ************************************************************
 void digitOff(int digit) {
   TCCR1A = tccrOff;
-  digitalWrite(anodePins[digit], LOW);  
+  digitalWrite(anodePins[digit], LOW);
 }
 
 // ************************************************************
@@ -1851,8 +1909,6 @@ void saveEEPROMValues() {
   EEPROM.write(EE_DIM_DARK_HI, dimDark / 256);
   EEPROM.write(EE_BLANK_LEAD_ZERO,blankLeading);
   EEPROM.write(EE_SCROLLBACK,scrollback);
-  EEPROM.write(EE_HVGEN_HI,divider / 256);
-  EEPROM.write(EE_HVGEN_LO,divider % 256);
   EEPROM.write(EE_SCROLL_STEPS,scrollSteps);
   EEPROM.write(EE_DIM_BRIGHT_LO, dimBright % 256);
   EEPROM.write(EE_DIM_BRIGHT_HI, dimBright / 256);
@@ -1861,6 +1917,9 @@ void saveEEPROMValues() {
   EEPROM.write(EE_GRN_INTENSITY,grnCnl);
   EEPROM.write(EE_BLU_INTENSITY,bluCnl);
   EEPROM.write(EE_BACKLIGHT_MODE,backlightMode);
+  EEPROM.write(EE_HV_VOLTAGE,hvTargetVoltage);
+  EEPROM.write(EE_PULSE_LO, pulseWidth % 256);
+  EEPROM.write(EE_PULSE_HI, pulseWidth / 256);  
 }
 
 // ************************************************************
@@ -1891,11 +1950,6 @@ void readEEPROMValues() {
 
   blankLeading = EEPROM.read(EE_BLANK_LEAD_ZERO);
   scrollback = EEPROM.read(EE_SCROLLBACK);
-
-  divider = EEPROM.read(EE_HVGEN_HI)*256 + EEPROM.read(EE_HVGEN_LO);
-  if ((divider < HVGEN_MIN) || (divider > HVGEN_MAX)) {
-    divider = HVGEN_DEFAULT;
-  }
 
   scrollSteps = EEPROM.read(EE_SCROLL_STEPS);
   if ((scrollSteps < SCROLL_STEPS_MIN) || (scrollSteps > SCROLL_STEPS_MAX)) {
@@ -1941,6 +1995,16 @@ void readEEPROMValues() {
   if ((bluCnl < COLOUR_CNL_MIN) || (bluCnl > COLOUR_CNL_MAX)) {
     bluCnl = COLOUR_CNL_DEFAULT;
   }
+  
+  hvTargetVoltage = EEPROM.read(EE_HV_VOLTAGE);
+  if ((hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) || (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX)) {
+    hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
+  }
+  
+  pulseWidth = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
+  if ((pulseWidth < PWM_PULSE_MIN) || (pulseWidth > PWM_PULSE_MAX)) {
+    pulseWidth = PWM_PULSE_DEFAULT;
+  }
 }
 
 // ************************************************************
@@ -1954,7 +2018,6 @@ void factoryReset() {
   dateFormat = DATE_FORMAT_DEFAULT;
   dayBlanking = DAY_BLANKING_DEFAULT;
   dimDark = SENSOR_LOW_DEFAULT;
-  divider = HVGEN_DEFAULT;
   scrollSteps = SCROLL_STEPS_DEFAULT;
   dimBright = SENSOR_HIGH_DEFAULT;
   sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
@@ -1964,6 +2027,8 @@ void factoryReset() {
   redCnl = COLOUR_CNL_DEFAULT;
   grnCnl = COLOUR_CNL_DEFAULT;
   bluCnl = COLOUR_CNL_DEFAULT;
+  hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
+  pulseWidth = PWM_PULSE_DEFAULT;
   
   saveEEPROMValues();
 }
@@ -1972,14 +2037,24 @@ void factoryReset() {
 // Adjust the HV gen to achieve the voltage we require
 // Pre-calculate the threshold value of the ADC read and make
 // a simple comparison against this for speed
+// We control only the PWM "off" time, because the "on" time
+// affects the current consumption and MOSFET heating 
 // ************************************************************
 void checkHVVoltage() {
   int rawSensorVal = analogRead(sensorPin);
   if (rawSensorVal > rawHVADCThreshold) {
-    TCCR1A = tccrOff;
+    pwmTop++;
+    if (pwmTop > PWM_TOP_MAX) {
+      pwmTop = PWM_TOP_MAX;
+    }
+    ICR1 = pwmTop; // Our starting point for the period	
   }
   else {
-    TCCR1A = tccrOn;
+    pwmTop--;
+    if (pwmTop < PWM_TOP_MIN) {
+      pwmTop = PWM_TOP_MIN;
+    }
+    ICR1 = pwmTop; // Our starting point for the period	
   }
 }
 
@@ -1992,7 +2067,6 @@ int getRawHVADCThreshold(double targetVoltage) {
   int rawReading = (int) externalVoltage;
   return rawReading;
 }
-
 
 // ******************************************************************
 // Check the ambient light through the LDR (Light Dependent Resistor)
@@ -2027,6 +2101,7 @@ int getDimmingFromLDR() {
 
 // ******************************************************************
 // Work out the day of week.
+// Used in day blanking 
 // 1 <= m <= 12,  y > 1752 (in the U.K.)
 // ******************************************************************
 int dayofweek(int y, int m, int d)
