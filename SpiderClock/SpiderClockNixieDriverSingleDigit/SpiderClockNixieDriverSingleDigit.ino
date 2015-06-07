@@ -18,9 +18,7 @@
 #include <Wire.h>
 
 // How hard we drive the HV Generator, too low burns the MOSFET, too high does not give the coil time to load 
-const int HVGEN_DEFAULT=150;
-const int HVGEN_MIN=100;
-const int HVGEN_MAX=400;
+const int HVGEN_DEFAULT=200;
 
 // The divider value determines the frequency of the DC-DC converter
 // The output voltage depends on the input voltage and the frequency:
@@ -362,7 +360,7 @@ double checkHVVoltage() {
   double sensorVoltage = rawSensorVal * 5.0  / 1024.0;
   double externalVoltage = sensorVoltage * 394.7 / 4.7;
 
-  if (externalVoltage > 180) {
+  if (externalVoltage > 160) {
     TCCR1A = tccrOff;
   } 
   else {
