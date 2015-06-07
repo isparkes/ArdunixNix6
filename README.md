@@ -23,11 +23,11 @@ Nixie Clock based on Arduino<br>
 ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
 <br>
 The instruction manual and construction guidelines are available at:<br>
-    http://www.open-rate.com/Downloads/NixieClockV7InstructionManual.pdf<br>
+    http://www.open-rate.com/Downloads/NixieClockV8InstructionManual.pdf<br>
 <br>
 There is a kit of parts or just the PCB is currently on sale. You can get it on EBay,<br>
 or for a discounted price ($45 full kit, $10 PCB) from me. The contact information is in<br>
-the instruction manual.<br>
+the instruction manual or in the header above.<br>
 <br>
 Full Kit on EBay: http://www.ebay.com/itm/131505838940?ssPageName=STRK:MESOX:IT&_trksid=p3984.m1561.l2649<br>
 PCB only on EBay: http://www.ebay.com/itm/131519325267?ssPageName=STRK:MESOX:IT&_trksid=p3984.m1561.l2649<br>
