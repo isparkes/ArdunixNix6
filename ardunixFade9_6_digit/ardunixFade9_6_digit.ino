@@ -137,7 +137,7 @@ const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_FADE_STEPS_DOWN + 1;            //
 const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "08"
 
 // Back light
-const int MODE_BACKLIGHT_MODE = MODE_DAY_BLANKING + 1;                        // Mode "09"
+const int MODE_BACKLIGHT_MODE = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;           // Mode "09"
 const int MODE_RED_CNL = MODE_BACKLIGHT_MODE + 1;                             // Mode "10"
 const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "11"
 const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "12"
@@ -586,16 +586,31 @@ void loop()
     }
     
     if (nextMode == MODE_RED_CNL) {
+      if (backlightMode == BACKLIGHT_CYCLE) {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
       loadNumberArrayConfInt(redCnl,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_GRN_CNL) {
+      if (backlightMode == BACKLIGHT_CYCLE) {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
       loadNumberArrayConfInt(grnCnl,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_BLU_CNL) {
+      if (backlightMode == BACKLIGHT_CYCLE) {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
       displayConfig();
     }
@@ -842,6 +857,12 @@ void loop()
     }
 
     if (currentMode == MODE_RED_CNL) {
+      if (backlightMode == BACKLIGHT_CYCLE) {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
+      
       if(is1PressedRelease()) {
         redCnl++;
         if (redCnl > COLOUR_CNL_MAX) {
@@ -853,6 +874,12 @@ void loop()
     }
 
     if (currentMode == MODE_GRN_CNL) {
+      if (backlightMode == BACKLIGHT_CYCLE) {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
+      
       if(is1PressedRelease()) {
         grnCnl++;
         if (grnCnl > COLOUR_CNL_MAX) {
@@ -864,6 +891,12 @@ void loop()
     }
 
     if (currentMode == MODE_BLU_CNL) {
+      if (backlightMode == BACKLIGHT_CYCLE) {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
+      
       if(is1PressedRelease()) {
         bluCnl++;
         if (bluCnl > COLOUR_CNL_MAX) {
