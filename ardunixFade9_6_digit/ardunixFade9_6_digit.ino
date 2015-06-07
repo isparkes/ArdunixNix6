@@ -535,98 +535,98 @@ void loop()
       highlight4and5();
     }
 
-    if (nextMode == MODE_FADE_STEPS_UP) {
-      loadNumberArrayConfInt(fadeSteps,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_FADE_STEPS_DOWN) {
-      loadNumberArrayConfInt(fadeSteps,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
-      loadNumberArrayConfInt(scrollSteps,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
-      loadNumberArrayConfInt(scrollSteps,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
     if (nextMode == MODE_12_24) {
-      loadNumberArrayConfBool(mode12or24,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfBool(mode12or24,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_LEAD_BLANK) {
-      loadNumberArrayConfBool(blankLeading,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfBool(blankLeading,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_SCROLLBACK) {
-      loadNumberArrayConfBool(scrollback,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfBool(scrollback,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_DATE_FORMAT) {
-      loadNumberArrayConfInt(dateFormat,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(dateFormat,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_DAY_BLANKING) {
-      loadNumberArrayConfInt(dayBlanking,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(dayBlanking,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_FADE_STEPS_UP) {
+      loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_FADE_STEPS_DOWN) {
+      loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
+      loadNumberArrayConfInt(scrollSteps,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
+      loadNumberArrayConfInt(scrollSteps,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_BACKLIGHT_MODE) {
-      loadNumberArrayConfInt(backlightMode,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(backlightMode,nextMode-MODE_12_24);
       displayConfig();
     }
     
     if (nextMode == MODE_RED_CNL) {
-      loadNumberArrayConfInt(redCnl,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(redCnl,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_GRN_CNL) {
-      loadNumberArrayConfInt(grnCnl,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(grnCnl,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_BLU_CNL) {
-      loadNumberArrayConfInt(bluCnl,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
       displayConfig();
     }
     
     if (nextMode == MODE_TARGET_HV_UP) {
-      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
     
     if (nextMode == MODE_TARGET_HV_DOWN) {
-      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
     
     if (nextMode == MODE_PULSE_UP) {
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
       displayConfig();
     }
     
     if (nextMode == MODE_PULSE_DOWN) {
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
       displayConfig();
     }
     
     if (nextMode == MODE_TEMP) {
-      loadNumberArrayTemp(nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayTemp(nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_VERSION) {
-      loadNumberArrayConfInt(softwareVersion,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(softwareVersion,nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -737,6 +737,53 @@ void loop()
       highlight4and5();
     }
 
+    if (currentMode == MODE_12_24) {
+      if(is1PressedRelease()) {
+        mode12or24 = !mode12or24;
+        setRTC();
+      }
+      loadNumberArrayConfBool(mode12or24,currentMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (currentMode == MODE_LEAD_BLANK) {
+      if(is1PressedRelease()) {
+        blankLeading = !blankLeading;
+      }
+      loadNumberArrayConfBool(blankLeading,currentMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (currentMode == MODE_SCROLLBACK) {
+      if(is1PressedRelease()) {
+        scrollback = !scrollback;
+      }
+      loadNumberArrayConfBool(scrollback,currentMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (currentMode == MODE_DATE_FORMAT) {
+      if(is1PressedRelease()) {
+        dateFormat++;
+        if (dateFormat > DATE_FORMAT_MAX) {
+          dateFormat = DATE_FORMAT_MIN;
+        }
+      }
+      loadNumberArrayConfInt(dateFormat,currentMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (currentMode == MODE_DAY_BLANKING) {
+      if(is1PressedRelease()) {
+        dayBlanking++;
+        if (dayBlanking > DAY_BLANKING_MAX) {
+          dayBlanking = DAY_BLANKING_MIN;
+        }
+      }
+      loadNumberArrayConfInt(dayBlanking,currentMode-MODE_12_24);
+      displayConfig();
+    }
+
     if (currentMode == MODE_FADE_STEPS_UP) {
       if(is1PressedRelease()) {
         fadeSteps++;
@@ -744,7 +791,7 @@ void loop()
           fadeSteps = FADE_STEPS_MIN;
         }
       }
-      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
       displayConfig();
       fadeStep = dispCount / fadeSteps;
     }
@@ -756,7 +803,7 @@ void loop()
           fadeSteps = FADE_STEPS_MAX;
         }
       }
-      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
       displayConfig();
       fadeStep = dispCount / fadeSteps;
     }
@@ -768,7 +815,7 @@ void loop()
           scrollSteps = SCROLL_STEPS_MAX;
         }
       }
-      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -779,54 +826,7 @@ void loop()
           scrollSteps = SCROLL_STEPS_MIN;
         }
       }
-      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_12_24) {
-      if(is1PressedRelease()) {
-        mode12or24 = !mode12or24;
-        setRTC();
-      }
-      loadNumberArrayConfBool(mode12or24,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_LEAD_BLANK) {
-      if(is1PressedRelease()) {
-        blankLeading = !blankLeading;
-      }
-      loadNumberArrayConfBool(blankLeading,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_SCROLLBACK) {
-      if(is1PressedRelease()) {
-        scrollback = !scrollback;
-      }
-      loadNumberArrayConfBool(scrollback,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_DATE_FORMAT) {
-      if(is1PressedRelease()) {
-        dateFormat++;
-        if (dateFormat > DATE_FORMAT_MAX) {
-          dateFormat = DATE_FORMAT_MIN;
-        }
-      }
-      loadNumberArrayConfInt(dateFormat,currentMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_DAY_BLANKING) {
-      if(is1PressedRelease()) {
-        dayBlanking++;
-        if (dayBlanking > DAY_BLANKING_MAX) {
-          dayBlanking = DAY_BLANKING_MIN;
-        }
-      }
-      loadNumberArrayConfInt(dayBlanking,currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -837,7 +837,7 @@ void loop()
           backlightMode = BACKLIGHT_MIN;
         }
       }
-      loadNumberArrayConfInt(backlightMode,currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(backlightMode,currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -848,7 +848,7 @@ void loop()
           redCnl = COLOUR_CNL_MIN;
         }
       }
-      loadNumberArrayConfInt(redCnl,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(redCnl,currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -859,7 +859,7 @@ void loop()
           grnCnl = COLOUR_CNL_MIN;
         }
       }
-      loadNumberArrayConfInt(grnCnl,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(grnCnl,currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -870,7 +870,7 @@ void loop()
           bluCnl = COLOUR_CNL_MIN;
         }
       }
-      loadNumberArrayConfInt(bluCnl,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(bluCnl,currentMode-MODE_12_24);
       displayConfig();
     }
     
@@ -881,7 +881,7 @@ void loop()
           hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
         }
       }
-      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
       displayConfig();
     }
     
@@ -892,7 +892,7 @@ void loop()
           hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
         }
       }
-      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
       displayConfig();
     }
     
@@ -904,7 +904,7 @@ void loop()
         }
       }
       OCR1A = pulseWidth;
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
       displayConfig();
     }
     
@@ -916,28 +916,18 @@ void loop()
         }
       }
       OCR1A = pulseWidth;
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-    
-    if (nextMode == MODE_PULSE_UP) {
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
-      displayConfig();
-    }
-    
-    if (nextMode == MODE_PULSE_DOWN) {
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
       displayConfig();
     }
     
     if (currentMode == MODE_TEMP) {
-      loadNumberArrayTemp(currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayTemp(currentMode-MODE_12_24);
       displayConfig();
     }
 
     // We are setting calibration
     if (currentMode == MODE_VERSION) {
-      loadNumberArrayConfInt(softwareVersion,currentMode-MODE_FADE_STEPS_UP);
+      loadNumberArrayConfInt(softwareVersion,currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -2042,20 +2032,9 @@ void factoryReset() {
 // ************************************************************
 void checkHVVoltage() {
   int rawSensorVal = analogRead(sensorPin);
-  if (rawSensorVal > rawHVADCThreshold) {
-    pwmTop++;
-    if (pwmTop > PWM_TOP_MAX) {
-      pwmTop = PWM_TOP_MAX;
-    }
-    ICR1 = pwmTop; // Our starting point for the period	
-  }
-  else {
-    pwmTop--;
-    if (pwmTop < PWM_TOP_MIN) {
-      pwmTop = PWM_TOP_MIN;
-    }
-    ICR1 = pwmTop; // Our starting point for the period	
-  }
+
+  pwmTop=(pwmTop+rawSensorVal)/2;
+  ICR1 = pwmTop; // Our starting point for the period	
 }
 
 // ************************************************************
