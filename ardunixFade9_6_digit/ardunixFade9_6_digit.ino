@@ -380,6 +380,9 @@ void setup()
   // Set the driver pin to putput
   pinMode(hvDriverPin, OUTPUT);
 
+  // Read EEPROM values
+  readEEPROMValues();
+
   /* disable global interrupts while we set up them up */
   cli();
 
@@ -403,9 +406,6 @@ void setup()
   
   /* enable global interrupts */
   sei();
-
-  // Read EEPROM values
-  readEEPROMValues();
 
   // Start the RTC communication
   Wire.begin();
@@ -443,8 +443,10 @@ void setup()
 //**********************************************************************************
 void loop()     
 {
+  // get the time 
   getRTCTime();
 
+  // Regulate the voltage
   checkHVVoltage();
   
   // Check button, we evaluate below
@@ -2067,7 +2069,13 @@ void checkHVVoltage() {
   int rawSensorVal = analogRead(sensorPin);
 
   pwmTop=(pwmTop+rawSensorVal)/2;
-  ICR1 = pwmTop; // Our starting point for the period	
+  
+  // check that we have not got a silly reading: On time cannot be more than 50% of TOP time 
+  if (pulseWidth > (pwmTop-100)) {
+    pwmTop = pulseWidth + 100;
+  }
+  
+  ICR1 = pwmTop; // Our starting point for the period
 }
 
 // ************************************************************
