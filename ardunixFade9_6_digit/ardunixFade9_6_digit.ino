@@ -403,6 +403,10 @@ void setup()
   tccrOn = TCCR1A;
   
   OCR1A = pulseWidth;  // Pulse width of the on time
+
+  // Set up timer 2 like timer 0 (for RGB leds)
+  TCCR2A = (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
+  TCCR2B = (1 << CS22);
   
   /* enable global interrupts */
   sei();
