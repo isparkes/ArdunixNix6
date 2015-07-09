@@ -202,42 +202,42 @@ DS3231 Clock;
 
 // ***** Pin Defintions ****** Pin Defintions ****** Pin Defintions ******
 
-// SN74141
-int ledPin_0_a = 12;
-int ledPin_0_b = 10;
-int ledPin_0_c = 8;
-int ledPin_0_d = 11;
+// SN74141 
+int ledPin_0_a = 13;  // package pin 19
+int ledPin_0_b = 10;  // package pin 16
+int ledPin_0_c = 8;   // package pin 14
+int ledPin_0_d = 12;  // package pin 18 
 
 // anode pins
-int ledPin_a_6 = 0;  // low  - Secs  units
-int ledPin_a_5 = 1;  //      - Secs  tens
-int ledPin_a_4 = 2;  //      - Mins  units
-int ledPin_a_3 = 4;  //      - Mins  tens
-int ledPin_a_2 = A2; //      - Hours units
-int ledPin_a_1 = A3; // high - Hours tens 
+int ledPin_a_6 = 0;  // low  - Secs  units // package pin 2
+int ledPin_a_5 = 1;  //      - Secs  tens  // package pin 3
+int ledPin_a_4 = 2;  //      - Mins  units // package pin 4
+int ledPin_a_3 = 4;  //      - Mins  tens  // package pin 6
+int ledPin_a_2 = A2; //      - Hours units // package pin 25
+int ledPin_a_1 = A3; // high - Hours tens  // package pin 26
 
 // button input
-int inputPin1 = 7;
-
-// Used for special mappings of the 74141 -> digit (wiring aid)
-// allows the board wiring to be much simpler<
-int decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+int inputPin1 = 7;   // package pin 13
 
 // PWM pin used to drive the DC-DC converter
-int hvDriverPin = 9;
+int hvDriverPin = 9; // package pin 15
 
-// Internal (inside the box) tick led 
-int tickLed = 13;
+// Tick led - PWM capable 
+int tickLed = 11;    // package pin 17
 
 // PWM capable output for backlight
-int RLed = 6;
-int GLed = 5;
-int BLed = 3;
+int RLed = 6;        // package pin 12
+int GLed = 5;        // package pin 11
+int BLed = 3;        // package pin 5
 
 int sensorPin = A0; // Analog input pin for HV sense: HV divided through 390k and 4k7 divider, using 5V reference
 int LDRPin = A1;    // Analog input for Light dependent resistor. 
 
 //**********************************************************************************
+
+// Used for special mappings of the 74141 -> digit (wiring aid)
+// allows the board wiring to be much simpler<
+int decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
 
 // Driver pins for the anodes
 int anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
@@ -282,7 +282,7 @@ int acpTick = 0;          // The number of counts before we scroll
 int currentMode = MODE_TIME;   // Initial cold start mode 
 int nextMode = currentMode; 
 
-// ************************ Night time dimming ************************
+// ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
 int dimBright = SENSOR_HIGH_DEFAULT;
 double sensorSmoothed = 0;
@@ -301,7 +301,6 @@ boolean mode12or24 = false;
 
 // State variables for detecting changes
 byte lastSec;
-//byte intCnt = 0;
 
 int dateFormat = DATE_FORMAT_DEFAULT;
 int dayBlanking = DAY_BLANKING_DEFAULT;
@@ -1040,7 +1039,7 @@ void loop()
 // ************************************************************
 void setLeds()
 {
-  // tick led: Only update it on a second change (not every time round the loop)
+  // Pulse PWM generation - Only update it on a second change (not every time round the loop)
   if (secs != lastSec) {
     lastSec = secs;
 
@@ -1050,12 +1049,28 @@ void setLeds()
     if (upOrDown) {
       ledPWMVal = 0;
     }
-
-    // Do the tick led, on 1S, off 1S
-    digitalWrite(tickLed,upOrDown);
   }
 
-  // PWM led output
+  // calculate the PWM value
+  if (upOrDown) {
+    ledPWMVal+=2;
+  } else {
+    ledPWMVal-=2;
+  }
+
+  // Stop it underflowing: This would cause a short, bright flash
+  // Which interrupts the flow of zen
+  if (ledPWMVal < 0) {
+    ledPWMVal = 0;
+  }
+  if (ledPWMVal > 255) {
+    ledPWMVal = 255;
+  }
+  
+  // Tick led output
+  analogWrite(tickLed,ledPWMVal);
+  
+  // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
       
@@ -1065,21 +1080,6 @@ void setLeds()
         analogWrite(BLed,bluCnl*16);
         break;
       case BACKLIGHT_PULSE:
-        if (upOrDown) {
-          ledPWMVal+=2;
-        } else {
-          ledPWMVal-=2;
-        }
-
-        // Stop it underflowing: This would cause a short, bright flash
-        // Which interrupts the flow of zen
-        if (ledPWMVal < 0) {
-         ledPWMVal = 0;
-        }
-        if (ledPWMVal > 255) {
-          ledPWMVal = 255;
-        }
-      
         analogWrite(RLed,ledPWMVal*redCnl/16);
         analogWrite(GLed,ledPWMVal*grnCnl/16);
         analogWrite(BLed,ledPWMVal*bluCnl/16);
