@@ -29,8 +29,8 @@ There is a kit of parts or just the PCB is currently on sale. You can get it on 
 or for a discounted price ($45 full kit, $10 PCB) from me. The contact information is in<br>
 the instruction manual or in the header above.<br>
 <br>
-Full Kit on EBay: http://www.ebay.com/itm/6-Digit-Nixie-Clock-Kit-Easy-Build-No-Tubes-Open-Source-Arduino-/131526796106?pt=LH_DefaultDomain_0&hash=item1e9f9ba34a<br>
-PCB only on EBay: http://www.ebay.com/itm/131519325267?ssPageName=STRK:MESOX:IT&_trksid=p3984.m1561.l2649<br>
+Full Kit on EBay ($49): http://www.ebay.com/itm/131564434344<br>
+PCB only on EBay ($10): http://www.ebay.com/itm/131560655665<br>
 <br>
 <strong>Construction and prototyping:</strong><br>
 hvTest.ino: code for testing the HV generation<br>
