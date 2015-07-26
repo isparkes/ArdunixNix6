@@ -26,8 +26,7 @@ The instruction manual and construction guidelines are available at:<br>
     http://www.open-rate.com/Downloads/NixieClockV8InstructionManual.pdf<br>
 <br>
 There is a kit of parts or just the PCB is currently on sale. You can get it on EBay,<br>
-or for a discounted price ($45 full kit, $10 PCB) from me. The contact information is in<br>
-the instruction manual or in the header above.<br>
+or for a discounted price ($39 full kit, $10 PCB) from me at this address: isparkes@protonmail.ch<br>
 <br>
 Full Kit on EBay ($49): http://www.ebay.com/itm/131564434344<br>
 PCB only on EBay ($10): http://www.ebay.com/itm/131560655665<br>
