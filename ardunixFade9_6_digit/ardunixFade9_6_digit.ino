@@ -44,7 +44,7 @@ const int EE_BLU_INTENSITY = 20;   // Blue channel backlight max intensity
 const int EE_HV_VOLTAGE = 21;      // The HV voltage we want to use
 
 // Software version shown in config menu
-const int softwareVersion = 8;
+const int softwareVersion = 28;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
