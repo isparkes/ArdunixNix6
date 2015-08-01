@@ -44,7 +44,7 @@ const int EE_BLU_INTENSITY = 20;   // Blue channel backlight max intensity
 const int EE_HV_VOLTAGE = 21;      // The HV voltage we want to use
 
 // Software version shown in config menu
-const int softwareVersion = 28;
+const int softwareVersion = 29;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
@@ -79,7 +79,7 @@ const int PWM_TOP_DEFAULT = 1000;
 const int PWM_TOP_MIN = 300;
 const int PWM_TOP_MAX = 10000;
 int pwmTop = PWM_TOP_DEFAULT;
-const int PWM_PULSE_DEFAULT = 200;
+const int PWM_PULSE_DEFAULT = 100;
 const int PWM_PULSE_MIN = 50;
 const int PWM_PULSE_MAX = 500;
 int pulseWidth = PWM_PULSE_DEFAULT;
@@ -159,8 +159,8 @@ const int MODE_TUBE_TEST = MODE_VERSION + 1;
 
 const int MODE_MAX = MODE_TUBE_TEST + 1;
 
-// Pseudo mode
-const int MODE_DIGIT_BURN = 99;                                               // Digit burn mode - accesible by super long press
+// Pseudo mode - burn the tubes and nothing else
+const int MODE_DIGIT_BURN = 99;                                              // Digit burn mode - accesible by super long press
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
 const int TEMP_MODE_MIN  = 0;
@@ -320,6 +320,8 @@ int backlightMode = BACKLIGHT_DEFAULT;
 int redCnl = COLOUR_CNL_DEFAULT;
 int grnCnl = COLOUR_CNL_DEFAULT;
 int bluCnl = COLOUR_CNL_DEFAULT;
+int cycleCount = 0;
+const int CYCLE_COUNT_MAX = 10;
 byte ledCycleCount[3] = {0,0,0};
 double ledCycleValue[3] = {0,0,0};
 double ledCycleIncrement[3] = {0,0,0};
@@ -449,9 +451,6 @@ void loop()
   // get the time 
   getRTCTime();
 
-  // Regulate the voltage
-  checkHVVoltage();
-  
   // Check button, we evaluate below
   checkButton1();
 
@@ -527,17 +526,17 @@ void loop()
 
     if (nextMode == MODE_DAYS_SET) {
       loadNumberArrayDate();
-      highlight0and1();
+      highlightDaysDateFormat();
     }
 
     if (nextMode == MODE_MONTHS_SET) {
       loadNumberArrayDate();
-      highlight2and3();
+      highlightMonthsDateFormat();
     }
 
     if (nextMode == MODE_YEARS_SET) {
       loadNumberArrayDate();
-      highlight4and5();
+      highlightYearsDateFormat();
     }
 
     if (nextMode == MODE_12_24) {
@@ -736,7 +735,7 @@ void loop()
         setRTC();
       }
       loadNumberArrayDate();
-      highlight0and1();
+      highlightDaysDateFormat();
     }
 
     if (currentMode == MODE_MONTHS_SET) {
@@ -745,7 +744,7 @@ void loop()
         setRTC();      
       }
       loadNumberArrayDate();
-      highlight2and3();
+      highlightMonthsDateFormat();
     }
 
     if (currentMode == MODE_YEARS_SET) {
@@ -754,7 +753,7 @@ void loop()
         setRTC();      
       }
       loadNumberArrayDate();
-      highlight4and5();
+      highlightYearsDateFormat();
     }
 
     if (currentMode == MODE_12_24) {
@@ -1025,6 +1024,9 @@ void loop()
     digitOn(digitBurnDigit,digitBurnValue);
   }
 
+  // Regulate the voltage
+  checkHVVoltage();
+  
   // Set leds
   setLeds();
 }
@@ -1073,7 +1075,6 @@ void setLeds()
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
-      
       case BACKLIGHT_FIXED:
         analogWrite(RLed,redCnl*16);
         analogWrite(GLed,grnCnl*16);
@@ -1086,9 +1087,9 @@ void setLeds()
         break;
       case BACKLIGHT_CYCLE:
         // slow everything down
-        ledPWMVal++;
-        if (ledPWMVal > 10) {
-          ledPWMVal = 0;
+        cycleCount++;
+        if (cycleCount > CYCLE_COUNT_MAX) {
+          cycleCount = 0;
         
           for (int i = 0 ; i < 3 ; i++) {
             if (ledCycleCount[i] <= 0) {
@@ -1116,6 +1117,7 @@ void setLeds()
         }
     }
   } else {
+    // Settings modes
     ledBlinkCtr++;
     if (ledBlinkCtr > 40) {
       ledBlinkCtr = 0;
@@ -1672,6 +1674,57 @@ void allBright() {
 }
 
 // ************************************************************
+// highlight years taking into account the date format
+// ************************************************************
+void highlightYearsDateFormat() {
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight0and1();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight4and5();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight4and5();
+      break;
+  }
+}
+
+// ************************************************************
+// highlight years taking into account the date format
+// ************************************************************
+void highlightMonthsDateFormat() {
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight2and3();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight0and1();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight2and3();
+      break;
+  }
+}
+
+// ************************************************************
+// highlight days taking into account the date format
+// ************************************************************
+void highlightDaysDateFormat() {
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight4and5();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight2and3();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight0and1();
+      break;
+  }
+}
+
+// ************************************************************
 // Display preset, highlight digits 0 and 1
 // ************************************************************
 void highlight0and1() {
@@ -2070,13 +2123,27 @@ void factoryReset() {
 // affects the current consumption and MOSFET heating 
 // ************************************************************
 void checkHVVoltage() {
-  int rawSensorVal = analogRead(sensorPin);
-
-  pwmTop=(pwmTop+rawSensorVal)/2;
+  // No point in calculating the voltage if we are blanked
+  if (blanked) {
+    return;
+  }
   
-  // check that we have not got a silly reading: On time cannot be more than 50% of TOP time 
-  if (pulseWidth > (pwmTop-100)) {
-    pwmTop = pulseWidth + 100;
+  int rawSensorVal = analogRead(sensorPin);
+  
+  // check the read voltage
+  if (rawSensorVal > rawHVADCThreshold) {
+    pwmTop += 10;
+    
+    if (pwmTop >= PWM_TOP_MAX) {
+      pwmTop = PWM_TOP_MAX;
+    }
+  } else {
+    pwmTop -= 10;
+    
+    // check that we have not got a silly reading: On time cannot be more than 50% of TOP time 
+    if (pulseWidth > pwmTop) {
+      pwmTop = pulseWidth + pwmTop;
+    }
   }
   
   ICR1 = pwmTop; // Our starting point for the period
