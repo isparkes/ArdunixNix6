@@ -79,7 +79,7 @@ const int PWM_TOP_DEFAULT = 1000;
 const int PWM_TOP_MIN = 300;
 const int PWM_TOP_MAX = 10000;
 int pwmTop = PWM_TOP_DEFAULT;
-const int PWM_PULSE_DEFAULT = 100;
+const int PWM_PULSE_DEFAULT = 150;
 const int PWM_PULSE_MIN = 50;
 const int PWM_PULSE_MAX = 500;
 int pulseWidth = PWM_PULSE_DEFAULT;
@@ -919,6 +919,7 @@ void loop()
         }
       }
       loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
+      rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
       displayConfig();
     }
     
@@ -930,6 +931,7 @@ void loop()
         }
       }
       loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
+      rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
       displayConfig();
     }
     
@@ -1069,8 +1071,12 @@ void setLeds()
     ledPWMVal = 255;
   }
   
+  // calculate the dimmed PWM val
+  float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_COUNT;
+  int dimmedPWMVal = (int)((float) ledPWMVal * dimFactor);
+  
   // Tick led output
-  analogWrite(tickLed,ledPWMVal);
+  analogWrite(tickLed,dimmedPWMVal);
   
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
@@ -1081,9 +1087,9 @@ void setLeds()
         analogWrite(BLed,bluCnl*16);
         break;
       case BACKLIGHT_PULSE:
-        analogWrite(RLed,ledPWMVal*redCnl/16);
-        analogWrite(GLed,ledPWMVal*grnCnl/16);
-        analogWrite(BLed,ledPWMVal*bluCnl/16);
+        analogWrite(RLed,dimmedPWMVal*redCnl/16);
+        analogWrite(GLed,dimmedPWMVal*grnCnl/16);
+        analogWrite(BLed,dimmedPWMVal*bluCnl/16);
         break;
       case BACKLIGHT_CYCLE:
         // slow everything down
