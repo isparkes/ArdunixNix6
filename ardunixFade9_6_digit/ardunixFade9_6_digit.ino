@@ -21,6 +21,11 @@
 #include <DS3231.h>
 #include <Wire.h>
 
+//**********************************************************************************
+//**********************************************************************************
+//*                               Constants                                        *
+//**********************************************************************************
+//**********************************************************************************
 const int EE_12_24 = 1;            // 12 or 24 hour mode
 const int EE_FADE_STEPS = 2;       // How quickly we fade, higher = slower
 const int EE_DATE_FORMAT = 3;      // Date format to display
@@ -44,7 +49,7 @@ const int EE_BLU_INTENSITY = 20;   // Blue channel backlight max intensity
 const int EE_HV_VOLTAGE = 21;      // The HV voltage we want to use
 
 // Software version shown in config menu
-const int softwareVersion = 29;
+const int SOFTWARE_VERSION = 30;
 
 // Display handling
 const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
@@ -72,17 +77,14 @@ const int BLINK_COUNT_MAX = 25;                       // The number of impressio
 const int HVGEN_TARGET_VOLTAGE_DEFAULT=180;
 const int HVGEN_TARGET_VOLTAGE_MIN=150;
 const int HVGEN_TARGET_VOLTAGE_MAX=200;
-int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 
 // The PWM parameters
 const int PWM_TOP_DEFAULT = 1000;
 const int PWM_TOP_MIN = 300;
 const int PWM_TOP_MAX = 10000;
-int pwmTop = PWM_TOP_DEFAULT;
 const int PWM_PULSE_DEFAULT = 150;
 const int PWM_PULSE_MIN = 50;
 const int PWM_PULSE_MAX = 500;
-int pulseWidth = PWM_PULSE_DEFAULT;
 
 // How quickly the scroll works
 const int SCROLL_STEPS_DEFAULT=4;
@@ -191,9 +193,6 @@ const int BACKLIGHT_CYCLE = 2;
 const int BACKLIGHT_MAX = 2;
 const int BACKLIGHT_DEFAULT = BACKLIGHT_MIN;
 
-// RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
-DS3231 Clock;
-
 //**********************************************************************************
 //**********************************************************************************
 //*                               Variables                                        *
@@ -234,6 +233,11 @@ int sensorPin = A0; // Analog input pin for HV sense: HV divided through 390k an
 int LDRPin = A1;    // Analog input for Light dependent resistor. 
 
 //**********************************************************************************
+
+// ********************** HV generator variables *********************
+int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
+int pwmTop = PWM_TOP_DEFAULT;
+int pulseWidth = PWM_PULSE_DEFAULT;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler<
@@ -288,6 +292,10 @@ int dimBright = SENSOR_HIGH_DEFAULT;
 double sensorSmoothed = 0;
 double sensorFactor = (double)(DIGIT_DISPLAY_OFF)/(double)(dimBright-dimDark);
 int sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
+
+// ************************ Clock variables ************************
+// RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
+DS3231 Clock;
 
 // Time initial values, overwritten on startup if an RTC is there
 byte hours = 12;
@@ -412,6 +420,8 @@ void setup()
   /* enable global interrupts */
   sei();
 
+  // **********************************************************************
+  
   // Start the RTC communication
   Wire.begin();
 
@@ -437,7 +447,7 @@ void setup()
   }
   
   // Pre-calculate the ADC threshold reading, this saves all
-  // of the floating point business
+  // of the floating point business in the main loop
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
 }
 
@@ -645,7 +655,7 @@ void loop()
     }
 
     if (nextMode == MODE_VERSION) {
-      loadNumberArrayConfInt(softwareVersion,nextMode-MODE_12_24);
+      loadNumberArrayConfInt(SOFTWARE_VERSION,nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -966,7 +976,7 @@ void loop()
 
     // We are setting calibration
     if (currentMode == MODE_VERSION) {
-      loadNumberArrayConfInt(softwareVersion,currentMode-MODE_12_24);
+      loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
       displayConfig();
     }
 
