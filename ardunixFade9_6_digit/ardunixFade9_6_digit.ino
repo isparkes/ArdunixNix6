@@ -16,7 +16,7 @@
 //*                                                                                *
 //**********************************************************************************
 //**********************************************************************************
-#include <avr/io.h> 
+#include <avr/io.h>
 #include <EEPROM.h>
 #include <DS3231.h>
 #include <Wire.h>
@@ -26,172 +26,173 @@
 //*                               Constants                                        *
 //**********************************************************************************
 //**********************************************************************************
-const int EE_12_24 = 1;            // 12 or 24 hour mode
-const int EE_FADE_STEPS = 2;       // How quickly we fade, higher = slower
-const int EE_DATE_FORMAT = 3;      // Date format to display
-const int EE_DAY_BLANKING = 4;     // Blanking setting
-const int EE_DIM_DARK_LO = 5;      // Dimming dark value
-const int EE_DIM_DARK_HI = 6;      // Dimming dark value
-const int EE_BLANK_LEAD_ZERO = 7;  // If we blank leading zero on hours
-const int EE_DIGIT_COUNT_HI = 8;   // The number of times we go round the main loop
-const int EE_DIGIT_COUNT_LO = 9;   // The number of times we go round the main loop
-const int EE_SCROLLBACK = 10;      // if we use scollback or not
-const int EE_PULSE_LO = 11;        // The pulse on width for the PWM mode
-const int EE_PULSE_HI = 12;        // The pulse on width for the PWM mode
-const int EE_SCROLL_STEPS = 13;    // The steps in a scrollback
-const int EE_BACKLIGHT_MODE= 14;   // The back light node
-const int EE_DIM_BRIGHT_LO = 15;   // Dimming bright value
-const int EE_DIM_BRIGHT_HI = 16;   // Dimming bright value
-const int EE_DIM_SMOOTH_SPEED = 17;// Dimming adaptation speed
-const int EE_RED_INTENSITY = 18;   // Red channel backlight max intensity
-const int EE_GRN_INTENSITY = 19;   // Green channel backlight max intensity
-const int EE_BLU_INTENSITY = 20;   // Blue channel backlight max intensity
-const int EE_HV_VOLTAGE = 21;      // The HV voltage we want to use
+#define EE_12_24            1      // 12 or 24 hour mode
+#define EE_FADE_STEPS       2      // How quickly we fade, higher = slower
+#define EE_DATE_FORMAT      3      // Date format to display
+#define EE_DAY_BLANKING     4      // Blanking setting
+#define EE_DIM_DARK_LO      5      // Dimming dark value
+#define EE_DIM_DARK_HI      6      // Dimming dark value
+#define EE_BLANK_LEAD_ZERO  7      // If we blank leading zero on hours
+#define EE_DIGIT_COUNT_HI   8      // The number of times we go round the main loop
+#define EE_DIGIT_COUNT_LO   9      // The number of times we go round the main loop
+#define EE_SCROLLBACK       10     // if we use scollback or not
+#define EE_PULSE_LO         11     // The pulse on width for the PWM mode
+#define EE_PULSE_HI         12     // The pulse on width for the PWM mode
+#define EE_SCROLL_STEPS     13     // The steps in a scrollback
+#define EE_BACKLIGHT_MODE   14     // The back light node
+#define EE_DIM_BRIGHT_LO    15     // Dimming bright value
+#define EE_DIM_BRIGHT_HI    16     // Dimming bright value
+#define EE_DIM_SMOOTH_SPEED 17     // Dimming adaptation speed
+#define EE_RED_INTENSITY    18     // Red channel backlight max intensity
+#define EE_GRN_INTENSITY    19     // Green channel backlight max intensity
+#define EE_BLU_INTENSITY    20     // Blue channel backlight max intensity
+#define EE_HV_VOLTAGE       21     // The HV voltage we want to use
+#define EE_BL_DIMMING       22     // Do we want to dim the backlights with the normal dimming
 
 // Software version shown in config menu
-const int SOFTWARE_VERSION = 30;
+#define SOFTWARE_VERSION 31
 
 // Display handling
-const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
-const int DIGIT_DISPLAY_ON = 0;                       // Switch on the digit at the beginning by default
-const int DIGIT_DISPLAY_OFF = DIGIT_DISPLAY_COUNT-1;  // Switch off the digit at the end by default
-const int DIGIT_DISPLAY_NEVER = -1;                   // When we don't want to switch on or off (i.e. blanking)
-const int DISPLAY_COUNT_MAX = 2000;                   // Maximum value we can set to
-const int DISPLAY_COUNT_MIN = 500;                    // Minimum value we can set to
-const int DIGIT_DISPLAY_MIN_DIM = 100;                // The minimum viable dim count
+#define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
+#define DIGIT_DISPLAY_ON      0    // Switch on the digit at the beginning by default
+#define DIGIT_DISPLAY_OFF     999  // Switch off the digit at the end by default
+#define DIGIT_DISPLAY_NEVER   -1   // When we don't want to switch on or off (i.e. blanking)
+#define DISPLAY_COUNT_MAX     2000 // Maximum value we can set to
+#define DISPLAY_COUNT_MIN     500  // Minimum value we can set to
+#define DIGIT_DISPLAY_MIN_DIM 100  // The minimum viable dim count
 
-const int SENSOR_LOW_MIN = 0;
-const int SENSOR_LOW_MAX = 900;
-const int SENSOR_LOW_DEFAULT = 100;  // Dark
-const int SENSOR_HIGH_MIN = 0;
-const int SENSOR_HIGH_MAX = 900;
-const int SENSOR_HIGH_DEFAULT = 700; // Bright
+#define SENSOR_LOW_MIN      0
+#define SENSOR_LOW_MAX      900
+#define SENSOR_LOW_DEFAULT  100  // Dark
+#define SENSOR_HIGH_MIN     0
+#define SENSOR_HIGH_MAX     900
+#define SENSOR_HIGH_DEFAULT 700 // Bright
 
-const int SENSOR_SMOOTH_READINGS_MIN = 1;
-const int SENSOR_SMOOTH_READINGS_MAX = 255;
-const int SENSOR_SMOOTH_READINGS_DEFAULT = 100;       // Speed at which the brighness adapts to changes
+#define SENSOR_SMOOTH_READINGS_MIN     1
+#define SENSOR_SMOOTH_READINGS_MAX     255
+#define SENSOR_SMOOTH_READINGS_DEFAULT 100  // Speed at which the brighness adapts to changes
 
-const int BLINK_COUNT_MAX = 25;                       // The number of impressions between blink state toggle
+#define BLINK_COUNT_MAX  25                      // The number of impressions between blink state toggle
 
 // The target voltage we want to achieve
-const int HVGEN_TARGET_VOLTAGE_DEFAULT=180;
-const int HVGEN_TARGET_VOLTAGE_MIN=150;
-const int HVGEN_TARGET_VOLTAGE_MAX=200;
+#define HVGEN_TARGET_VOLTAGE_DEFAULT 180
+#define HVGEN_TARGET_VOLTAGE_MIN     150
+#define HVGEN_TARGET_VOLTAGE_MAX     200
 
 // The PWM parameters
-const int PWM_TOP_DEFAULT = 1000;
-const int PWM_TOP_MIN = 300;
-const int PWM_TOP_MAX = 10000;
-const int PWM_PULSE_DEFAULT = 150;
-const int PWM_PULSE_MIN = 50;
-const int PWM_PULSE_MAX = 500;
+#define PWM_TOP_DEFAULT   1000
+#define PWM_TOP_MIN       300
+#define PWM_TOP_MAX       10000
+#define PWM_PULSE_DEFAULT 150
+#define PWM_PULSE_MIN     50
+#define PWM_PULSE_MAX     500
 
 // How quickly the scroll works
-const int SCROLL_STEPS_DEFAULT=4;
-const int SCROLL_STEPS_MIN=1;
-const int SCROLL_STEPS_MAX=40;
+#define SCROLL_STEPS_DEFAULT 4
+#define SCROLL_STEPS_MIN     1
+#define SCROLL_STEPS_MAX     40
 
 // The number of dispay impessions we need to fade by default
 // 100 is about 1 second
-const int FADE_STEPS_DEFAULT=50;
-const int FADE_STEPS_MAX=200;
-const int FADE_STEPS_MIN=20;
+#define FADE_STEPS_DEFAULT 50
+#define FADE_STEPS_MAX     200
+#define FADE_STEPS_MIN     20
 
 // Display mode, set per digit
-const int BLANKED = 0;
-const int DIMMED  = 1;
-const int FADE    = 2;
-const int NORMAL  = 3;
-const int BLINK   = 4;
-const int SCROLL  = 5;
-const int BRIGHT  = 6;
+#define BLANKED  0
+#define DIMMED   1
+#define FADE     2
+#define NORMAL   3
+#define BLINK    4
+#define SCROLL   5
+#define BRIGHT   6
 
-const byte SECS_MAX = 60;
-const byte MINS_MAX = 60;
-const byte HOURS_MAX = 24;
+#define SECS_MAX  60
+#define MINS_MAX  60
+#define HOURS_MAX 24
 
-const byte COLOUR_CNL_MAX = 15;
-const byte COLOUR_CNL_DEFAULT = COLOUR_CNL_MAX;
-const byte COLOUR_CNL_MIN = 0;
+#define COLOUR_CNL_MAX     15
+#define COLOUR_CNL_DEFAULT 15
+#define COLOUR_CNL_MIN     0
 
 // Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
-const int MODE_MIN = 0;
-const int MODE_TIME = 0;
+#define MODE_MIN           0
+#define MODE_TIME          0
 
 // Time setting, need all six digits, so no flashing mode indicator
-const int MODE_MINS_SET = MODE_TIME + 1;
-const int MODE_HOURS_SET = MODE_MINS_SET + 1;
-const int MODE_DAYS_SET = MODE_HOURS_SET + 1;
-const int MODE_MONTHS_SET = MODE_DAYS_SET + 1;
-const int MODE_YEARS_SET = MODE_MONTHS_SET + 1;
+#define MODE_MINS_SET      1
+#define MODE_HOURS_SET     2
+#define MODE_DAYS_SET      3
+#define MODE_MONTHS_SET    4
+#define MODE_YEARS_SET     5
 
 // Basic settings
-const int MODE_12_24 = MODE_YEARS_SET + 1;                                    // Mode "00" 0 = 24, 1 = 12
-const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "01" 1 = blanked
-const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "02" 1 = use scrollback
-const int MODE_DATE_FORMAT = MODE_SCROLLBACK + 1;                             // Mode "03"
-const int MODE_DAY_BLANKING = MODE_DATE_FORMAT + 1;                           // Mode "04"
+#define MODE_12_24         6               // Mode "00" 0 = 24, 1 = 12
+#define MODE_LEAD_BLANK    7               // Mode "01" 1 = blanked
+#define MODE_SCROLLBACK    8               // Mode "02" 1 = use scrollback
+#define MODE_DATE_FORMAT   9               // Mode "03"
+#define MODE_DAY_BLANKING  10              // Mode "04"
 
 // Display tricks
-const int MODE_FADE_STEPS_UP = MODE_DAY_BLANKING + 1;                         // Mode "05"
-const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;                      // Mode "06"
-const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_FADE_STEPS_DOWN + 1;            // Mode "07"
-const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "08"
+#define MODE_FADE_STEPS_UP             11  // Mode "05"
+#define MODE_FADE_STEPS_DOWN           12  // Mode "06"
+#define MODE_DISPLAY_SCROLL_STEPS_UP   13  // Mode "07"
+#define MODE_DISPLAY_SCROLL_STEPS_DOWN 14  // Mode "08"
 
 // Back light
-const int MODE_BACKLIGHT_MODE = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;           // Mode "09"
-const int MODE_RED_CNL = MODE_BACKLIGHT_MODE + 1;                             // Mode "10"
-const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "11"
-const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "12"
+#define MODE_BACKLIGHT_MODE 15             // Mode "09"
+#define MODE_RED_CNL 16                    // Mode "10"
+#define MODE_GRN_CNL 17                    // Mode "11"
+#define MODE_BLU_CNL 18                    // Mode "12"
 
 // HV generation
-const int MODE_TARGET_HV_UP = MODE_BLU_CNL + 1;                               // Mode "13"
-const int MODE_TARGET_HV_DOWN = MODE_TARGET_HV_UP + 1;                        // Mode "14"
-const int MODE_PULSE_UP = MODE_TARGET_HV_DOWN + 1;                            // Mode "15"
-const int MODE_PULSE_DOWN = MODE_PULSE_UP + 1;                                // Mode "16"
+#define MODE_TARGET_HV_UP 19               // Mode "13"
+#define MODE_TARGET_HV_DOWN 20             // Mode "14"
+#define MODE_PULSE_UP 21                   // Mode "15"
+#define MODE_PULSE_DOWN 22                 // Mode "16"
 
 // Temperature
-const int MODE_TEMP =  MODE_PULSE_DOWN + 1;                                   // Mode "17"
+#define MODE_TEMP 23                       // Mode "17"
 
 // Software Version
-const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "18"
+#define MODE_VERSION 24                    // Mode "18"
 
 // Tube test - all six digits, so no flashing mode indicator
-const int MODE_TUBE_TEST = MODE_VERSION + 1;
+#define MODE_TUBE_TEST 25
 
-const int MODE_MAX = MODE_TUBE_TEST + 1;
+#define MODE_MAX 26
 
 // Pseudo mode - burn the tubes and nothing else
-const int MODE_DIGIT_BURN = 99;                                              // Digit burn mode - accesible by super long press
+#define MODE_DIGIT_BURN 99                                              // Digit burn mode - accesible by super long press
 
-// Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
-const int TEMP_MODE_MIN  = 0;
-const int TEMP_MODE_DATE = 0; // Display the date for 5 S
-const int TEMP_MODE_TEMP = 1; // Display the temperature for 5 S
-const int TEMP_MODE_LDR  = 2; // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
-const int TEMP_MODE_MAX  = 2;
+// Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME
+#define TEMP_MODE_MIN   0
+#define TEMP_MODE_DATE  0 // Display the date for 5 S
+#define TEMP_MODE_TEMP  1 // Display the temperature for 5 S
+#define TEMP_MODE_LDR   2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
+#define TEMP_MODE_MAX   2
 
-const int DATE_FORMAT_MIN = 0;
-const int DATE_FORMAT_YYMMDD = 0;
-const int DATE_FORMAT_MMDDYY = 1;
-const int DATE_FORMAT_DDMMYY = 2;
-const int DATE_FORMAT_MAX = 2;
-const int DATE_FORMAT_DEFAULT = DATE_FORMAT_DDMMYY;
+#define DATE_FORMAT_MIN     0
+#define DATE_FORMAT_YYMMDD  0
+#define DATE_FORMAT_MMDDYY  1
+#define DATE_FORMAT_DDMMYY  2
+#define DATE_FORMAT_MAX     2
+#define DATE_FORMAT_DEFAULT 2
 
-const int DAY_BLANKING_MIN = 0;
-const int DAY_BLANKING_NEVER = 0;
-const int DAY_BLANKING_WEEKEND = 1;
-const int DAY_BLANKING_WEEKDAY = 2;
-const int DAY_BLANKING_ALWAYS = 3;
-const int DAY_BLANKING_MAX = 3;
-const int DAY_BLANKING_DEFAULT = DAY_BLANKING_NEVER;
+#define DAY_BLANKING_MIN     0
+#define DAY_BLANKING_NEVER   0
+#define DAY_BLANKING_WEEKEND 1
+#define DAY_BLANKING_WEEKDAY 2
+#define DAY_BLANKING_ALWAYS  3
+#define DAY_BLANKING_MAX     3
+#define DAY_BLANKING_DEFAULT 0
 
-const int BACKLIGHT_MIN = 0;
-const int BACKLIGHT_FIXED = 0;
-const int BACKLIGHT_PULSE = 1;
-const int BACKLIGHT_CYCLE = 2;
-const int BACKLIGHT_MAX = 2;
-const int BACKLIGHT_DEFAULT = BACKLIGHT_MIN;
+#define BACKLIGHT_MIN     0
+#define BACKLIGHT_FIXED   0
+#define BACKLIGHT_PULSE   1
+#define BACKLIGHT_CYCLE   2
+#define BACKLIGHT_MAX     2
+#define BACKLIGHT_DEFAULT 0
 
 //**********************************************************************************
 //**********************************************************************************
@@ -201,36 +202,36 @@ const int BACKLIGHT_DEFAULT = BACKLIGHT_MIN;
 
 // ***** Pin Defintions ****** Pin Defintions ****** Pin Defintions ******
 
-// SN74141 
-int ledPin_0_a = 13;  // package pin 19
-int ledPin_0_b = 10;  // package pin 16
-int ledPin_0_c = 8;   // package pin 14
-int ledPin_0_d = 12;  // package pin 18 
+// SN74141
+#define ledPin_0_a  13    // package pin 19 // PB5
+#define ledPin_0_b  10    // package pin 16 // PB2
+#define ledPin_0_c  8     // package pin 14 // PB0
+#define ledPin_0_d  12    // package pin 18 // PB4
 
 // anode pins
-int ledPin_a_6 = 0;  // low  - Secs  units // package pin 2
-int ledPin_a_5 = 1;  //      - Secs  tens  // package pin 3
-int ledPin_a_4 = 2;  //      - Mins  units // package pin 4
-int ledPin_a_3 = 4;  //      - Mins  tens  // package pin 6
-int ledPin_a_2 = A2; //      - Hours units // package pin 25
-int ledPin_a_1 = A3; // high - Hours tens  // package pin 26
+#define ledPin_a_6  0     // low  - Secs  units // package pin 2  // PD0
+#define ledPin_a_5  1     //      - Secs  tens  // package pin 3  // PD1
+#define ledPin_a_4  2     //      - Mins  units // package pin 4  // PD2
+#define ledPin_a_3  4     //      - Mins  tens  // package pin 6  // PD4
+#define ledPin_a_2  A2    //      - Hours units // package pin 25 // PC2
+#define ledPin_a_1  A3    // high - Hours tens  // package pin 26 // PC3
 
 // button input
-int inputPin1 = 7;   // package pin 13
+#define inputPin1   7     // package pin 13 // PD7
 
 // PWM pin used to drive the DC-DC converter
-int hvDriverPin = 9; // package pin 15
+#define hvDriverPin 9     // package pin 15 // PB1
 
-// Tick led - PWM capable 
-int tickLed = 11;    // package pin 17
+// Tick led - PWM capable
+#define tickLed     11    // package pin 17 // PB3
 
 // PWM capable output for backlight
-int RLed = 6;        // package pin 12
-int GLed = 5;        // package pin 11
-int BLed = 3;        // package pin 5
+#define RLed        6     // package pin 12 // PD6
+#define GLed        5     // package pin 11 // PD5
+#define BLed        3     // package pin 5  // PD3
 
-int sensorPin = A0; // Analog input pin for HV sense: HV divided through 390k and 4k7 divider, using 5V reference
-int LDRPin = A1;    // Analog input for Light dependent resistor. 
+#define sensorPin   A0    // Package pin 23 // PC0 // Analog input pin for HV sense: HV divided through 390k and 4k7 divider, using 5V reference
+#define LDRPin      A1    // Package pin 24 // PC1 // Analog input for Light dependent resistor.
 
 //**********************************************************************************
 
@@ -283,8 +284,8 @@ int  tempDisplayMode;
 int acpOffset = 0;        // Used to provide one arm bandit scolling
 int acpTick = 0;          // The number of counts before we scroll
 
-int currentMode = MODE_TIME;   // Initial cold start mode 
-int nextMode = currentMode; 
+int currentMode = MODE_TIME;   // Initial cold start mode
+int nextMode = currentMode;
 
 // ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
@@ -304,7 +305,7 @@ byte secs = 0;
 byte days = 1;
 byte months = 1;
 byte years = 14;
-byte dow = 0; // 0 = Sun
+byte dow = 1; // 1 = Sun, 7 = Sat, by our convention
 boolean mode12or24 = false;
 
 // State variables for detecting changes
@@ -333,6 +334,7 @@ const int CYCLE_COUNT_MAX = 10;
 byte ledCycleCount[3] = {0,0,0};
 double ledCycleValue[3] = {0,0,0};
 double ledCycleIncrement[3] = {0,0,0};
+boolean backlightDim;
 
 // ********************** Input switch management **********************
 // button debounce
@@ -362,24 +364,24 @@ int digitBurnValue = 0;
 //*                                    Setup                                       *
 //**********************************************************************************
 //**********************************************************************************
-void setup() 
+void setup()
 {
-  pinMode(ledPin_0_a, OUTPUT);      
-  pinMode(ledPin_0_b, OUTPUT);      
-  pinMode(ledPin_0_c, OUTPUT);      
-  pinMode(ledPin_0_d, OUTPUT);    
+  pinMode(ledPin_0_a, OUTPUT);
+  pinMode(ledPin_0_b, OUTPUT);
+  pinMode(ledPin_0_c, OUTPUT);
+  pinMode(ledPin_0_d, OUTPUT);
 
-  pinMode(ledPin_a_1, OUTPUT);      
-  pinMode(ledPin_a_2, OUTPUT);      
-  pinMode(ledPin_a_3, OUTPUT);     
-  pinMode(ledPin_a_4, OUTPUT);     
-  pinMode(ledPin_a_5, OUTPUT);     
-  pinMode(ledPin_a_6, OUTPUT);     
+  pinMode(ledPin_a_1, OUTPUT);
+  pinMode(ledPin_a_2, OUTPUT);
+  pinMode(ledPin_a_3, OUTPUT);
+  pinMode(ledPin_a_4, OUTPUT);
+  pinMode(ledPin_a_5, OUTPUT);
+  pinMode(ledPin_a_6, OUTPUT);
 
-  pinMode(tickLed, OUTPUT);     
-  pinMode(RLed, OUTPUT);     
-  pinMode(GLed, OUTPUT);     
-  pinMode(BLed, OUTPUT);     
+  pinMode(tickLed, OUTPUT);
+  pinMode(RLed, OUTPUT);
+  pinMode(GLed, OUTPUT);
+  pinMode(BLed, OUTPUT);
 
   // NOTE:
   // Grounding the input pin causes it to actuate
@@ -399,40 +401,40 @@ void setup()
 
   TCCR1A = 0;    // disable all PWM on Timer1 whilst we set it up
   TCCR1B = 0;    // disable all PWM on Timer1 whilst we set it up
-  ICR1 = pwmTop; // Our starting point for the period	
+  ICR1 = pwmTop; // Our starting point for the period
 
   // Configure timer 1 for Fast PWM mode via ICR1, with prescaling=1
   TCCR1A = (1 << WGM11);
   TCCR1B = (1 << WGM13) | (1<<WGM12) | (1 << CS10);
 
   tccrOff = TCCR1A;
-  
+
   TCCR1A |= (1 <<  COM1A1);  // enable PWM on port PD4 in non-inverted compare mode 2
- 
+
   tccrOn = TCCR1A;
-  
+
   OCR1A = pulseWidth;  // Pulse width of the on time
 
   // Set up timer 2 like timer 0 (for RGB leds)
   TCCR2A = (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
   TCCR2B = (1 << CS22);
-  
+
   /* enable global interrupts */
   sei();
 
   // **********************************************************************
-  
+
   // Start the RTC communication
   Wire.begin();
 
   // Recover the time from the RTC
   getRTCTime();
-  
+
   // Test if the button is pressed for factory reset
   for (int i = 0 ; i < debounceCounter*2 ; i++ ) {
-    checkButton1(); 
+    checkButton1();
   }
-  
+
   // Detect factory reset: button pressed on start
   if (is1PressedNow()) {
     // Flash 10 x to signal that we have accepted the factory reset
@@ -441,14 +443,17 @@ void setup()
       delay(100);
       digitalWrite(tickLed, LOW);
       delay(100);
-      
+
       factoryReset();
     }
   }
-  
+
   // Pre-calculate the ADC threshold reading, this saves all
   // of the floating point business in the main loop
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+  
+  // Make sure the oscillator stays off, even when on battery
+  Clock.enableOscillator(false,false,0);  
 }
 
 //**********************************************************************************
@@ -456,16 +461,16 @@ void setup()
 //*                              Main loop                                         *
 //**********************************************************************************
 //**********************************************************************************
-void loop()     
+void loop()
 {
-  // get the time 
+  // get the time
   getRTCTime();
 
   // Check button, we evaluate below
   checkButton1();
 
   // ******* Preview the next display mode *******
-  // What is previewed here will get actioned when 
+  // What is previewed here will get actioned when
   // the button is released
   if (is1Pressed2S()) {
     // Just jump back to the start
@@ -518,7 +523,7 @@ void loop()
   if (nextMode != currentMode) {
     // turn off blanking
     blanked = false;
-    
+
     if (nextMode == MODE_TIME) {
       loadNumberArrayTime();
       allFade();
@@ -598,7 +603,7 @@ void loop()
       loadNumberArrayConfInt(backlightMode,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_RED_CNL) {
       if (backlightMode == BACKLIGHT_CYCLE) {
         // Skip if we are in cycle mode
@@ -628,27 +633,27 @@ void loop()
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TARGET_HV_UP) {
       loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TARGET_HV_DOWN) {
       loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_PULSE_UP) {
       loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_PULSE_DOWN) {
       loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TEMP) {
       loadNumberArrayTemp(nextMode-MODE_12_24);
       displayConfig();
@@ -672,7 +677,7 @@ void loop()
     if (currentMode == MODE_TIME) {
 
       checkBlanking();
-      
+
       if(is1PressedRelease()) {
         if (blanked) {
           // just turn off blanking - it will turn back on on it's own
@@ -687,7 +692,7 @@ void loop()
           if (tempDisplayMode > TEMP_MODE_MAX) {
             tempDisplayMode = TEMP_MODE_MIN;
           }
-        
+
           secsDisplayEnd = millis() + 5000;
         }
       }
@@ -700,13 +705,13 @@ void loop()
         if (tempDisplayMode == TEMP_MODE_TEMP) {
           loadNumberArrayTemp(MODE_TEMP);
         }
-        
+
         if (tempDisplayMode == TEMP_MODE_LDR) {
           loadNumberArrayLDR();
         }
 
         allFade();
-        
+
       } else {
         if (acpOffset > 0) {
           loadNumberArrayACP();
@@ -714,17 +719,17 @@ void loop()
         } else {
           loadNumberArrayTime();
           allFade();
-          
+
           // Apply leading blanking
           applyBlanking();
         }
-      }    
+      }
     }
 
     if (currentMode == MODE_MINS_SET) {
       if(is1PressedRelease()) {
         incMins();
-        setRTC();      
+        setRTC();
       }
       loadNumberArrayTime();
       highlight2and3();
@@ -733,7 +738,7 @@ void loop()
     if (currentMode == MODE_HOURS_SET) {
       if(is1PressedRelease()) {
         incHours();
-        setRTC();      
+        setRTC();
       }
       loadNumberArrayTime();
       highlight0and1();
@@ -751,7 +756,7 @@ void loop()
     if (currentMode == MODE_MONTHS_SET) {
       if(is1PressedRelease()) {
         incMonths();
-        setRTC();      
+        setRTC();
       }
       loadNumberArrayDate();
       highlightMonthsDateFormat();
@@ -760,7 +765,7 @@ void loop()
     if (currentMode == MODE_YEARS_SET) {
       if(is1PressedRelease()) {
         incYears();
-        setRTC();      
+        setRTC();
       }
       loadNumberArrayDate();
       highlightYearsDateFormat();
@@ -876,7 +881,7 @@ void loop()
         nextMode++;
         currentMode++;
       }
-      
+
       if(is1PressedRelease()) {
         redCnl++;
         if (redCnl > COLOUR_CNL_MAX) {
@@ -893,7 +898,7 @@ void loop()
         nextMode++;
         currentMode++;
       }
-      
+
       if(is1PressedRelease()) {
         grnCnl++;
         if (grnCnl > COLOUR_CNL_MAX) {
@@ -910,7 +915,7 @@ void loop()
         nextMode++;
         currentMode++;
       }
-      
+
       if(is1PressedRelease()) {
         bluCnl++;
         if (bluCnl > COLOUR_CNL_MAX) {
@@ -920,7 +925,7 @@ void loop()
       loadNumberArrayConfInt(bluCnl,currentMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_TARGET_HV_UP) {
       if(is1PressedRelease()) {
         hvTargetVoltage+=5;
@@ -932,7 +937,7 @@ void loop()
       rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_TARGET_HV_DOWN) {
       if(is1PressedRelease()) {
         hvTargetVoltage-=5;
@@ -944,7 +949,7 @@ void loop()
       rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_PULSE_UP) {
       if(is1PressedRelease()) {
         pulseWidth+=10;
@@ -956,7 +961,7 @@ void loop()
       loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_PULSE_DOWN) {
       if(is1PressedRelease()) {
         pulseWidth-=10;
@@ -968,7 +973,7 @@ void loop()
       loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (currentMode == MODE_TEMP) {
       loadNumberArrayTemp(currentMode-MODE_12_24);
       displayConfig();
@@ -1000,13 +1005,13 @@ void loop()
           }
         }
       }
-    }  
+    }
   }
 
   // get the LDR ambient light reading
   digitOffCount = getDimmingFromLDR();
   fadeStep = digitOffCount / fadeSteps;
-  
+
   // Display. Digit Burn has a different (non-multiplexed) handling
   if ((currentMode != MODE_DIGIT_BURN) && (nextMode != MODE_DIGIT_BURN)) {
     // One armed bandit trigger every 10th minute
@@ -1038,7 +1043,7 @@ void loop()
 
   // Regulate the voltage
   checkHVVoltage();
-  
+
   // Set leds
   setLeds();
 }
@@ -1080,21 +1085,21 @@ void setLeds()
   if (ledPWMVal > 255) {
     ledPWMVal = 255;
   }
-  
-  // calculate the dimmed PWM val
+
+  // calculate the PWM factor, goes between 0.1 and 1
   float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_COUNT;
-  int dimmedPWMVal = (int)((float) ledPWMVal * dimFactor);
-  
+
   // Tick led output
+  int dimmedPWMVal = (int)((float) ledPWMVal * dimFactor);
   analogWrite(tickLed,dimmedPWMVal);
-  
+
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
       case BACKLIGHT_FIXED:
-        analogWrite(RLed,redCnl*16);
-        analogWrite(GLed,grnCnl*16);
-        analogWrite(BLed,bluCnl*16);
+        analogWrite(RLed,(int)((float) dimFactor*redCnl*16));
+        analogWrite(GLed,(int)((float) dimFactor*grnCnl*16));
+        analogWrite(BLed,(int)((float) dimFactor*bluCnl*16));
         break;
       case BACKLIGHT_PULSE:
         analogWrite(RLed,dimmedPWMVal*redCnl/16);
@@ -1102,34 +1107,36 @@ void setLeds()
         analogWrite(BLed,dimmedPWMVal*bluCnl/16);
         break;
       case BACKLIGHT_CYCLE:
-        // slow everything down
+        // slow everything down - just make a change every CYCLE_COUNT_MAX calls
         cycleCount++;
         if (cycleCount > CYCLE_COUNT_MAX) {
           cycleCount = 0;
-        
+
           for (int i = 0 ; i < 3 ; i++) {
+            // If one of the cycle counts for a LED has expired, get a new one
             if (ledCycleCount[i] <= 0) {
               ledCycleCount[i] = random(256);
               double randomAbs = random(10);
               ledCycleIncrement[i] = (double) randomAbs-5 / (double) 1000;
             }
-          
+
             ledCycleValue[i] += ledCycleIncrement[i];
-          
-            if (ledCycleValue[i] >= 255) {
+
+            // If we run off the end of the scale, wrap around
+            if (ledCycleValue[i] > 255) {
               ledCycleValue[i] = 255;
               ledCycleIncrement[i] = -ledCycleIncrement[i];
             }
-            if (ledCycleValue[i] <= 0) {
+            if (ledCycleValue[i] < 0) {
               ledCycleValue[i] = 0;
               ledCycleIncrement[i] = -ledCycleIncrement[i];
             }
-          
+
             ledCycleCount[i]--;
           }
-          analogWrite(RLed,ledCycleValue[0]);
-          analogWrite(GLed,ledCycleValue[1]);
-          analogWrite(BLed,ledCycleValue[2]);
+          analogWrite(RLed,(int)((float) dimFactor*ledCycleValue[0]));
+          analogWrite(GLed,(int)((float) dimFactor*ledCycleValue[1]));
+          analogWrite(BLed,(int)((float) dimFactor*ledCycleValue[2]));
         }
     }
   } else {
@@ -1232,7 +1239,7 @@ void loadNumberArrayTemp(int confNum) {
 void loadNumberArrayLDR() {
   NumberArray[5] = 0;
   NumberArray[4] = 0;
-  
+
   NumberArray[3] = (digitOffCount / 1) % 10;
   NumberArray[2] = (digitOffCount / 10) % 10;
   NumberArray[1] = (digitOffCount / 100) % 10;
@@ -1299,7 +1306,7 @@ void SetSN74141Chip(int num1)
 
   // Load the a,b,c,d.. to send to the SN74141 IC
   int decodedDigit = decodeDigit[num1];
-  
+
   switch( decodedDigit )
   {
     case 0: a=0;b=0;c=0;d=0;break;
@@ -1313,7 +1320,7 @@ void SetSN74141Chip(int num1)
     case 8: a=0;b=0;c=0;d=1;break;
     case 9: a=1;b=0;c=0;d=1;break;
     default: a=1;b=1;c=1;d=1;break;
-  }  
+  }
 
   // Write to output pins.
   setDigit(d,c,b,a);
@@ -1325,7 +1332,7 @@ void SetSN74141Chip(int num1)
 // DIGIT_DISPLAY_COUNT times for each digit, with no delays.
 //
 // Possibly we will split this down to be one digit per call
-// if we need more reactiveness. 
+// if we need more reactiveness.
 // ************************************************************
 void outputDisplay()
 {
@@ -1392,7 +1399,7 @@ void outputDisplay()
     }
 
     // Do scrollback when we are going to 0
-    if ((NumberArray[i] != currNumberArray[i]) && 
+    if ((NumberArray[i] != currNumberArray[i]) &&
       (NumberArray[i] == 0) &&
       scrollback) {
       tmpDispType = SCROLL;
@@ -1486,15 +1493,15 @@ void digitOff(int digit) {
 // ************************************************************
 // See if the button was pressed and debounce. We perform a
 // sort of preview here, then confirm by releasing. We track
-// 3 lengths of button press: momentarily, 1S and 2S. 
+// 3 lengths of button press: momentarily, 1S and 2S.
 // ************************************************************
 void checkButton1() {
   if (digitalRead(inputPin1) == 0) {
     buttonWasReleased = false;
-    
+
     long nowMillis = millis();
 
-    // We need consecutive pressed counts to treat this is pressed    
+    // We need consecutive pressed counts to treat this is pressed
     if (button1PressedCount < debounceCounter) {
       button1PressedCount += 1;
       // If we reach the debounce point, mark the start time
@@ -1546,11 +1553,11 @@ void checkButton1() {
       }
     }
 
-    // Reset the switch flags debounce counter      
+    // Reset the switch flags debounce counter
     buttonPress8S = false;
     buttonPress2S = false;
     buttonPress1S = false;
-    buttonPress = false;      
+    buttonPress = false;
     button1PressedCount = 0;
   }
 }
@@ -1645,7 +1652,7 @@ void setDigit(int segD, int segC, int segB, int segA) {
   digitalWrite(ledPin_0_a, segA);
   digitalWrite(ledPin_0_b, segB);
   digitalWrite(ledPin_0_c, segC);
-  digitalWrite(ledPin_0_d, segD);  
+  digitalWrite(ledPin_0_d, segD);
 }
 
 // ************************************************************
@@ -1656,7 +1663,7 @@ void applyBlanking() {
   if (blankLeading == false) {
     return;
   }
-  
+
   // We only want to blank the hours tens digit
   if (NumberArray[0] == 0) {
     if (displayType[0] != BLANKED) {
@@ -1853,7 +1860,7 @@ void incMins() {
   mins++;
   secs=0;
 
-  if (mins >= MINS_MAX) {  
+  if (mins >= MINS_MAX) {
     mins = 0;
   }
 }
@@ -1956,7 +1963,7 @@ void getRTCTime() {
   days=Clock.getDate();
   dow=Clock.getDoW();
 }
-  
+
 // ************************************************************
 // Check the blanking
 // ************************************************************
@@ -1969,16 +1976,16 @@ void checkBlanking() {
         blanked = false;
         break;
       case DAY_BLANKING_WEEKEND:
-        blanked = ((dow == 0) || (dow == 6));
+        blanked = ((dow == 1) || (dow == 7));
         break;
       case DAY_BLANKING_WEEKDAY:
-        blanked = ((dow > 0) && (dow < 6));
+        blanked = ((dow > 1) && (dow < 7));
         break;
       case DAY_BLANKING_ALWAYS:
         blanked = true;
         break;
     }
-  }  
+  }
 }
 
 // ************************************************************
@@ -1996,9 +2003,9 @@ float getRTCTemp() {
 }
 
 // ************************************************************
-// Save current values back to EEPROM 
+// Save current values back to EEPROM
 // ************************************************************
-void saveEEPROMValues() {  
+void saveEEPROMValues() {
   EEPROM.write(EE_12_24,mode12or24);
   EEPROM.write(EE_FADE_STEPS,fadeSteps);
   EEPROM.write(EE_DATE_FORMAT, dateFormat);
@@ -2017,7 +2024,8 @@ void saveEEPROMValues() {
   EEPROM.write(EE_BACKLIGHT_MODE,backlightMode);
   EEPROM.write(EE_HV_VOLTAGE,hvTargetVoltage);
   EEPROM.write(EE_PULSE_LO, pulseWidth % 256);
-  EEPROM.write(EE_PULSE_HI, pulseWidth / 256);  
+  EEPROM.write(EE_PULSE_HI, pulseWidth / 256);
+  EEPROM.write(EE_BL_DIMMING,backlightDim);
 }
 
 // ************************************************************
@@ -2025,12 +2033,12 @@ void saveEEPROMValues() {
 // ************************************************************
 void readEEPROMValues() {
   mode12or24 = EEPROM.read(EE_12_24);
-  
+
   fadeSteps = EEPROM.read(EE_FADE_STEPS);
   if ((fadeSteps < FADE_STEPS_MIN) || (fadeSteps > FADE_STEPS_MAX)) {
     fadeSteps = FADE_STEPS_DEFAULT;
   }
-  
+
   dateFormat = EEPROM.read(EE_DATE_FORMAT);
   if ((dateFormat < DATE_FORMAT_MIN) || (dateFormat > DATE_FORMAT_MAX)) {
     dateFormat = DATE_FORMAT_DEFAULT;
@@ -2053,22 +2061,22 @@ void readEEPROMValues() {
   if ((scrollSteps < SCROLL_STEPS_MIN) || (scrollSteps > SCROLL_STEPS_MAX)) {
     scrollSteps = SCROLL_STEPS_DEFAULT;
   }
-  
+
   dimBright = EEPROM.read(EE_DIM_BRIGHT_HI)*256 + EEPROM.read(EE_DIM_BRIGHT_LO);
   if ((dimBright < SENSOR_HIGH_MIN) || (dimBright > SENSOR_HIGH_MAX)) {
     dimBright = SENSOR_HIGH_DEFAULT;
-  }  
-  
+  }
+
   sensorSmoothCount = EEPROM.read(EE_DIM_SMOOTH_SPEED);
   if ((sensorSmoothCount < SENSOR_SMOOTH_READINGS_MIN) || (sensorSmoothCount > SENSOR_SMOOTH_READINGS_MAX)) {
     sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
   }
-  
+
   dateFormat = EEPROM.read(EE_DATE_FORMAT);
   if ((dateFormat < DATE_FORMAT_MIN) || (dateFormat > DATE_FORMAT_MAX)) {
     dateFormat = DATE_FORMAT_DEFAULT;
   }
-  
+
   dayBlanking = EEPROM.read(EE_DAY_BLANKING);
   if ((dayBlanking < DAY_BLANKING_MIN) || (dayBlanking > DAY_BLANKING_MAX)) {
     dayBlanking = DAY_BLANKING_DEFAULT;
@@ -2078,31 +2086,33 @@ void readEEPROMValues() {
   if ((backlightMode < BACKLIGHT_MIN) || (backlightMode > BACKLIGHT_MAX)) {
     backlightMode = BACKLIGHT_DEFAULT;
   }
-  
+
   redCnl = EEPROM.read(EE_RED_INTENSITY);
   if ((redCnl < COLOUR_CNL_MIN) || (redCnl > COLOUR_CNL_MAX)) {
     redCnl = COLOUR_CNL_DEFAULT;
   }
-  
+
   grnCnl = EEPROM.read(EE_GRN_INTENSITY);
   if ((grnCnl < COLOUR_CNL_MIN) || (grnCnl > COLOUR_CNL_MAX)) {
     grnCnl = COLOUR_CNL_DEFAULT;
   }
-  
+
   bluCnl = EEPROM.read(EE_BLU_INTENSITY);
   if ((bluCnl < COLOUR_CNL_MIN) || (bluCnl > COLOUR_CNL_MAX)) {
     bluCnl = COLOUR_CNL_DEFAULT;
   }
-  
+
   hvTargetVoltage = EEPROM.read(EE_HV_VOLTAGE);
   if ((hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) || (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX)) {
     hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
   }
-  
+
   pulseWidth = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
   if ((pulseWidth < PWM_PULSE_MIN) || (pulseWidth > PWM_PULSE_MAX)) {
     pulseWidth = PWM_PULSE_DEFAULT;
   }
+
+  backlightDim = EEPROM.read(EE_BL_DIMMING);
 }
 
 // ************************************************************
@@ -2120,14 +2130,14 @@ void factoryReset() {
   dimBright = SENSOR_HIGH_DEFAULT;
   sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
   dateFormat = DATE_FORMAT_DEFAULT;
-  dayBlanking = DAY_BLANKING_DEFAULT;  
+  dayBlanking = DAY_BLANKING_DEFAULT;
   backlightMode = BACKLIGHT_DEFAULT;
   redCnl = COLOUR_CNL_DEFAULT;
   grnCnl = COLOUR_CNL_DEFAULT;
   bluCnl = COLOUR_CNL_DEFAULT;
   hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
   pulseWidth = PWM_PULSE_DEFAULT;
-  
+
   saveEEPROMValues();
 }
 
@@ -2136,32 +2146,27 @@ void factoryReset() {
 // Pre-calculate the threshold value of the ADC read and make
 // a simple comparison against this for speed
 // We control only the PWM "off" time, because the "on" time
-// affects the current consumption and MOSFET heating 
+// affects the current consumption and MOSFET heating
 // ************************************************************
 void checkHVVoltage() {
-  // No point in calculating the voltage if we are blanked
-  if (blanked) {
-    return;
-  }
-  
   int rawSensorVal = analogRead(sensorPin);
-  
+
   // check the read voltage
   if (rawSensorVal > rawHVADCThreshold) {
     pwmTop += 10;
-    
+
     if (pwmTop >= PWM_TOP_MAX) {
       pwmTop = PWM_TOP_MAX;
     }
   } else {
     pwmTop -= 10;
-    
-    // check that we have not got a silly reading: On time cannot be more than 50% of TOP time 
+
+    // check that we have not got a silly reading: On time cannot be more than 50% of TOP time
     if (pulseWidth > pwmTop) {
       pwmTop = pulseWidth + pwmTop;
     }
   }
-  
+
   ICR1 = pwmTop; // Our starting point for the period
 }
 
@@ -2181,10 +2186,10 @@ int getRawHVADCThreshold(double targetVoltage) {
 //
 // The LDR in bright light gives reading of around 50, the reading in
 // total darkness is around 900.
-// 
+//
 // The return value is the dimming count we are using. 999 is full
 // brightness, 100 is very dim.
-// 
+//
 // Because the floating point calculation may return more than the
 // maximum value, we have to clamp it as the final step
 // ******************************************************************
@@ -2192,28 +2197,29 @@ int getDimmingFromLDR() {
   int rawSensorVal = 1023-analogRead(LDRPin);
   double sensorDiff = rawSensorVal - sensorSmoothed;
   sensorSmoothed += (sensorDiff/sensorSmoothCount);
-  
+
   double sensorSmoothedResult = sensorSmoothed - dimDark;
   if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
   if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
   sensorSmoothedResult = (sensorSmoothedResult-dimDark)*sensorFactor;
-  
+
   int returnValue = sensorSmoothedResult;
-  
+
   if (returnValue < DIGIT_DISPLAY_MIN_DIM) returnValue = DIGIT_DISPLAY_MIN_DIM;
   if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
-  
+
   return returnValue;
 }
 
 // ******************************************************************
 // Work out the day of week.
-// Used in day blanking 
-// 1 <= m <= 12,  y > 1752 (in the U.K.)
+// Used in day blanking
+// 1 <= m <= 12,  y > 1752 (in the U.K.)$
+// Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
 // ******************************************************************
 int dayofweek(int y, int m, int d)
 {
   static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
   y -= m < 3;
-  return (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7;
+  return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
 }
