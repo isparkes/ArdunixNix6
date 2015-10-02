@@ -52,6 +52,9 @@
 // Software version shown in config menu
 #define SOFTWARE_VERSION 31
 
+// how often we make reference to the external time provider
+#define READ_TIME_PROVIDER_MILLIS 120000 // Update the internal time provider once every 2 minutes
+
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
 #define DIGIT_DISPLAY_ON      0    // Switch on the digit at the beginning by default
@@ -235,6 +238,127 @@
 
 //**********************************************************************************
 
+// Structure for encapsulating buffered time and date manipulation.
+// Set the sync time with a known time and date periodically, and use the internal Arduino 
+// clock to keep this updated inbetween syncs.
+// Advantages: Much faster internmediate reads. No need to hit external time providers
+// fast. For example GPS and DCF cannot immediately give dates and times. (GSP over serial
+// is too slow to read very often, DCF is just slow to sync)
+struct DateTime
+{
+public:
+  // Constructor
+  DateTime() : hours(0), mins(0), secs(0), years(0), months(0), days(0) { millisDate = 0; }
+  
+  // Set a synchronised time point. We match the date and time given in the hours/mins.... variables
+  // with the milliseconds timestamp given.
+  // To read an updated timestamp, we use the next function "setDeltaMillis"
+  void setSyncTime(long newMillis,byte newYears,byte newMonths,byte newDays,byte newHours,byte newMins,byte newSecs) {
+    millisDate = newMillis;
+    hours = newHours;
+    mins = newMins;
+    secs = newSecs;
+    years = newYears;
+    months = newMonths;
+    days = newDays;
+    dow = dayofweek(years,months,days);
+  }
+  
+  // Update the time with a new millis timestamp
+  void setDeltaMillis(long newMillis) { setDelta(newMillis); }
+  
+  // Find out how long it is since we last did a sync 
+  long getDeltaMillis(long newMillis) { return getDelta(newMillis); }
+  
+  // Current time - updated by "setDeltaMillis"
+  byte getHours() { return getHoursByMode(deltaHours); }
+  byte getMins()  { return deltaMins; }
+  byte getSecs() { return deltaSecs; }
+
+  // Current date / dow
+  byte getYears() { return years; }
+  byte getMonths()  { return months; }
+  byte getDays() { return days; }
+  byte getDow() { return dow; }
+
+  // Current sync time - updated by "setSyncTime"
+  byte getSyncHours() { return getHoursByMode(hours); }
+  byte getSyncMins()  { return mins; }
+  byte getSyncSecs()  { return secs; }
+
+  // Setters   
+  byte setHours(byte newHours) { hours = newHours; }
+  byte setMins(byte newMins)  { mins = newMins; }
+  byte setSecs(byte newSecs) { secs = newSecs; }
+  byte setYears(byte newYears) { years = newYears; dow = dayofweek(years,months,days); }
+  byte setMonths(byte newMonths)  { months = newMonths; dow = dayofweek(years,months,days); }
+  byte setDays(byte newDays) { days = newDays; dow = dayofweek(years,months,days); }
+  
+  void setHourMode(boolean newMode) { hourMode = newMode; }
+  boolean getHourMode() { return hourMode; }
+   
+private:
+  // Synced time
+  byte hours;
+  byte mins;
+  byte secs;
+   
+  // Variable time
+  byte deltaHours;
+  byte deltaMins;
+  byte deltaSecs;
+   
+  // Date
+  byte years;
+  byte months;
+  byte days;
+  byte dow;
+  
+  // Date mode false = 24h, true = 12h
+  boolean hourMode = false;
+   
+  // Last sync timestamp
+  long millisDate;
+  
+  // Calculate the delta
+  long getDelta(long newMillis) {
+    long deltaMillis = newMillis - millisDate;
+    return deltaMillis;
+  }
+  
+  // Set the delta and recalculate
+  // We do not update the day in this case, we wait until the next read
+  // Of the time provider
+  void setDelta(long newMillis) {
+    long tmpDeltaSecs = newMillis - millisDate;
+    tmpDeltaSecs = tmpDeltaSecs/1000;
+    long tmpSecs = tmpDeltaSecs % 60;
+    long tmpMins = (tmpDeltaSecs / 60) % 60;
+    long tmpHours = (tmpDeltaSecs / 3600) % 24;
+    deltaSecs = secs + tmpSecs;
+    deltaMins = mins + tmpMins;
+    deltaHours = hours + tmpHours;
+    if (deltaSecs > 59) { deltaSecs -= 60; deltaMins++; }
+    if (deltaMins > 59) { deltaMins -= 60; deltaHours++; }
+    if (deltaHours > 23) { deltaHours -= 24; }
+  }
+  
+  // Implement 24/12 hour mode
+  byte getHoursByMode(byte hours) {
+    if (hourMode) {
+      if (hours == 0) {
+        return 12;
+      } else if (hours > 12) {
+        return hours - 12;
+      } else {
+        return hours;
+      }
+    } else {
+      return hours;
+    }
+  }
+};
+
 // ********************** HV generator variables *********************
 int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
@@ -298,18 +422,12 @@ int sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
 DS3231 Clock;
 
-// Time initial values, overwritten on startup if an RTC is there
-byte hours = 12;
-byte mins = 0;
-byte secs = 0;
-byte days = 1;
-byte months = 1;
-byte years = 14;
-byte dow = 1; // 1 = Sun, 7 = Sat, by our convention
-boolean mode12or24 = false;
+// Time initial values, overwritten on startup if a time provider is there
+DateTime displayDate;
 
 // State variables for detecting changes
 byte lastSec;
+long nowMillis = 0;
 
 int dateFormat = DATE_FORMAT_DEFAULT;
 int dayBlanking = DAY_BLANKING_DEFAULT;
@@ -453,7 +571,7 @@ void setup()
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
   
   // Make sure the oscillator stays off, even when on battery
-  Clock.enableOscillator(false,false,0);  
+  Clock.enableOscillator(true,false,0);
 }
 
 //**********************************************************************************
@@ -463,10 +581,19 @@ void setup()
 //**********************************************************************************
 void loop()
 {
-  // get the time
-  getRTCTime();
+  nowMillis = millis();
+  
+  // We don't want to get the time from the external time provider always,
+  // just enough to keep the internal time provider correct
+  if (displayDate.getDeltaMillis(nowMillis) > READ_TIME_PROVIDER_MILLIS) {
+    // get the time from the external provider
+    getRTCTime();
+  } else {
+    // Get the time from the internal provider
+    getTimeInt();
+  }
 
-  // Check button, we evaluate below
+  // Check button, we evaluate below  // Get the time from the internal provider
   checkButton1();
 
   // ******* Preview the next display mode *******
@@ -555,7 +682,7 @@ void loop()
     }
 
     if (nextMode == MODE_12_24) {
-      loadNumberArrayConfBool(mode12or24,nextMode-MODE_12_24);
+      loadNumberArrayConfBool(displayDate.getHourMode(),nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -684,7 +811,7 @@ void loop()
           blanked = false;
         } else {
           // Always start from the first mode, or increment the temp mode if we are already in a display
-          if (millis() < secsDisplayEnd) {
+          if (nowMillis < secsDisplayEnd) {
             tempDisplayMode++;
           } else {
             tempDisplayMode = TEMP_MODE_MIN;
@@ -693,11 +820,11 @@ void loop()
             tempDisplayMode = TEMP_MODE_MIN;
           }
 
-          secsDisplayEnd = millis() + 5000;
+          secsDisplayEnd = nowMillis + 5000;
         }
       }
 
-      if (millis() < secsDisplayEnd) {
+      if (nowMillis < secsDisplayEnd) {
         if (tempDisplayMode == TEMP_MODE_DATE) {
           loadNumberArrayDate();
         }
@@ -729,7 +856,7 @@ void loop()
     if (currentMode == MODE_MINS_SET) {
       if(is1PressedRelease()) {
         incMins();
-        setRTC();
+        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
       }
       loadNumberArrayTime();
       highlight2and3();
@@ -738,7 +865,7 @@ void loop()
     if (currentMode == MODE_HOURS_SET) {
       if(is1PressedRelease()) {
         incHours();
-        setRTC();
+        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
       }
       loadNumberArrayTime();
       highlight0and1();
@@ -747,7 +874,7 @@ void loop()
     if (currentMode == MODE_DAYS_SET) {
       if(is1PressedRelease()) {
         incDays();
-        setRTC();
+        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
       }
       loadNumberArrayDate();
       highlightDaysDateFormat();
@@ -756,7 +883,7 @@ void loop()
     if (currentMode == MODE_MONTHS_SET) {
       if(is1PressedRelease()) {
         incMonths();
-        setRTC();
+        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
       }
       loadNumberArrayDate();
       highlightMonthsDateFormat();
@@ -765,7 +892,7 @@ void loop()
     if (currentMode == MODE_YEARS_SET) {
       if(is1PressedRelease()) {
         incYears();
-        setRTC();
+        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
       }
       loadNumberArrayDate();
       highlightYearsDateFormat();
@@ -773,10 +900,10 @@ void loop()
 
     if (currentMode == MODE_12_24) {
       if(is1PressedRelease()) {
-        mode12or24 = !mode12or24;
-        setRTC();
+        displayDate.setHourMode(!displayDate.getHourMode());
+        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
       }
-      loadNumberArrayConfBool(mode12or24,currentMode-MODE_12_24);
+      loadNumberArrayConfBool(displayDate.getHourMode(),currentMode-MODE_12_24);
       displayConfig();
     }
 
@@ -1016,7 +1143,7 @@ void loop()
   if ((currentMode != MODE_DIGIT_BURN) && (nextMode != MODE_DIGIT_BURN)) {
     // One armed bandit trigger every 10th minute
     if (acpOffset == 0) {
-      if (((mins % 10) == 9) && (secs == 15)) {
+      if (((displayDate.getMins() % 10) == 9) && (displayDate.getSecs() == 15)) {
         acpOffset = 1;
       }
     }
@@ -1059,10 +1186,10 @@ void loop()
 void setLeds()
 {
   // Pulse PWM generation - Only update it on a second change (not every time round the loop)
-  if (secs != lastSec) {
-    lastSec = secs;
+  if (displayDate.getSecs() != lastSec) {
+    lastSec = displayDate.getSecs();
 
-    upOrDown = (secs % 2 == 0);
+    upOrDown = (displayDate.getSecs() % 2 == 0);
 
     // Reset the PWM every now and again, otherwise it drifts
     if (upOrDown) {
@@ -1176,12 +1303,12 @@ void setLeds()
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayTime() {
-  NumberArray[5] = secs % 10;
-  NumberArray[4] = secs / 10;
-  NumberArray[3] = mins % 10;
-  NumberArray[2] = mins / 10;
-  NumberArray[1] = hours % 10;
-  NumberArray[0] = hours / 10;
+  NumberArray[5] = displayDate.getSecs() % 10;
+  NumberArray[4] = displayDate.getSecs() / 10;
+  NumberArray[3] = displayDate.getMins() % 10;
+  NumberArray[2] = displayDate.getMins() / 10;
+  NumberArray[1] = displayDate.getHours() % 10;
+  NumberArray[0] = displayDate.getHours() / 10;
 }
 
 // ************************************************************
@@ -1190,28 +1317,28 @@ void loadNumberArrayTime() {
 void loadNumberArrayDate() {
   switch(dateFormat) {
     case DATE_FORMAT_YYMMDD:
-      NumberArray[5] = days % 10;
-      NumberArray[4] = days / 10;
-      NumberArray[3] = months % 10;
-      NumberArray[2] = months / 10;
-      NumberArray[1] = years % 10;
-      NumberArray[0] = years / 10;
+      NumberArray[5] = displayDate.getDays() % 10;
+      NumberArray[4] = displayDate.getDays() / 10;
+      NumberArray[3] = displayDate.getMonths() % 10;
+      NumberArray[2] = displayDate.getMonths() / 10;
+      NumberArray[1] = displayDate.getYears() % 10;
+      NumberArray[0] = displayDate.getYears() / 10;
       break;
     case DATE_FORMAT_MMDDYY:
-      NumberArray[5] = years % 10;
-      NumberArray[4] = years / 10;
-      NumberArray[3] = days % 10;
-      NumberArray[2] = days / 10;
-      NumberArray[1] = months % 10;
-      NumberArray[0] = months / 10;
+      NumberArray[5] = displayDate.getYears() % 10;
+      NumberArray[4] = displayDate.getYears() / 10;
+      NumberArray[3] = displayDate.getDays() % 10;
+      NumberArray[2] = displayDate.getDays() / 10;
+      NumberArray[1] = displayDate.getMonths() % 10;
+      NumberArray[0] = displayDate.getMonths() / 10;
       break;
     case DATE_FORMAT_DDMMYY:
-      NumberArray[5] = years % 10;
-      NumberArray[4] = years / 10;
-      NumberArray[3] = months % 10;
-      NumberArray[2] = months / 10;
-      NumberArray[1] = days % 10;
-      NumberArray[0] = days / 10;
+      NumberArray[5] = displayDate.getYears() % 10;
+      NumberArray[4] = displayDate.getYears() / 10;
+      NumberArray[3] = displayDate.getMonths() % 10;
+      NumberArray[2] = displayDate.getMonths() / 10;
+      NumberArray[1] = displayDate.getDays() % 10;
+      NumberArray[0] = displayDate.getDays() / 10;
       break;
   }
 }
@@ -1249,24 +1376,24 @@ void loadNumberArrayLDR() {
 // Test digits
 // ************************************************************
 void loadNumberArrayTestDigits() {
-  NumberArray[5] = secs % 10;
-  NumberArray[4] = (secs+1) % 10;
-  NumberArray[3] = (secs+2) % 10;
-  NumberArray[2] = (secs+3) % 10;
-  NumberArray[1] = (secs+4) % 10;
-  NumberArray[0] = (secs+5) % 10;
+  NumberArray[5] = displayDate.getSecs() % 10;
+  NumberArray[4] = (displayDate.getSecs()+1) % 10;
+  NumberArray[3] = (displayDate.getSecs()+2) % 10;
+  NumberArray[2] = (displayDate.getSecs()+3) % 10;
+  NumberArray[1] = (displayDate.getSecs()+4) % 10;
+  NumberArray[0] = (displayDate.getSecs()+5) % 10;
 }
 
 // ************************************************************
 // Do the Anti Cathode Poisoning
 // ************************************************************
 void loadNumberArrayACP() {
-  NumberArray[5] = (secs + acpOffset) % 10;
-  NumberArray[4] = (secs / 10 + acpOffset) % 10;
-  NumberArray[3] = (mins + acpOffset) % 10;
-  NumberArray[2] = (mins / 10 + acpOffset) % 10;
-  NumberArray[1] = (hours+ acpOffset)  % 10;
-  NumberArray[0] = (hours / 10 + acpOffset) % 10;
+  NumberArray[5] = (displayDate.getSecs() + acpOffset) % 10;
+  NumberArray[4] = (displayDate.getSecs() / 10 + acpOffset) % 10;
+  NumberArray[3] = (displayDate.getMins() + acpOffset) % 10;
+  NumberArray[2] = (displayDate.getMins() / 10 + acpOffset) % 10;
+  NumberArray[1] = (displayDate.getHours() + acpOffset)  % 10;
+  NumberArray[0] = (displayDate.getHours() / 10 + acpOffset) % 10;
 }
 
 // ************************************************************
@@ -1498,8 +1625,6 @@ void digitOff(int digit) {
 void checkButton1() {
   if (digitalRead(inputPin1) == 0) {
     buttonWasReleased = false;
-
-    long nowMillis = millis();
 
     // We need consecutive pressed counts to treat this is pressed
     if (button1PressedCount < debounceCounter) {
@@ -1847,9 +1972,9 @@ void allBlanked() {
 // increment the time by 1 Sec
 // ************************************************************
 void incSecs() {
-  secs++;
-  if (secs >= SECS_MAX) {
-    secs = 0;
+  displayDate.setSecs(displayDate.getSecs()+1);
+  if (displayDate.getSecs() >= SECS_MAX) {
+    displayDate.setSecs(0);
   }
 }
 
@@ -1857,11 +1982,11 @@ void incSecs() {
 // increment the time by 1 min
 // ************************************************************
 void incMins() {
-  mins++;
-  secs=0;
+  displayDate.setMins(displayDate.getMins()+1);
+  displayDate.setSecs(0);
 
-  if (mins >= MINS_MAX) {
-    mins = 0;
+  if (displayDate.getMins() >= MINS_MAX) {
+    displayDate.setMins(0);
   }
 }
 
@@ -1869,10 +1994,10 @@ void incMins() {
 // increment the time by 1 hour
 // ************************************************************
 void incHours() {
-  hours++;
+  displayDate.setHours(displayDate.getHours()+1);
 
-  if (hours >= HOURS_MAX) {
-    hours = 0;
+  if (displayDate.getHours() >= HOURS_MAX) {
+    displayDate.setHours(0);
   }
 }
 
@@ -1880,10 +2005,10 @@ void incHours() {
 // increment the date by 1 day
 // ************************************************************
 void incDays() {
-  days++;
+  displayDate.setDays(displayDate.getDays()+1);
 
   int maxDays;
-  switch (months)
+  switch (displayDate.getMonths())
   {
   case 4:
   case 6:
@@ -1905,8 +2030,8 @@ void incDays() {
     }
   }
 
-  if (days > maxDays) {
-    days = 1;
+  if (displayDate.getDays() > maxDays) {
+    displayDate.setDays(1);
   }
 }
 
@@ -1914,10 +2039,10 @@ void incDays() {
 // increment the month by 1 month
 // ************************************************************
 void incMonths() {
-  months++;
+  displayDate.setMonths(displayDate.getMonths()+1);
 
-  if (months > 12) {
-    months = 1;
+  if (displayDate.getMonths() > 12) {
+    displayDate.setMonths(1);
   }
 }
 
@@ -1925,18 +2050,61 @@ void incMonths() {
 // increment the year by 1 year
 // ************************************************************
 void incYears() {
-  years++;
+  displayDate.setYears(displayDate.getYears()+1);
 
-  if (years > 50) {
-    years = 14;
+  if (displayDate.getYears() > 50) {
+    displayDate.setYears(14);
   }
 }
 
 // ************************************************************
+// Check the blanking
+// ************************************************************
+void checkBlanking() {
+  // Check day blanking, but only when we are in
+  // normal time mode
+  if ((displayDate.getSecs() == 0) && (currentMode == MODE_TIME)) {
+    switch(dayBlanking) {
+      case DAY_BLANKING_NEVER:
+        blanked = false;
+        break;
+      case DAY_BLANKING_WEEKEND:
+        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7));
+        break;
+      case DAY_BLANKING_WEEKDAY:
+        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7));
+        break;
+      case DAY_BLANKING_ALWAYS:
+        blanked = true;
+        break;
+    }
+  }
+}
+
+// ******************************************************************
+// Work out the day of week.
+// Used in day blanking
+// 1 <= m <= 12,  y > 1752 (in the U.K.)$
+// Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
+// ******************************************************************
+int dayofweek(int y, int m, int d)
+{
+  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+  y -= m < 3;
+  return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
+}
+
+//**********************************************************************************
+//**********************************************************************************
+//*                         RTC Module Time Provider                               *
+//**********************************************************************************
+//**********************************************************************************
+
+// ************************************************************
 // Set the date/time in the RTC
 // ************************************************************
-void setRTC() {
-  Clock.setClockMode(mode12or24); // false = 24h
+void setRTC(byte hours, byte mins, byte secs, byte years, byte months, byte days) {
+  Clock.setClockMode(false); // false = 24h
 
   Clock.setYear(years);
   Clock.setMonth(months);
@@ -1952,47 +2120,16 @@ void setRTC() {
 // Get the time from the RTC
 // ************************************************************
 void getRTCTime() {
-  bool h12;
   bool PM;
-  hours=Clock.getHour(h12,PM);
-  mins=Clock.getMinute();
-  secs=Clock.getSecond();
-  years=Clock.getYear();
+  bool twentyFourHourClock;
+  byte hours=Clock.getHour(twentyFourHourClock,PM);
+  byte mins=Clock.getMinute();
+  byte secs=Clock.getSecond();
+  byte years=Clock.getYear();
   bool century = false;
-  months=Clock.getMonth(century);
-  days=Clock.getDate();
-  dow=Clock.getDoW();
-}
-
-// ************************************************************
-// Check the blanking
-// ************************************************************
-void checkBlanking() {
-  // Check day blanking, but only when we are in
-  // normal time mode
-  if ((secs == 0) && (currentMode == MODE_TIME)) {
-    switch(dayBlanking) {
-      case DAY_BLANKING_NEVER:
-        blanked = false;
-        break;
-      case DAY_BLANKING_WEEKEND:
-        blanked = ((dow == 1) || (dow == 7));
-        break;
-      case DAY_BLANKING_WEEKDAY:
-        blanked = ((dow > 1) && (dow < 7));
-        break;
-      case DAY_BLANKING_ALWAYS:
-        blanked = true;
-        break;
-    }
-  }
-}
-
-// ************************************************************
-// Get the day of week from the RTC
-// ************************************************************
-int getRTCDoW() {
-  return Clock.getDoW();
+  byte months=Clock.getMonth(century);
+  byte days=Clock.getDate();
+  displayDate.setSyncTime(nowMillis,years,months,days,hours,mins,secs);
 }
 
 // ************************************************************
@@ -2002,11 +2139,35 @@ float getRTCTemp() {
   return Clock.getTemperature();
 }
 
+//**********************************************************************************
+//**********************************************************************************
+//*                           Internal Time Provider                               *
+//**********************************************************************************
+//**********************************************************************************
+
+// ************************************************************
+// Get the time from the internal time provider
+// The crystal oscillator is good enough for driving the clock
+// most of the time, and we use the internal time provider
+// for most of the calls. We periodically align the internal
+// provider to the external one, which has better long term
+// stability.
+// ************************************************************
+void getTimeInt() {
+  displayDate.setDeltaMillis(nowMillis);
+}
+
+//**********************************************************************************
+//**********************************************************************************
+//*                               EEPROM interface                                 *
+//**********************************************************************************
+//**********************************************************************************
+
 // ************************************************************
 // Save current values back to EEPROM
 // ************************************************************
 void saveEEPROMValues() {
-  EEPROM.write(EE_12_24,mode12or24);
+  EEPROM.write(EE_12_24,displayDate.getHourMode());
   EEPROM.write(EE_FADE_STEPS,fadeSteps);
   EEPROM.write(EE_DATE_FORMAT, dateFormat);
   EEPROM.write(EE_DAY_BLANKING, dayBlanking);
@@ -2032,7 +2193,7 @@ void saveEEPROMValues() {
 // read EEPROM values
 // ************************************************************
 void readEEPROMValues() {
-  mode12or24 = EEPROM.read(EE_12_24);
+  displayDate.setHourMode(EEPROM.read(EE_12_24));
 
   fadeSteps = EEPROM.read(EE_FADE_STEPS);
   if ((fadeSteps < FADE_STEPS_MIN) || (fadeSteps > FADE_STEPS_MAX)) {
@@ -2119,7 +2280,7 @@ void readEEPROMValues() {
 // Reset EEPROM values back to what they once were
 // ************************************************************
 void factoryReset() {
-  mode12or24 = false;
+  displayDate.setHourMode(false);
   blankLeading = false;
   scrollback = true;
   fadeSteps = FADE_STEPS_DEFAULT;
@@ -2140,6 +2301,12 @@ void factoryReset() {
 
   saveEEPROMValues();
 }
+
+//**********************************************************************************
+//**********************************************************************************
+//*                          High Voltage generator                                *
+//**********************************************************************************
+//**********************************************************************************
 
 // ************************************************************
 // Adjust the HV gen to achieve the voltage we require
@@ -2180,6 +2347,12 @@ int getRawHVADCThreshold(double targetVoltage) {
   return rawReading;
 }
 
+//**********************************************************************************
+//**********************************************************************************
+//*                          Light Dependent Resistor                              *
+//**********************************************************************************
+//**********************************************************************************
+
 // ******************************************************************
 // Check the ambient light through the LDR (Light Dependent Resistor)
 // Smooths the reading over several reads.
@@ -2211,15 +2384,4 @@ int getDimmingFromLDR() {
   return returnValue;
 }
 
-// ******************************************************************
-// Work out the day of week.
-// Used in day blanking
-// 1 <= m <= 12,  y > 1752 (in the U.K.)$
-// Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
-// ******************************************************************
-int dayofweek(int y, int m, int d)
-{
-  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-  y -= m < 3;
-  return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
-}
+
