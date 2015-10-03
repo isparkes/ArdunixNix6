@@ -50,10 +50,10 @@
 #define EE_BL_DIMMING       22     // Do we want to dim the backlights with the normal dimming
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 31
+#define SOFTWARE_VERSION 32
 
 // how often we make reference to the external time provider
-#define READ_TIME_PROVIDER_MILLIS 120000 // Update the internal time provider once every 2 minutes
+#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider once every 2 minutes
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -254,14 +254,14 @@ public:
   // with the milliseconds timestamp given.
   // To read an updated timestamp, we use the next function "setDeltaMillis"
   void setSyncTime(long newMillis,byte newYears,byte newMonths,byte newDays,byte newHours,byte newMins,byte newSecs) {
-    millisDate = newMillis;
-    hours = newHours;
-    mins = newMins;
-    secs = newSecs;
     years = newYears;
     months = newMonths;
     days = newDays;
+    hours = newHours;
+    mins = newMins;
+    secs = newSecs;
     dow = dayofweek(years,months,days);
+    millisDate = newMillis;
   }
   
   // Update the time with a new millis timestamp
@@ -273,27 +273,19 @@ public:
   // Current time - updated by "setDeltaMillis"
   byte getHours() { return getHoursByMode(deltaHours); }
   byte getMins()  { return deltaMins; }
-  byte getSecs() { return deltaSecs; }
+  byte getSecs()  { return deltaSecs; }
 
   // Current date / dow
-  byte getYears() { return years; }
-  byte getMonths()  { return months; }
-  byte getDays() { return days; }
-  byte getDow() { return dow; }
+  byte getYears()  { return years; }
+  byte getMonths() { return months; }
+  byte getDays()   { return days; }
+  byte getDow()    { return dow; }
 
   // Current sync time - updated by "setSyncTime"
   byte getSyncHours() { return getHoursByMode(hours); }
   byte getSyncMins()  { return mins; }
   byte getSyncSecs()  { return secs; }
 
-  // Setters   
-  byte setHours(byte newHours) { hours = newHours; }
-  byte setMins(byte newMins)  { mins = newMins; }
-  byte setSecs(byte newSecs) { secs = newSecs; }
-  byte setYears(byte newYears) { years = newYears; dow = dayofweek(years,months,days); }
-  byte setMonths(byte newMonths)  { months = newMonths; dow = dayofweek(years,months,days); }
-  byte setDays(byte newDays) { days = newDays; dow = dayofweek(years,months,days); }
-  
   void setHourMode(boolean newMode) { hourMode = newMode; }
   boolean getHourMode() { return hourMode; }
    
@@ -410,6 +402,7 @@ int acpTick = 0;          // The number of counts before we scroll
 
 int currentMode = MODE_TIME;   // Initial cold start mode
 int nextMode = currentMode;
+int loopCounter = 0;
 
 // ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
@@ -572,6 +565,14 @@ void setup()
   
   // Make sure the oscillator stays off, even when on battery
   Clock.enableOscillator(true,false,0);
+  
+  // Calibrate HVGen at full
+  for (int i = 0 ; i < 1000 ; i++ ) {
+    loadNumberArray8s();
+    allBright();
+    outputDisplay();
+    checkHVVoltage();  
+  }
 }
 
 //**********************************************************************************
@@ -851,284 +852,275 @@ void loop()
           applyBlanking();
         }
       }
-    }
-
-    if (currentMode == MODE_MINS_SET) {
-      if(is1PressedRelease()) {
-        incMins();
-        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
-      }
-      loadNumberArrayTime();
-      highlight2and3();
-    }
-
-    if (currentMode == MODE_HOURS_SET) {
-      if(is1PressedRelease()) {
-        incHours();
-        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
-      }
-      loadNumberArrayTime();
-      highlight0and1();
-    }
-
-    if (currentMode == MODE_DAYS_SET) {
-      if(is1PressedRelease()) {
-        incDays();
-        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
-      }
-      loadNumberArrayDate();
-      highlightDaysDateFormat();
-    }
-
-    if (currentMode == MODE_MONTHS_SET) {
-      if(is1PressedRelease()) {
-        incMonths();
-        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
-      }
-      loadNumberArrayDate();
-      highlightMonthsDateFormat();
-    }
-
-    if (currentMode == MODE_YEARS_SET) {
-      if(is1PressedRelease()) {
-        incYears();
-        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
-      }
-      loadNumberArrayDate();
-      highlightYearsDateFormat();
-    }
-
-    if (currentMode == MODE_12_24) {
-      if(is1PressedRelease()) {
-        displayDate.setHourMode(!displayDate.getHourMode());
-        setRTC(displayDate.getHours(),displayDate.getMins(),displayDate.getSecs(),displayDate.getYears(),displayDate.getMonths(),displayDate.getDays());
-      }
-      loadNumberArrayConfBool(displayDate.getHourMode(),currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_LEAD_BLANK) {
-      if(is1PressedRelease()) {
-        blankLeading = !blankLeading;
-      }
-      loadNumberArrayConfBool(blankLeading,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_SCROLLBACK) {
-      if(is1PressedRelease()) {
-        scrollback = !scrollback;
-      }
-      loadNumberArrayConfBool(scrollback,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_DATE_FORMAT) {
-      if(is1PressedRelease()) {
-        dateFormat++;
-        if (dateFormat > DATE_FORMAT_MAX) {
-          dateFormat = DATE_FORMAT_MIN;
+    } else {
+      if (currentMode == MODE_MINS_SET) {
+        if(is1PressedRelease()) {
+          incMins();
         }
+        loadNumberArrayTime();
+        highlight2and3();
       }
-      loadNumberArrayConfInt(dateFormat,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_DAY_BLANKING) {
-      if(is1PressedRelease()) {
-        dayBlanking++;
-        if (dayBlanking > DAY_BLANKING_MAX) {
-          dayBlanking = DAY_BLANKING_MIN;
+      if (currentMode == MODE_HOURS_SET) {
+        if(is1PressedRelease()) {
+          incHours();
         }
+        loadNumberArrayTime();
+        highlight0and1();
       }
-      loadNumberArrayConfInt(dayBlanking,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_FADE_STEPS_UP) {
-      if(is1PressedRelease()) {
-        fadeSteps++;
-        if (fadeSteps > FADE_STEPS_MAX) {
-          fadeSteps = FADE_STEPS_MIN;
+      if (currentMode == MODE_DAYS_SET) {
+        if(is1PressedRelease()) {
+          incDays();
         }
+        loadNumberArrayDate();
+        highlightDaysDateFormat();
       }
-      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
-      displayConfig();
-      fadeStep = dispCount / fadeSteps;
-    }
 
-    if (currentMode == MODE_FADE_STEPS_DOWN) {
-      if(is1PressedRelease()) {
-        fadeSteps--;
-        if (fadeSteps < FADE_STEPS_MIN) {
-          fadeSteps = FADE_STEPS_MAX;
+      if (currentMode == MODE_MONTHS_SET) {
+        if(is1PressedRelease()) {
+          incMonths();
         }
+        loadNumberArrayDate();
+        highlightMonthsDateFormat();
       }
-      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
-      displayConfig();
-      fadeStep = dispCount / fadeSteps;
-    }
 
-    if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
-      if(is1PressedRelease()) {
-        scrollSteps--;
-        if (scrollSteps < SCROLL_STEPS_MIN) {
-          scrollSteps = SCROLL_STEPS_MAX;
+      if (currentMode == MODE_YEARS_SET) {
+        if(is1PressedRelease()) {
+          incYears();
         }
+        loadNumberArrayDate();
+        highlightYearsDateFormat();
       }
-      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
-      if(is1PressedRelease()) {
-        scrollSteps++;
-        if (scrollSteps > SCROLL_STEPS_MAX) {
-          scrollSteps = SCROLL_STEPS_MIN;
+      if (currentMode == MODE_12_24) {
+        if(is1PressedRelease()) {
+          displayDate.setHourMode(!displayDate.getHourMode());
         }
+        loadNumberArrayConfBool(displayDate.getHourMode(),currentMode-MODE_12_24);
+        displayConfig();
       }
-      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_BACKLIGHT_MODE) {
-      if(is1PressedRelease()) {
-        backlightMode++;
-        if (backlightMode > BACKLIGHT_MAX) {
-          backlightMode = BACKLIGHT_MIN;
+      if (currentMode == MODE_LEAD_BLANK) {
+        if(is1PressedRelease()) {
+          blankLeading = !blankLeading;
         }
-      }
-      loadNumberArrayConfInt(backlightMode,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_RED_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+        loadNumberArrayConfBool(blankLeading,currentMode-MODE_12_24);
+        displayConfig();
       }
 
-      if(is1PressedRelease()) {
-        redCnl++;
-        if (redCnl > COLOUR_CNL_MAX) {
-          redCnl = COLOUR_CNL_MIN;
+      if (currentMode == MODE_SCROLLBACK) {
+        if(is1PressedRelease()) {
+          scrollback = !scrollback;
         }
-      }
-      loadNumberArrayConfInt(redCnl,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_GRN_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+        loadNumberArrayConfBool(scrollback,currentMode-MODE_12_24);
+        displayConfig();
       }
 
-      if(is1PressedRelease()) {
-        grnCnl++;
-        if (grnCnl > COLOUR_CNL_MAX) {
-          grnCnl = COLOUR_CNL_MIN;
+      if (currentMode == MODE_DATE_FORMAT) {
+        if(is1PressedRelease()) {
+          dateFormat++;
+          if (dateFormat > DATE_FORMAT_MAX) {
+            dateFormat = DATE_FORMAT_MIN;
+          }
         }
-      }
-      loadNumberArrayConfInt(grnCnl,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_BLU_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+        loadNumberArrayConfInt(dateFormat,currentMode-MODE_12_24);
+        displayConfig();
       }
 
-      if(is1PressedRelease()) {
-        bluCnl++;
-        if (bluCnl > COLOUR_CNL_MAX) {
-          bluCnl = COLOUR_CNL_MIN;
+      if (currentMode == MODE_DAY_BLANKING) {
+        if(is1PressedRelease()) {
+          dayBlanking++;
+          if (dayBlanking > DAY_BLANKING_MAX) {
+            dayBlanking = DAY_BLANKING_MIN;
+          }
         }
+        loadNumberArrayConfInt(dayBlanking,currentMode-MODE_12_24);
+        displayConfig();
       }
-      loadNumberArrayConfInt(bluCnl,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_TARGET_HV_UP) {
-      if(is1PressedRelease()) {
-        hvTargetVoltage+=5;
-        if (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX) {
-          hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
+      if (currentMode == MODE_FADE_STEPS_UP) {
+        if(is1PressedRelease()) {
+          fadeSteps++;
+          if (fadeSteps > FADE_STEPS_MAX) {
+            fadeSteps = FADE_STEPS_MIN;
+          }
         }
+        loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
+        displayConfig();
+        fadeStep = dispCount / fadeSteps;
       }
-      loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
-      rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_TARGET_HV_DOWN) {
-      if(is1PressedRelease()) {
-        hvTargetVoltage-=5;
-        if (hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) {
-          hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
+      if (currentMode == MODE_FADE_STEPS_DOWN) {
+        if(is1PressedRelease()) {
+          fadeSteps--;
+          if (fadeSteps < FADE_STEPS_MIN) {
+            fadeSteps = FADE_STEPS_MAX;
+          }
         }
+        loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
+        displayConfig();
+        fadeStep = dispCount / fadeSteps;
       }
-      loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
-      rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_PULSE_UP) {
-      if(is1PressedRelease()) {
-        pulseWidth+=10;
-        if (pulseWidth > PWM_PULSE_MAX) {
-          pulseWidth = PWM_PULSE_MIN;
+      if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
+        if(is1PressedRelease()) {
+          scrollSteps--;
+          if (scrollSteps < SCROLL_STEPS_MIN) {
+            scrollSteps = SCROLL_STEPS_MAX;
+          }
         }
+        loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
+        displayConfig();
       }
-      OCR1A = pulseWidth;
-      loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_PULSE_DOWN) {
-      if(is1PressedRelease()) {
-        pulseWidth-=10;
-        if (pulseWidth < PWM_PULSE_MIN) {
-          pulseWidth = PWM_PULSE_MAX;
+      if (currentMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
+        if(is1PressedRelease()) {
+          scrollSteps++;
+          if (scrollSteps > SCROLL_STEPS_MAX) {
+            scrollSteps = SCROLL_STEPS_MIN;
+          }
         }
+        loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
+        displayConfig();
       }
-      OCR1A = pulseWidth;
-      loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_TEMP) {
-      loadNumberArrayTemp(currentMode-MODE_12_24);
-      displayConfig();
-    }
+      if (currentMode == MODE_BACKLIGHT_MODE) {
+        if(is1PressedRelease()) {
+          backlightMode++;
+          if (backlightMode > BACKLIGHT_MAX) {
+            backlightMode = BACKLIGHT_MIN;
+          }
+        }
+        loadNumberArrayConfInt(backlightMode,currentMode-MODE_12_24);
+        displayConfig();
+      }
 
-    // We are setting calibration
-    if (currentMode == MODE_VERSION) {
-      loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
-      displayConfig();
-    }
+      if (currentMode == MODE_RED_CNL) {
+        if (backlightMode == BACKLIGHT_CYCLE) {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
 
-    // We are setting calibration
-    if (currentMode == MODE_TUBE_TEST) {
-      allNormal();
-      loadNumberArrayTestDigits();
-    }
+        if(is1PressedRelease()) {
+          redCnl++;
+          if (redCnl > COLOUR_CNL_MAX) {
+            redCnl = COLOUR_CNL_MIN;
+          }
+        }
+        loadNumberArrayConfInt(redCnl,currentMode-MODE_12_24);
+        displayConfig();
+      }
 
-    // We arerepairing cathode poisoning
-    if (currentMode == MODE_DIGIT_BURN) {
-      if(is1PressedRelease()) {
-        digitBurnValue += 1;
-        if (digitBurnValue > 9) {
-          digitBurnValue = 0;
+      if (currentMode == MODE_GRN_CNL) {
+        if (backlightMode == BACKLIGHT_CYCLE) {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
 
-          digitOff(digitBurnDigit);
-          digitBurnDigit += 1;
-          if (digitBurnDigit > 5) {
-            digitBurnDigit = 0;
+        if(is1PressedRelease()) {
+          grnCnl++;
+          if (grnCnl > COLOUR_CNL_MAX) {
+            grnCnl = COLOUR_CNL_MIN;
+          }
+        }
+        loadNumberArrayConfInt(grnCnl,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_BLU_CNL) {
+        if (backlightMode == BACKLIGHT_CYCLE) {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+
+        if(is1PressedRelease()) {
+          bluCnl++;
+          if (bluCnl > COLOUR_CNL_MAX) {
+            bluCnl = COLOUR_CNL_MIN;
+          }
+        }
+        loadNumberArrayConfInt(bluCnl,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TARGET_HV_UP) {
+        if(is1PressedRelease()) {
+          hvTargetVoltage+=5;
+          if (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX) {
+            hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
+          }
+        }
+        loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
+        rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TARGET_HV_DOWN) {
+        if(is1PressedRelease()) {
+          hvTargetVoltage-=5;
+          if (hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) {
+            hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
+          }
+        }
+        loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
+        rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_PULSE_UP) {
+        if(is1PressedRelease()) {
+          pulseWidth+=10;
+          if (pulseWidth > PWM_PULSE_MAX) {
+            pulseWidth = PWM_PULSE_MIN;
+          }
+        }
+        OCR1A = pulseWidth;
+        loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_PULSE_DOWN) {
+        if(is1PressedRelease()) {
+          pulseWidth-=10;
+          if (pulseWidth < PWM_PULSE_MIN) {
+            pulseWidth = PWM_PULSE_MAX;
+          }
+        }
+        OCR1A = pulseWidth;
+        loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TEMP) {
+        loadNumberArrayTemp(currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_VERSION) {
+        loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TUBE_TEST) {
+        allNormal();
+        loadNumberArrayTestDigits();
+      }
+
+      if (currentMode == MODE_DIGIT_BURN) {
+        if(is1PressedRelease()) {
+          digitBurnValue += 1;
+          if (digitBurnValue > 9) {
+            digitBurnValue = 0;
+
+            digitOff(digitBurnDigit);
+            digitBurnDigit += 1;
+            if (digitBurnDigit > 5) {
+              digitBurnDigit = 0;
+            }
           }
         }
       }
@@ -1168,9 +1160,11 @@ void loop()
     digitOn(digitBurnDigit,digitBurnValue);
   }
 
-  // Regulate the voltage
-  checkHVVoltage();
-
+  loopCounter++;
+  if (loopCounter % 100 == 0) {
+    checkHVVoltage();
+  }
+  
   // Set leds
   setLeds();
 }
@@ -1309,6 +1303,18 @@ void loadNumberArrayTime() {
   NumberArray[2] = displayDate.getMins() / 10;
   NumberArray[1] = displayDate.getHours() % 10;
   NumberArray[0] = displayDate.getHours() / 10;
+}
+
+// ************************************************************
+// Break the time into displayable digits
+// ************************************************************
+void loadNumberArray8s() {
+  NumberArray[5] = 8;
+  NumberArray[4] = 8;
+  NumberArray[3] = 8;
+  NumberArray[2] = 8;
+  NumberArray[1] = 8;
+  NumberArray[0] = 8;
 }
 
 // ************************************************************
@@ -1972,40 +1978,48 @@ void allBlanked() {
 // increment the time by 1 Sec
 // ************************************************************
 void incSecs() {
-  displayDate.setSecs(displayDate.getSecs()+1);
-  if (displayDate.getSecs() >= SECS_MAX) {
-    displayDate.setSecs(0);
+  byte tmpSecs = displayDate.getSecs();
+  tmpSecs++;
+  if (tmpSecs >= SECS_MAX) {
+    tmpSecs = 0;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),tmpSecs);
+  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),tmpSecs);
 }
 
 // ************************************************************
 // increment the time by 1 min
 // ************************************************************
 void incMins() {
-  displayDate.setMins(displayDate.getMins()+1);
-  displayDate.setSecs(0);
-
-  if (displayDate.getMins() >= MINS_MAX) {
-    displayDate.setMins(0);
+  byte tmpMins = displayDate.getMins();
+  tmpMins++;
+  if (tmpMins >= MINS_MAX) {
+    tmpMins = 0;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),tmpMins,0);
+  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),tmpMins,0);
 }
 
 // ************************************************************
 // increment the time by 1 hour
 // ************************************************************
 void incHours() {
-  displayDate.setHours(displayDate.getHours()+1);
+  byte tmpHours = displayDate.getHours();
+  tmpHours++;
 
-  if (displayDate.getHours() >= HOURS_MAX) {
-    displayDate.setHours(0);
+  if (tmpHours >= HOURS_MAX) {
+    tmpHours = 0;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),tmpHours,displayDate.getMins(),displayDate.getSecs());
+  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),tmpHours,displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
 // increment the date by 1 day
 // ************************************************************
 void incDays() {
-  displayDate.setDays(displayDate.getDays()+1);
+  byte tmpDays = displayDate.getDays();
+  tmpDays++;
 
   int maxDays;
   switch (displayDate.getMonths())
@@ -2030,31 +2044,39 @@ void incDays() {
     }
   }
 
-  if (displayDate.getDays() > maxDays) {
-    displayDate.setDays(1);
+  if (tmpDays > maxDays) {
+    tmpDays = 1;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),tmpDays,displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
+  setRTC(displayDate.getYears(),displayDate.getMonths(),tmpDays,displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
 // increment the month by 1 month
 // ************************************************************
 void incMonths() {
-  displayDate.setMonths(displayDate.getMonths()+1);
+  byte tmpMonths = displayDate.getMonths();
+  tmpMonths++;
 
-  if (displayDate.getMonths() > 12) {
-    displayDate.setMonths(1);
+  if (tmpMonths > 12) {
+    tmpMonths = 1;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),tmpMonths,displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
+  setRTC(displayDate.getYears(),tmpMonths,displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
 // increment the year by 1 year
 // ************************************************************
 void incYears() {
-  displayDate.setYears(displayDate.getYears()+1);
+  byte tmpYears = displayDate.getYears();
+  tmpYears++;
 
-  if (displayDate.getYears() > 50) {
-    displayDate.setYears(14);
+  if (tmpYears > 50) {
+    tmpYears = 15;
   }
+  displayDate.setSyncTime(nowMillis,tmpYears,displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
+  setRTC(tmpYears,displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
@@ -2101,35 +2123,35 @@ int dayofweek(int y, int m, int d)
 //**********************************************************************************
 
 // ************************************************************
-// Set the date/time in the RTC
-// ************************************************************
-void setRTC(byte hours, byte mins, byte secs, byte years, byte months, byte days) {
-  Clock.setClockMode(false); // false = 24h
-
-  Clock.setYear(years);
-  Clock.setMonth(months);
-  Clock.setDate(days);
-  int dow = dayofweek(2000 + years, months, days);
-  Clock.setDoW(dow);
-  Clock.setHour(hours);
-  Clock.setMinute(mins);
-  Clock.setSecond(secs);
-}
-
-// ************************************************************
 // Get the time from the RTC
 // ************************************************************
 void getRTCTime() {
   bool PM;
   bool twentyFourHourClock;
+  bool century = false;
+    
+  byte years=Clock.getYear();
+  byte months=Clock.getMonth(century);
+  byte days=Clock.getDate();
   byte hours=Clock.getHour(twentyFourHourClock,PM);
   byte mins=Clock.getMinute();
   byte secs=Clock.getSecond();
-  byte years=Clock.getYear();
-  bool century = false;
-  byte months=Clock.getMonth(century);
-  byte days=Clock.getDate();
   displayDate.setSyncTime(nowMillis,years,months,days,hours,mins,secs);
+}
+
+// ************************************************************
+// Set the date/time in the RTC
+// ************************************************************
+void setRTC(byte newYear,byte newMonth,byte newDay,byte newHour,byte newMin,byte newSec) {
+  Clock.setClockMode(false); // false = 24h
+  Clock.setYear(newYear);
+  Clock.setMonth(newMonth);
+  Clock.setDate(newDay);
+  int dow = dayofweek(2000 + newYear,newMonth,newDay);
+  Clock.setDoW(dow);
+  Clock.setHour(newHour);
+  Clock.setMinute(newMin);
+  Clock.setSecond(newSec);
 }
 
 // ************************************************************
@@ -2320,13 +2342,13 @@ void checkHVVoltage() {
 
   // check the read voltage
   if (rawSensorVal > rawHVADCThreshold) {
-    pwmTop += 10;
+    pwmTop++;
 
     if (pwmTop >= PWM_TOP_MAX) {
       pwmTop = PWM_TOP_MAX;
     }
   } else {
-    pwmTop -= 10;
+    pwmTop--;
 
     // check that we have not got a silly reading: On time cannot be more than 50% of TOP time
     if (pulseWidth > pwmTop) {
