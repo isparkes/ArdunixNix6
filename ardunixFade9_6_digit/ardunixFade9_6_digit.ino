@@ -10,7 +10,6 @@
 //*  - Single 74141 for digit display (other versions use 2 or even 6!)            *
 //*  - Automatic dimming, using a Light Dependent Resistor                         *
 //*  - RGB back light management                                                   *
-//*  - Highly modular code                                                         *
 //*                                                                                *
 //*  isparkes@protonmail.ch                                                        *
 //*                                                                                *
@@ -53,7 +52,7 @@
 #define SOFTWARE_VERSION 32
 
 // how often we make reference to the external time provider
-#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider once every 2 minutes
+#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider once every minute
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -206,6 +205,7 @@
 // ***** Pin Defintions ****** Pin Defintions ****** Pin Defintions ******
 
 // SN74141
+// These are now managed directly on PORT B, we don't use digitalWrite() for these
 #define ledPin_0_a  13    // package pin 19 // PB5
 #define ledPin_0_b  10    // package pin 16 // PB2
 #define ledPin_0_c  8     // package pin 14 // PB0
@@ -415,6 +415,8 @@ int sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
 DS3231 Clock;
 
+#define RTC_I2C_ADDRESS 0x68
+
 // Time initial values, overwritten on startup if a time provider is there
 DateTime displayDate;
 
@@ -534,6 +536,10 @@ void setup()
   sei();
 
   // **********************************************************************
+
+  // initialise the internal time (in case we don't find the time provider)
+  nowMillis = millis();
+  displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
 
   // Start the RTC communication
   Wire.begin();
@@ -1116,7 +1122,7 @@ void loop()
           if (digitBurnValue > 9) {
             digitBurnValue = 0;
 
-            digitOff(digitBurnDigit);
+            digitOff();
             digitBurnDigit += 1;
             if (digitBurnDigit > 5) {
               digitBurnDigit = 0;
@@ -1431,32 +1437,33 @@ void loadNumberArrayConfBool(boolean confValue, int confNum) {
 // ************************************************************
 // Decode the value to send to the 74141 and send it
 // We do this via the decoder to allow easy adaptation to
-// other pin layouts
+// other pin layouts.
 // ************************************************************
 void SetSN74141Chip(int num1)
 {
-  int a,b,c,d;
-
-  // Load the a,b,c,d.. to send to the SN74141 IC
+  // Map the logical numbers to the hardware pins we send to the SN74141 IC
   int decodedDigit = decodeDigit[num1];
 
+  // Mask all digit bits to 0
+  byte portb = PORTB;
+  portb = portb & B11001010;
+  
+  // Set the bits we need
   switch( decodedDigit )
   {
-    case 0: a=0;b=0;c=0;d=0;break;
-    case 1: a=1;b=0;c=0;d=0;break;
-    case 2: a=0;b=1;c=0;d=0;break;
-    case 3: a=1;b=1;c=0;d=0;break;
-    case 4: a=0;b=0;c=1;d=0;break;
-    case 5: a=1;b=0;c=1;d=0;break;
-    case 6: a=0;b=1;c=1;d=0;break;
-    case 7: a=1;b=1;c=1;d=0;break;
-    case 8: a=0;b=0;c=0;d=1;break;
-    case 9: a=1;b=0;c=0;d=1;break;
-    default: a=1;b=1;c=1;d=1;break;
+    case 0:                             break; // a=0;b=0;c=0;d=0 
+    case 1:  portb = portb | B00100000; break; // a=1;b=0;c=0;d=0
+    case 2:  portb = portb | B00000100; break; // a=0;b=1;c=0;d=0
+    case 3:  portb = portb | B00100100; break; // a=1;b=1;c=0;d=0
+    case 4:  portb = portb | B00000001; break; // a=0;b=0;c=1;d=0
+    case 5:  portb = portb | B00100001; break; // a=1;b=0;c=1;d=0
+    case 6:  portb = portb | B00000101; break; // a=0;b=1;c=1;d=0
+    case 7:  portb = portb | B00100101; break; // a=1;b=1;c=1;d=0
+    case 8:  portb = portb | B00010000; break; // a=0;b=0;c=0;d=1
+    case 9:  portb = portb | B00110000; break; // a=1;b=0;c=0;d=1
+    default: portb = portb | B00110101; break; // a=1;b=1;c=1;d=1 
   }
-
-  // Write to output pins.
-  setDigit(d,c,b,a);
+  PORTB = portb;
 }
 
 // ************************************************************
@@ -1593,7 +1600,7 @@ void outputDisplay()
       }
 
       if (timer == digitOffTime ) {
-        digitOff(i);
+        digitOff();
       }
     }
   }
@@ -1608,19 +1615,33 @@ void outputDisplay()
 
 // ************************************************************
 // Set a digit with the given value and turn the HVGen on
+// Assumes that all digits have previously been turned off
+// by a call to "digitOff"
 // ************************************************************
 void digitOn(int digit, int value) {
   TCCR1A = tccrOn;
   SetSN74141Chip(value);
-  digitalWrite(anodePins[digit], HIGH);
+  switch (digit) {
+    case 0: PORTC = PORTC | B00001000; break; // PC3
+    case 1: PORTC = PORTC | B00000100; break; // PC2
+    case 2: PORTD = PORTD | B00010000; break; // PD4
+    case 3: PORTD = PORTD | B00000100; break; // PD2
+    case 4: PORTD = PORTD | B00000010; break; // PD1
+    case 5: PORTD = PORTD | B00000001; break; // PD0
+  }
+  //digitalWrite(anodePins[digit], HIGH);
 }
 
 // ************************************************************
 // Finish displaying a digit and turn the HVGen on
 // ************************************************************
-void digitOff(int digit) {
+void digitOff() {
   TCCR1A = tccrOff;
-  digitalWrite(anodePins[digit], LOW);
+  //digitalWrite(anodePins[digit], LOW);
+  
+  // turn all digits off
+  PORTC = PORTC & B11110011;
+  PORTD = PORTD & B11101000;
 }
 
 // ************************************************************
@@ -1774,16 +1795,6 @@ boolean is1PressedRelease8S() {
   } else {
     return false;
   }
-}
-
-// ************************************************************
-// Output the digit to the 74141
-// ************************************************************
-void setDigit(int segD, int segC, int segB, int segA) {
-  digitalWrite(ledPin_0_a, segA);
-  digitalWrite(ledPin_0_b, segB);
-  digitalWrite(ledPin_0_c, segC);
-  digitalWrite(ledPin_0_d, segD);
 }
 
 // ************************************************************
@@ -2126,17 +2137,21 @@ int dayofweek(int y, int m, int d)
 // Get the time from the RTC
 // ************************************************************
 void getRTCTime() {
-  bool PM;
-  bool twentyFourHourClock;
-  bool century = false;
-    
-  byte years=Clock.getYear();
-  byte months=Clock.getMonth(century);
-  byte days=Clock.getDate();
-  byte hours=Clock.getHour(twentyFourHourClock,PM);
-  byte mins=Clock.getMinute();
-  byte secs=Clock.getSecond();
-  displayDate.setSyncTime(nowMillis,years,months,days,hours,mins,secs);
+  
+  Wire.beginTransmission(RTC_I2C_ADDRESS);
+  if(Wire.endTransmission() == 0) {
+    bool PM;
+    bool twentyFourHourClock;
+    bool century = false;
+  
+    byte years=Clock.getYear();
+    byte months=Clock.getMonth(century);
+    byte days=Clock.getDate();
+    byte hours=Clock.getHour(twentyFourHourClock,PM);
+    byte mins=Clock.getMinute();
+    byte secs=Clock.getSecond();
+    displayDate.setSyncTime(nowMillis,years,months,days,hours,mins,secs);
+  }
 }
 
 // ************************************************************
