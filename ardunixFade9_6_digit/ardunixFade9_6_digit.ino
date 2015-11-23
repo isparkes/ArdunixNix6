@@ -986,7 +986,7 @@ void loop()
     }
 
     if (nextMode == MODE_GRN_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
+      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
         // Skip if we are in cycle mode
         nextMode++;
         currentMode++;
@@ -996,7 +996,7 @@ void loop()
     }
 
     if (nextMode == MODE_BLU_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
+      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
         // Skip if we are in cycle mode
         nextMode++;
         currentMode++;
