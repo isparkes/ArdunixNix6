@@ -48,11 +48,12 @@
 #define EE_HV_VOLTAGE       21     // The HV voltage we want to use
 #define EE_SUPPRESS_ACP     22     // Do we want to suppress ACP during dimmed time
 #define EE_HOUR_BLANK_START 23     // Start of daily blanking period
-#define EE_HOUR_BLANK_END   24     // END of daily blanking period
+#define EE_HOUR_BLANK_END   24     // End of daily blanking period
+#define EE_CYCLE_SPEED      25     // How fast the color cycling does it's stuff
 
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 33
+#define SOFTWARE_VERSION 34
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider once every minute
@@ -116,9 +117,9 @@
 #define MINS_MAX  60
 #define HOURS_MAX 24
 
-#define COLOUR_CNL_MAX     15
-#define COLOUR_CNL_DEFAULT 15
-#define COLOUR_CNL_MIN     0
+#define COLOUR_CNL_MAX                  15
+#define COLOUR_CNL_DEFAULT              15
+#define COLOUR_CNL_MIN                  0
 
 // Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
 #define MODE_MIN                        0
@@ -132,84 +133,90 @@
 #define MODE_YEARS_SET                  5
 
 // Basic settings
-#define MODE_12_24                      6   // Mode "00" 0 = 24, 1 = 12
-#define MODE_LEAD_BLANK                 7   // Mode "01" 1 = blanked
-#define MODE_SCROLLBACK                 8   // Mode "02" 1 = use scrollback
-#define MODE_DATE_FORMAT                9   // Mode "03"
-#define MODE_DAY_BLANKING               10  // Mode "04"
-#define MODE_HR_BLNK_START              11  // Mode "05" - skipped if not using hour blanking
-#define MODE_HR_BLNK_END                12  // Mode "06" - skipped if not using hour blanking
-#define MODE_SUPPRESS_ACP               13  // Mode "07" 1 = suppress ACP when fully dimmed
+#define MODE_12_24                      6  // Mode "00" 0 = 24, 1 = 12
+#define MODE_LEAD_BLANK                 7  // Mode "01" 1 = blanked
+#define MODE_SCROLLBACK                 8  // Mode "02" 1 = use scrollback
+#define MODE_DATE_FORMAT                9  // Mode "03"
+#define MODE_DAY_BLANKING               10 // Mode "04"
+#define MODE_HR_BLNK_START              11 // Mode "05" - skipped if not using hour blanking
+#define MODE_HR_BLNK_END                12 // Mode "06" - skipped if not using hour blanking
+#define MODE_SUPPRESS_ACP               13 // Mode "07" 1 = suppress ACP when fully dimmed
 
 // Display tricks
-#define MODE_FADE_STEPS_UP              14  // Mode "08"
-#define MODE_FADE_STEPS_DOWN            15  // Mode "09"
-#define MODE_DISPLAY_SCROLL_STEPS_UP    16  // Mode "10"
-#define MODE_DISPLAY_SCROLL_STEPS_DOWN  17  // Mode "11"
+#define MODE_FADE_STEPS_UP              14 // Mode "08"
+#define MODE_FADE_STEPS_DOWN            15 // Mode "09"
+#define MODE_DISPLAY_SCROLL_STEPS_UP    16 // Mode "10"
+#define MODE_DISPLAY_SCROLL_STEPS_DOWN  17 // Mode "11"
 
 // Back light
 #define MODE_BACKLIGHT_MODE             18 // Mode "12"
 #define MODE_RED_CNL                    19 // Mode "13"
 #define MODE_GRN_CNL                    20 // Mode "14"
 #define MODE_BLU_CNL                    21 // Mode "15"
+#define MODE_CYCLE_SPEED                22 // Mode "16" - speed the colour cycle cyles at
 
 // HV generation
-#define MODE_TARGET_HV_UP               22 // Mode "16"
-#define MODE_TARGET_HV_DOWN             23 // Mode "17"
-#define MODE_PULSE_UP                   24 // Mode "18"
-#define MODE_PULSE_DOWN                 25 // Mode "19"
+#define MODE_TARGET_HV_UP               23 // Mode "17"
+#define MODE_TARGET_HV_DOWN             24 // Mode "18"
+#define MODE_PULSE_UP                   25 // Mode "19"
+#define MODE_PULSE_DOWN                 26 // Mode "20"
 
 // Temperature
-#define MODE_TEMP                       26 // Mode "20"
+#define MODE_TEMP                       27 // Mode "21"
 
 // Software Version
-#define MODE_VERSION                    27 // Mode "21"
+#define MODE_VERSION                    28 // Mode "22"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  28
+#define MODE_TUBE_TEST                  29
 
-#define MODE_MAX                        28
+#define MODE_MAX                        29
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME
-#define TEMP_MODE_MIN     0
-#define TEMP_MODE_DATE    0 // Display the date for 5 S
-#define TEMP_MODE_TEMP    1 // Display the temperature for 5 S
-#define TEMP_MODE_LDR     2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
-#define TEMP_MODE_VERSION 3 // Display the version
-#define TEMP_MODE_MAX     3
+#define TEMP_MODE_MIN                   0
+#define TEMP_MODE_DATE                  0 // Display the date for 5 S
+#define TEMP_MODE_TEMP                  1 // Display the temperature for 5 S
+#define TEMP_MODE_LDR                   2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
+#define TEMP_MODE_VERSION               3 // Display the version
+#define TEMP_MODE_MAX                   3
 
-#define DATE_FORMAT_MIN     0
-#define DATE_FORMAT_YYMMDD  0
-#define DATE_FORMAT_MMDDYY  1
-#define DATE_FORMAT_DDMMYY  2
-#define DATE_FORMAT_MAX     2
-#define DATE_FORMAT_DEFAULT 2
+#define DATE_FORMAT_MIN                 0
+#define DATE_FORMAT_YYMMDD              0
+#define DATE_FORMAT_MMDDYY              1
+#define DATE_FORMAT_DDMMYY              2
+#define DATE_FORMAT_MAX                 2
+#define DATE_FORMAT_DEFAULT             2
 
-#define DAY_BLANKING_MIN               0
-#define DAY_BLANKING_NEVER             0  // Don't blank ever (default)
-#define DAY_BLANKING_WEEKEND           1  // Blank during the weekend
-#define DAY_BLANKING_WEEKDAY           2  // Blank during weekdays
-#define DAY_BLANKING_ALWAYS            3  // Always blank
-#define DAY_BLANKING_HOURS             4  // Blank between start and end hour every day
-#define DAY_BLANKING_WEEKEND_OR_HOURS  5  // Blank between start and end hour during the week AND all day on the weekend
-#define DAY_BLANKING_WEEKDAY_OR_HOURS  6  // Blank between start and end hour during the weekends AND all day on week days
-#define DAY_BLANKING_WEEKEND_AND_HOURS 7  // Blank between start and end hour during the weekend
-#define DAY_BLANKING_WEEKDAY_AND_HOURS 8  // Blank between start and end hour during week days
-#define DAY_BLANKING_MAX               8
-#define DAY_BLANKING_DEFAULT           0
+#define DAY_BLANKING_MIN                0
+#define DAY_BLANKING_NEVER              0  // Don't blank ever (default)
+#define DAY_BLANKING_WEEKEND            1  // Blank during the weekend
+#define DAY_BLANKING_WEEKDAY            2  // Blank during weekdays
+#define DAY_BLANKING_ALWAYS             3  // Always blank
+#define DAY_BLANKING_HOURS              4  // Blank between start and end hour every day
+#define DAY_BLANKING_WEEKEND_OR_HOURS   5  // Blank between start and end hour during the week AND all day on the weekend
+#define DAY_BLANKING_WEEKDAY_OR_HOURS   6  // Blank between start and end hour during the weekends AND all day on week days
+#define DAY_BLANKING_WEEKEND_AND_HOURS  7  // Blank between start and end hour during the weekend
+#define DAY_BLANKING_WEEKDAY_AND_HOURS  8  // Blank between start and end hour during week days
+#define DAY_BLANKING_MAX                8
+#define DAY_BLANKING_DEFAULT            0
 
-#define BACKLIGHT_MIN         0
-#define BACKLIGHT_FIXED       0   // Just define a colour and stick to it
-#define BACKLIGHT_PULSE       1   // pulse the defined colour
-#define BACKLIGHT_CYCLE       2   // cycle through random colours
-#define BACKLIGHT_FIXED_DIM   3   // A defined colour, but dims with bulb dimming
-#define BACKLIGHT_PULSE_DIM   4   // pulse the defined colour, dims with bulb dimming
-#define BACKLIGHT_CYCLE_DIM   5   // cycle through random colours, dims with bulb dimming
-#define BACKLIGHT_MAX         5
-#define BACKLIGHT_DEFAULT     0
+#define BACKLIGHT_MIN                   0
+#define BACKLIGHT_FIXED                 0   // Just define a colour and stick to it
+#define BACKLIGHT_PULSE                 1   // pulse the defined colour
+#define BACKLIGHT_CYCLE                 2   // cycle through random colours
+#define BACKLIGHT_FIXED_DIM             3   // A defined colour, but dims with bulb dimming
+#define BACKLIGHT_PULSE_DIM             4   // pulse the defined colour, dims with bulb dimming
+#define BACKLIGHT_CYCLE_DIM             5   // cycle through random colours, dims with bulb dimming
+#define BACKLIGHT_MAX                   5
+#define BACKLIGHT_DEFAULT               0
+
+#define CYCLE_SPEED_MIN                 4
+#define CYCLE_SPEED_MAX                 64
+#define CYCLE_SPEED_DEFAULT             10
+
 
 //**********************************************************************************
 //**********************************************************************************
@@ -662,7 +669,7 @@ byte redCnl = COLOUR_CNL_DEFAULT;
 byte grnCnl = COLOUR_CNL_DEFAULT;
 byte bluCnl = COLOUR_CNL_DEFAULT;
 byte cycleCount = 0;
-const int CYCLE_COUNT_MAX = 10;
+byte cycleSpeed = CYCLE_SPEED_DEFAULT;
 byte ledCycleCount[3] = {0,0,0};
 double ledCycleValue[3] = {0,0,0};
 double ledCycleIncrement[3] = {0,0,0};
@@ -949,7 +956,7 @@ void loop()
       loadNumberArrayConfBool(suppressACP,nextMode-MODE_12_24);
       displayConfig();
     }
-
+    
     if (nextMode == MODE_FADE_STEPS_UP) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
       displayConfig();
@@ -1002,6 +1009,16 @@ void loop()
         currentMode++;
       }
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_CYCLE_SPEED) {
+      if ((backlightMode != BACKLIGHT_CYCLE) && (backlightMode != BACKLIGHT_CYCLE_DIM))  {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
+      loadNumberArrayConfInt(cycleSpeed,nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -1324,6 +1341,17 @@ void loop()
         displayConfig();
       }
 
+      if (currentMode == MODE_CYCLE_SPEED) {
+        if(button1.isButtonPressedAndReleased()) {
+          cycleSpeed = cycleSpeed + 2;
+          if (cycleSpeed > CYCLE_SPEED_MAX) {
+            cycleSpeed = CYCLE_SPEED_MIN;
+          }
+        }
+        loadNumberArrayConfInt(cycleSpeed,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
       if (currentMode == MODE_TARGET_HV_UP) {
         if(button1.isButtonPressedAndReleased()) {
           hvTargetVoltage+=5;
@@ -1523,7 +1551,7 @@ void setLeds()
       case BACKLIGHT_CYCLE:
         // slow everything down - just make a change every CYCLE_COUNT_MAX calls
         cycleCount++;
-        if (cycleCount > CYCLE_COUNT_MAX) {
+        if (cycleCount > cycleSpeed) {
           cycleCount = 0;
 
           for (int i = 0 ; i < 3 ; i++) {
@@ -1556,7 +1584,7 @@ void setLeds()
       case BACKLIGHT_CYCLE_DIM:
         // slow everything down - just make a change every CYCLE_COUNT_MAX calls
         cycleCount++;
-        if (cycleCount > CYCLE_COUNT_MAX) {
+        if (cycleCount > cycleSpeed) {
           cycleCount = 0;
 
           for (int i = 0 ; i < 3 ; i++) {
@@ -2428,6 +2456,7 @@ void saveEEPROMValues() {
   EEPROM.write(EE_SUPPRESS_ACP,suppressACP);
   EEPROM.write(EE_HOUR_BLANK_START,blankHourStart);
   EEPROM.write(EE_HOUR_BLANK_END,blankHourEnd);
+  EEPROM.write(EE_CYCLE_SPEED,cycleSpeed);
 }
 
 // ************************************************************
@@ -2507,7 +2536,7 @@ void readEEPROMValues() {
   hvTargetVoltage = EEPROM.read(EE_HV_VOLTAGE);
   if ((hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) || (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX)) {
     hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
-  }
+  } 
 
   pulseWidth = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
   if ((pulseWidth < PWM_PULSE_MIN) || (pulseWidth > PWM_PULSE_MAX)) {
@@ -2524,6 +2553,11 @@ void readEEPROMValues() {
   blankHourEnd = EEPROM.read(EE_HOUR_BLANK_END);
   if ((blankHourEnd < 0) || (blankHourEnd > HOURS_MAX)) {
     blankHourEnd = 7;
+  }
+  
+  cycleSpeed = EEPROM.read(EE_CYCLE_SPEED);
+  if ((cycleSpeed < CYCLE_SPEED_MIN) || (cycleSpeed > CYCLE_SPEED_MAX)) {
+    cycleSpeed = CYCLE_SPEED_DEFAULT;
   }
 }
 
@@ -2552,11 +2586,12 @@ void factoryReset() {
   suppressACP = false;
   blankHourStart = 0;
   blankHourEnd = 7;
+  cycleSpeed = CYCLE_SPEED_DEFAULT;
 
   saveEEPROMValues();
 }
 
-//**********************************************************************************
+ //**********************************************************************************
 //**********************************************************************************
 //*                          High Voltage generator                                *
 //**********************************************************************************
