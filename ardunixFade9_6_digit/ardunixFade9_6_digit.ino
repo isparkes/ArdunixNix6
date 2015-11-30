@@ -56,7 +56,7 @@
 #define SOFTWARE_VERSION 34
 
 // how often we make reference to the external time provider
-#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider once every minute
+#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -78,7 +78,7 @@
 #define SENSOR_SMOOTH_READINGS_MAX     255
 #define SENSOR_SMOOTH_READINGS_DEFAULT 100  // Speed at which the brighness adapts to changes
 
-#define BLINK_COUNT_MAX  25                      // The number of impressions between blink state toggle
+#define BLINK_COUNT_MAX                25   // The number of impressions between blink state toggle
 
 // The target voltage we want to achieve
 #define HVGEN_TARGET_VOLTAGE_DEFAULT 180
