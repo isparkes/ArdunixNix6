@@ -53,7 +53,7 @@
 
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 34
+#define SOFTWARE_VERSION 35
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -750,16 +750,6 @@ void setup()
 
   // **********************************************************************
 
-  // initialise the internal time (in case we don't find the time provider)
-  nowMillis = millis();
-  displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
-
-  // Start the RTC communication
-  Wire.begin();
-
-  // Recover the time from the RTC
-  getRTCTime();
-
   // Test if the button is pressed for factory reset
   for (int i = 0 ; i < 20 ; i++ ) {
     button1.checkButton(nowMillis);
@@ -782,10 +772,7 @@ void setup()
   // of the floating point business in the main loop
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
   
-  // Make sure the oscillator stays off, even when on battery
-  Clock.enableOscillator(true,false,0);
-  
-  // Calibrate HVGen at full
+   // Calibrate HVGen at full
   for (int i = 0 ; i < 1000 ; i++ ) {
     loadNumberArray8s();
     allBright();
@@ -796,6 +783,17 @@ void setup()
   // Clear down any spurious button action
   button1.reset();
   
+  // initialise the internal time (in case we don't find the time provider)
+  nowMillis = millis();
+  displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
+
+  // Start the RTC communication
+  Wire.begin();
+
+  // Recover the time from the RTC
+  nowMillis = millis();
+  getRTCTime();
+
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
   secsDisplayEnd = millis() + 1000;
