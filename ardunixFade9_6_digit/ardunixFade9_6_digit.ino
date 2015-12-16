@@ -10,189 +10,213 @@
 //*  - Single 74141 for digit display (other versions use 2 or even 6!)            *
 //*  - Automatic dimming, using a Light Dependent Resistor                         *
 //*  - RGB back light management                                                   *
-//*  - Highly modular code                                                         *
 //*                                                                                *
 //*  isparkes@protonmail.ch                                                        *
 //*                                                                                *
 //**********************************************************************************
 //**********************************************************************************
-#include <avr/io.h> 
+#include <avr/io.h>
 #include <EEPROM.h>
 #include <DS3231.h>
 #include <Wire.h>
 
-const int EE_12_24 = 1;            // 12 or 24 hour mode
-const int EE_FADE_STEPS = 2;       // How quickly we fade, higher = slower
-const int EE_DATE_FORMAT = 3;      // Date format to display
-const int EE_DAY_BLANKING = 4;     // Blanking setting
-const int EE_DIM_DARK_LO = 5;      // Dimming dark value
-const int EE_DIM_DARK_HI = 6;      // Dimming dark value
-const int EE_BLANK_LEAD_ZERO = 7;  // If we blank leading zero on hours
-const int EE_DIGIT_COUNT_HI = 8;   // The number of times we go round the main loop
-const int EE_DIGIT_COUNT_LO = 9;   // The number of times we go round the main loop
-const int EE_SCROLLBACK = 10;      // if we use scollback or not
-const int EE_PULSE_LO = 11;        // The pulse on width for the PWM mode
-const int EE_PULSE_HI = 12;        // The pulse on width for the PWM mode
-const int EE_SCROLL_STEPS = 13;    // The steps in a scrollback
-const int EE_BACKLIGHT_MODE= 14;   // The back light node
-const int EE_DIM_BRIGHT_LO = 15;   // Dimming bright value
-const int EE_DIM_BRIGHT_HI = 16;   // Dimming bright value
-const int EE_DIM_SMOOTH_SPEED = 17;// Dimming adaptation speed
-const int EE_RED_INTENSITY = 18;   // Red channel backlight max intensity
-const int EE_GRN_INTENSITY = 19;   // Green channel backlight max intensity
-const int EE_BLU_INTENSITY = 20;   // Blue channel backlight max intensity
-const int EE_HV_VOLTAGE = 21;      // The HV voltage we want to use
+//**********************************************************************************
+//**********************************************************************************
+//*                               Constants                                        *
+//**********************************************************************************
+//**********************************************************************************
+#define EE_12_24            1      // 12 or 24 hour mode
+#define EE_FADE_STEPS       2      // How quickly we fade, higher = slower
+#define EE_DATE_FORMAT      3      // Date format to display
+#define EE_DAY_BLANKING     4      // Blanking setting
+#define EE_DIM_DARK_LO      5      // Dimming dark value
+#define EE_DIM_DARK_HI      6      // Dimming dark value
+#define EE_BLANK_LEAD_ZERO  7      // If we blank leading zero on hours
+#define EE_DIGIT_COUNT_HI   8      // The number of times we go round the main loop
+#define EE_DIGIT_COUNT_LO   9      // The number of times we go round the main loop
+#define EE_SCROLLBACK       10     // if we use scollback or not
+#define EE_PULSE_LO         11     // The pulse on width for the PWM mode
+#define EE_PULSE_HI         12     // The pulse on width for the PWM mode
+#define EE_SCROLL_STEPS     13     // The steps in a scrollback
+#define EE_BACKLIGHT_MODE   14     // The back light node
+#define EE_DIM_BRIGHT_LO    15     // Dimming bright value
+#define EE_DIM_BRIGHT_HI    16     // Dimming bright value
+#define EE_DIM_SMOOTH_SPEED 17     // Dimming adaptation speed
+#define EE_RED_INTENSITY    18     // Red channel backlight max intensity
+#define EE_GRN_INTENSITY    19     // Green channel backlight max intensity
+#define EE_BLU_INTENSITY    20     // Blue channel backlight max intensity
+#define EE_HV_VOLTAGE       21     // The HV voltage we want to use
+#define EE_SUPPRESS_ACP     22     // Do we want to suppress ACP during dimmed time
+#define EE_HOUR_BLANK_START 23     // Start of daily blanking period
+#define EE_HOUR_BLANK_END   24     // End of daily blanking period
+#define EE_CYCLE_SPEED      25     // How fast the color cycling does it's stuff
+
 
 // Software version shown in config menu
-const int softwareVersion = 8;
+#define SOFTWARE_VERSION 35
+
+// how often we make reference to the external time provider
+#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
 
 // Display handling
-const int DIGIT_DISPLAY_COUNT = 1000;                 // The number of times to traverse inner fade loop per digit
-const int DIGIT_DISPLAY_ON = 0;                       // Switch on the digit at the beginning by default
-const int DIGIT_DISPLAY_OFF = DIGIT_DISPLAY_COUNT-1;  // Switch off the digit at the end by default
-const int DIGIT_DISPLAY_NEVER = -1;                   // When we don't want to switch on or off (i.e. blanking)
-const int DISPLAY_COUNT_MAX = 2000;                   // Maximum value we can set to
-const int DISPLAY_COUNT_MIN = 500;                    // Minimum value we can set to
-const int DIGIT_DISPLAY_MIN_DIM = 100;                // The minimum viable dim count
+#define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
+#define DIGIT_DISPLAY_ON      0    // Switch on the digit at the beginning by default
+#define DIGIT_DISPLAY_OFF     999  // Switch off the digit at the end by default
+#define DIGIT_DISPLAY_NEVER   -1   // When we don't want to switch on or off (i.e. blanking)
+#define DISPLAY_COUNT_MAX     2000 // Maximum value we can set to
+#define DISPLAY_COUNT_MIN     500  // Minimum value we can set to
+#define DIGIT_DISPLAY_MIN_DIM 100  // The minimum viable dim count
 
-const int SENSOR_LOW_MIN = 0;
-const int SENSOR_LOW_MAX = 900;
-const int SENSOR_LOW_DEFAULT = 100;  // Dark
-const int SENSOR_HIGH_MIN = 0;
-const int SENSOR_HIGH_MAX = 900;
-const int SENSOR_HIGH_DEFAULT = 700; // Bright
+#define SENSOR_LOW_MIN      0
+#define SENSOR_LOW_MAX      900
+#define SENSOR_LOW_DEFAULT  100  // Dark
+#define SENSOR_HIGH_MIN     0
+#define SENSOR_HIGH_MAX     900
+#define SENSOR_HIGH_DEFAULT 700 // Bright
 
-const int SENSOR_SMOOTH_READINGS_MIN = 1;
-const int SENSOR_SMOOTH_READINGS_MAX = 255;
-const int SENSOR_SMOOTH_READINGS_DEFAULT = 100;       // Speed at which the brighness adapts to changes
+#define SENSOR_SMOOTH_READINGS_MIN     1
+#define SENSOR_SMOOTH_READINGS_MAX     255
+#define SENSOR_SMOOTH_READINGS_DEFAULT 100  // Speed at which the brighness adapts to changes
 
-const int BLINK_COUNT_MAX = 25;                       // The number of impressions between blink state toggle
+#define BLINK_COUNT_MAX                25   // The number of impressions between blink state toggle
 
 // The target voltage we want to achieve
-const int HVGEN_TARGET_VOLTAGE_DEFAULT=180;
-const int HVGEN_TARGET_VOLTAGE_MIN=150;
-const int HVGEN_TARGET_VOLTAGE_MAX=200;
-int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
+#define HVGEN_TARGET_VOLTAGE_DEFAULT 180
+#define HVGEN_TARGET_VOLTAGE_MIN     150
+#define HVGEN_TARGET_VOLTAGE_MAX     200
 
 // The PWM parameters
-const int PWM_TOP_DEFAULT = 1000;
-const int PWM_TOP_MIN = 300;
-const int PWM_TOP_MAX = 10000;
-int pwmTop = PWM_TOP_DEFAULT;
-const int PWM_PULSE_DEFAULT = 200;
-const int PWM_PULSE_MIN = 50;
-const int PWM_PULSE_MAX = 500;
-int pulseWidth = PWM_PULSE_DEFAULT;
+#define PWM_TOP_DEFAULT   1000
+#define PWM_TOP_MIN       300
+#define PWM_TOP_MAX       10000
+#define PWM_PULSE_DEFAULT 150
+#define PWM_PULSE_MIN     50
+#define PWM_PULSE_MAX     500
 
 // How quickly the scroll works
-const int SCROLL_STEPS_DEFAULT=4;
-const int SCROLL_STEPS_MIN=1;
-const int SCROLL_STEPS_MAX=40;
+#define SCROLL_STEPS_DEFAULT 4
+#define SCROLL_STEPS_MIN     1
+#define SCROLL_STEPS_MAX     40
 
 // The number of dispay impessions we need to fade by default
 // 100 is about 1 second
-const int FADE_STEPS_DEFAULT=50;
-const int FADE_STEPS_MAX=200;
-const int FADE_STEPS_MIN=20;
+#define FADE_STEPS_DEFAULT 50
+#define FADE_STEPS_MAX     200
+#define FADE_STEPS_MIN     20
 
 // Display mode, set per digit
-const int BLANKED = 0;
-const int DIMMED  = 1;
-const int FADE    = 2;
-const int NORMAL  = 3;
-const int BLINK   = 4;
-const int SCROLL  = 5;
-const int BRIGHT  = 6;
+#define BLANKED  0
+#define DIMMED   1
+#define FADE     2
+#define NORMAL   3
+#define BLINK    4
+#define SCROLL   5
+#define BRIGHT   6
 
-const byte SECS_MAX = 60;
-const byte MINS_MAX = 60;
-const byte HOURS_MAX = 24;
+#define SECS_MAX  60
+#define MINS_MAX  60
+#define HOURS_MAX 24
 
-const byte COLOUR_CNL_MAX = 15;
-const byte COLOUR_CNL_DEFAULT = COLOUR_CNL_MAX;
-const byte COLOUR_CNL_MIN = 0;
+#define COLOUR_CNL_MAX                  15
+#define COLOUR_CNL_DEFAULT              15
+#define COLOUR_CNL_MIN                  0
 
 // Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
-const int MODE_MIN = 0;
-const int MODE_TIME = 0;
+#define MODE_MIN                        0
+#define MODE_TIME                       0
 
 // Time setting, need all six digits, so no flashing mode indicator
-const int MODE_MINS_SET = MODE_TIME + 1;
-const int MODE_HOURS_SET = MODE_MINS_SET + 1;
-const int MODE_DAYS_SET = MODE_HOURS_SET + 1;
-const int MODE_MONTHS_SET = MODE_DAYS_SET + 1;
-const int MODE_YEARS_SET = MODE_MONTHS_SET + 1;
+#define MODE_MINS_SET                   1
+#define MODE_HOURS_SET                  2
+#define MODE_DAYS_SET                   3
+#define MODE_MONTHS_SET                 4
+#define MODE_YEARS_SET                  5
 
 // Basic settings
-const int MODE_12_24 = MODE_YEARS_SET + 1;                                    // Mode "00" 0 = 24, 1 = 12
-const int MODE_LEAD_BLANK = MODE_12_24 + 1;                                   // Mode "01" 1 = blanked
-const int MODE_SCROLLBACK = MODE_LEAD_BLANK + 1;                              // Mode "02" 1 = use scrollback
-const int MODE_DATE_FORMAT = MODE_SCROLLBACK + 1;                             // Mode "03"
-const int MODE_DAY_BLANKING = MODE_DATE_FORMAT + 1;                           // Mode "04"
+#define MODE_12_24                      6  // Mode "00" 0 = 24, 1 = 12
+#define MODE_LEAD_BLANK                 7  // Mode "01" 1 = blanked
+#define MODE_SCROLLBACK                 8  // Mode "02" 1 = use scrollback
+#define MODE_DATE_FORMAT                9  // Mode "03"
+#define MODE_DAY_BLANKING               10 // Mode "04"
+#define MODE_HR_BLNK_START              11 // Mode "05" - skipped if not using hour blanking
+#define MODE_HR_BLNK_END                12 // Mode "06" - skipped if not using hour blanking
+#define MODE_SUPPRESS_ACP               13 // Mode "07" 1 = suppress ACP when fully dimmed
 
 // Display tricks
-const int MODE_FADE_STEPS_UP = MODE_DAY_BLANKING + 1;                         // Mode "05"
-const int MODE_FADE_STEPS_DOWN = MODE_FADE_STEPS_UP + 1;                      // Mode "06"
-const int MODE_DISPLAY_SCROLL_STEPS_UP = MODE_FADE_STEPS_DOWN + 1;            // Mode "07"
-const int MODE_DISPLAY_SCROLL_STEPS_DOWN = MODE_DISPLAY_SCROLL_STEPS_UP + 1;  // Mode "08"
+#define MODE_FADE_STEPS_UP              14 // Mode "08"
+#define MODE_FADE_STEPS_DOWN            15 // Mode "09"
+#define MODE_DISPLAY_SCROLL_STEPS_UP    16 // Mode "10"
+#define MODE_DISPLAY_SCROLL_STEPS_DOWN  17 // Mode "11"
 
 // Back light
-const int MODE_BACKLIGHT_MODE = MODE_DISPLAY_SCROLL_STEPS_DOWN + 1;           // Mode "09"
-const int MODE_RED_CNL = MODE_BACKLIGHT_MODE + 1;                             // Mode "10"
-const int MODE_GRN_CNL = MODE_RED_CNL + 1;                                    // Mode "11"
-const int MODE_BLU_CNL = MODE_GRN_CNL + 1;                                    // Mode "12"
+#define MODE_BACKLIGHT_MODE             18 // Mode "12"
+#define MODE_RED_CNL                    19 // Mode "13"
+#define MODE_GRN_CNL                    20 // Mode "14"
+#define MODE_BLU_CNL                    21 // Mode "15"
+#define MODE_CYCLE_SPEED                22 // Mode "16" - speed the colour cycle cyles at
 
 // HV generation
-const int MODE_TARGET_HV_UP = MODE_BLU_CNL + 1;                               // Mode "13"
-const int MODE_TARGET_HV_DOWN = MODE_TARGET_HV_UP + 1;                        // Mode "14"
-const int MODE_PULSE_UP = MODE_TARGET_HV_DOWN + 1;                            // Mode "15"
-const int MODE_PULSE_DOWN = MODE_PULSE_UP + 1;                                // Mode "16"
+#define MODE_TARGET_HV_UP               23 // Mode "17"
+#define MODE_TARGET_HV_DOWN             24 // Mode "18"
+#define MODE_PULSE_UP                   25 // Mode "19"
+#define MODE_PULSE_DOWN                 26 // Mode "20"
 
 // Temperature
-const int MODE_TEMP =  MODE_PULSE_DOWN + 1;                                   // Mode "17"
+#define MODE_TEMP                       27 // Mode "21"
 
 // Software Version
-const int MODE_VERSION = MODE_TEMP + 1;                                       // Mode "18"
+#define MODE_VERSION                    28 // Mode "22"
 
 // Tube test - all six digits, so no flashing mode indicator
-const int MODE_TUBE_TEST = MODE_VERSION + 1;
+#define MODE_TUBE_TEST                  29
 
-const int MODE_MAX = MODE_TUBE_TEST + 1;
+#define MODE_MAX                        29
 
-// Pseudo mode
-const int MODE_DIGIT_BURN = 99;                                               // Digit burn mode - accesible by super long press
+// Pseudo mode - burn the tubes and nothing else
+#define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
 
-// Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME 
-const int TEMP_MODE_MIN  = 0;
-const int TEMP_MODE_DATE = 0; // Display the date for 5 S
-const int TEMP_MODE_TEMP = 1; // Display the temperature for 5 S
-const int TEMP_MODE_LDR  = 2; // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
-const int TEMP_MODE_MAX  = 2;
+// Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME
+#define TEMP_MODE_MIN                   0
+#define TEMP_MODE_DATE                  0 // Display the date for 5 S
+#define TEMP_MODE_TEMP                  1 // Display the temperature for 5 S
+#define TEMP_MODE_LDR                   2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
+#define TEMP_MODE_VERSION               3 // Display the version
+#define TEMP_MODE_MAX                   3
 
-const int DATE_FORMAT_MIN = 0;
-const int DATE_FORMAT_YYMMDD = 0;
-const int DATE_FORMAT_MMDDYY = 1;
-const int DATE_FORMAT_DDMMYY = 2;
-const int DATE_FORMAT_MAX = 2;
-const int DATE_FORMAT_DEFAULT = DATE_FORMAT_DDMMYY;
+#define DATE_FORMAT_MIN                 0
+#define DATE_FORMAT_YYMMDD              0
+#define DATE_FORMAT_MMDDYY              1
+#define DATE_FORMAT_DDMMYY              2
+#define DATE_FORMAT_MAX                 2
+#define DATE_FORMAT_DEFAULT             2
 
-const int DAY_BLANKING_MIN = 0;
-const int DAY_BLANKING_NEVER = 0;
-const int DAY_BLANKING_WEEKEND = 1;
-const int DAY_BLANKING_WEEKDAY = 2;
-const int DAY_BLANKING_ALWAYS = 3;
-const int DAY_BLANKING_MAX = 3;
-const int DAY_BLANKING_DEFAULT = DAY_BLANKING_NEVER;
+#define DAY_BLANKING_MIN                0
+#define DAY_BLANKING_NEVER              0  // Don't blank ever (default)
+#define DAY_BLANKING_WEEKEND            1  // Blank during the weekend
+#define DAY_BLANKING_WEEKDAY            2  // Blank during weekdays
+#define DAY_BLANKING_ALWAYS             3  // Always blank
+#define DAY_BLANKING_HOURS              4  // Blank between start and end hour every day
+#define DAY_BLANKING_WEEKEND_OR_HOURS   5  // Blank between start and end hour during the week AND all day on the weekend
+#define DAY_BLANKING_WEEKDAY_OR_HOURS   6  // Blank between start and end hour during the weekends AND all day on week days
+#define DAY_BLANKING_WEEKEND_AND_HOURS  7  // Blank between start and end hour during the weekend
+#define DAY_BLANKING_WEEKDAY_AND_HOURS  8  // Blank between start and end hour during week days
+#define DAY_BLANKING_MAX                8
+#define DAY_BLANKING_DEFAULT            0
 
-const int BACKLIGHT_MIN = 0;
-const int BACKLIGHT_FIXED = 0;
-const int BACKLIGHT_PULSE = 1;
-const int BACKLIGHT_CYCLE = 2;
-const int BACKLIGHT_MAX = 2;
-const int BACKLIGHT_DEFAULT = BACKLIGHT_MIN;
+#define BACKLIGHT_MIN                   0
+#define BACKLIGHT_FIXED                 0   // Just define a colour and stick to it
+#define BACKLIGHT_PULSE                 1   // pulse the defined colour
+#define BACKLIGHT_CYCLE                 2   // cycle through random colours
+#define BACKLIGHT_FIXED_DIM             3   // A defined colour, but dims with bulb dimming
+#define BACKLIGHT_PULSE_DIM             4   // pulse the defined colour, dims with bulb dimming
+#define BACKLIGHT_CYCLE_DIM             5   // cycle through random colours, dims with bulb dimming
+#define BACKLIGHT_MAX                   5
+#define BACKLIGHT_DEFAULT               0
 
-// RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
-DS3231 Clock;
+#define CYCLE_SPEED_MIN                 4
+#define CYCLE_SPEED_MAX                 64
+#define CYCLE_SPEED_DEFAULT             10
+
 
 //**********************************************************************************
 //**********************************************************************************
@@ -203,56 +227,376 @@ DS3231 Clock;
 // ***** Pin Defintions ****** Pin Defintions ****** Pin Defintions ******
 
 // SN74141
-int ledPin_0_a = 12;
-int ledPin_0_b = 10;
-int ledPin_0_c = 8;
-int ledPin_0_d = 11;
+// These are now managed directly on PORT B, we don't use digitalWrite() for these
+#define ledPin_0_a  13    // package pin 19 // PB5
+#define ledPin_0_b  10    // package pin 16 // PB2
+#define ledPin_0_c  8     // package pin 14 // PB0
+#define ledPin_0_d  12    // package pin 18 // PB4
 
 // anode pins
-int ledPin_a_6 = 0;  // low  - Secs  units
-int ledPin_a_5 = 1;  //      - Secs  tens
-int ledPin_a_4 = 2;  //      - Mins  units
-int ledPin_a_3 = 4;  //      - Mins  tens
-int ledPin_a_2 = A2; //      - Hours units
-int ledPin_a_1 = A3; // high - Hours tens 
+#define ledPin_a_6  0     // low  - Secs  units // package pin 2  // PD0
+#define ledPin_a_5  1     //      - Secs  tens  // package pin 3  // PD1
+#define ledPin_a_4  2     //      - Mins  units // package pin 4  // PD2
+#define ledPin_a_3  4     //      - Mins  tens  // package pin 6  // PD4
+#define ledPin_a_2  A2    //      - Hours units // package pin 25 // PC2
+#define ledPin_a_1  A3    // high - Hours tens  // package pin 26 // PC3
 
 // button input
-int inputPin1 = 7;
-
-// Used for special mappings of the 74141 -> digit (wiring aid)
-// allows the board wiring to be much simpler<
-int decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+#define inputPin1   7     // package pin 13 // PD7
 
 // PWM pin used to drive the DC-DC converter
-int hvDriverPin = 9;
+#define hvDriverPin 9     // package pin 15 // PB1
 
-// Internal (inside the box) tick led 
-int tickLed = 13;
+// Tick led - PWM capable
+#define tickLed     11    // package pin 17 // PB3
 
 // PWM capable output for backlight
-int RLed = 6;
-int GLed = 5;
-int BLed = 3;
+#define RLed        6     // package pin 12 // PD6
+#define GLed        5     // package pin 11 // PD5
+#define BLed        3     // package pin 5  // PD3
 
-int sensorPin = A0; // Analog input pin for HV sense: HV divided through 390k and 4k7 divider, using 5V reference
-int LDRPin = A1;    // Analog input for Light dependent resistor. 
+#define sensorPin   A0    // Package pin 23 // PC0 // Analog input pin for HV sense: HV divided through 390k and 4k7 divider, using 5V reference
+#define LDRPin      A1    // Package pin 24 // PC1 // Analog input for Light dependent resistor.
 
 //**********************************************************************************
 
+// Structure for encapsulating buffered time and date manipulation.
+// Set the sync time with a known time and date periodically, and use the internal Arduino 
+// clock to keep this updated inbetween syncs.
+// Advantages: Much faster internmediate reads. No need to hit external time providers
+// fast. For example GPS and DCF cannot immediately give dates and times. (GSP over serial
+// is too slow to read very often, DCF is just slow to sync)
+struct DateTime {
+public:
+  // Constructor
+  DateTime() : hours(0), mins(0), secs(0), years(0), months(0), days(0) { millisDate = 0; }
+  
+  // Set a synchronised time point. We match the date and time given in the hours/mins.... variables
+  // with the milliseconds timestamp given.
+  // To read an updated timestamp, we use the next function "setDeltaMillis"
+  void setSyncTime(long newMillis,byte newYears,byte newMonths,byte newDays,byte newHours,byte newMins,byte newSecs) {
+    years = newYears;
+    months = newMonths;
+    days = newDays;
+    hours = newHours;
+    mins = newMins;
+    secs = newSecs;
+    dow = dayofweek(years,months,days);
+    millisDate = newMillis;
+  }
+  
+  // Update the time with a new millis timestamp
+  void setDeltaMillis(long newMillis) { setDelta(newMillis); }
+  
+  // Find out how long it is since we last did a sync 
+  long getDeltaMillis(long newMillis) { return getDelta(newMillis); }
+  
+  // Current time - updated by "setDeltaMillis"
+  byte getHours() { return getHoursByMode(deltaHours); }
+  byte getHours24() { return deltaHours; }  // Always 24h format
+  byte getMins()  { return deltaMins; }
+  byte getSecs()  { return deltaSecs; }
+
+  // Current date / dow
+  byte getYears()  { return years; }
+  byte getMonths() { return months; }
+  byte getDays()   { return days; }
+  byte getDow()    { return dow; }
+
+  // Current sync time - updated by "setSyncTime"
+  byte getSyncHours() { return getHoursByMode(hours); }
+  byte getSyncMins()  { return mins; }
+  byte getSyncSecs()  { return secs; }
+
+  void setHourMode(boolean newMode) { hourMode = newMode; }
+  boolean getHourMode() { return hourMode; }
+   
+private:
+  // Synced time
+  byte hours;
+  byte mins;
+  byte secs;
+   
+  // Variable time
+  byte deltaHours;
+  byte deltaMins;
+  byte deltaSecs;
+   
+  // Date
+  byte years;
+  byte months;
+  byte days;
+  byte dow;
+  
+  // Date mode false = 24h, true = 12h
+  boolean hourMode = false;
+   
+  // Last sync timestamp
+  long millisDate;
+  
+  // Calculate the delta
+  long getDelta(long newMillis) {
+    long deltaMillis = newMillis - millisDate;
+    return deltaMillis;
+  }
+  
+  // Set the delta and recalculate
+  // We do not update the day in this case, we wait until the next read
+  // Of the time provider
+  void setDelta(long newMillis) {
+    long tmpDeltaSecs = newMillis - millisDate;
+    tmpDeltaSecs = tmpDeltaSecs/1000;
+    long tmpSecs = tmpDeltaSecs % 60;
+    long tmpMins = (tmpDeltaSecs / 60) % 60;
+    long tmpHours = (tmpDeltaSecs / 3600) % 24;
+    deltaSecs = secs + tmpSecs;
+    deltaMins = mins + tmpMins;
+    deltaHours = hours + tmpHours;
+    if (deltaSecs > 59) { deltaSecs -= 60; deltaMins++; }
+    if (deltaMins > 59) { deltaMins -= 60; deltaHours++; }
+    if (deltaHours > 23) { deltaHours -= 24; }
+  }
+  
+  // Implement 24/12 hour mode
+  byte getHoursByMode(byte hours) {
+    if (hourMode) {
+      if (hours == 0) {
+        return 12;
+      } else if (hours > 12) {
+        return hours - 12;
+      } else {
+        return hours;
+      }
+    } else {
+      return hours;
+    }
+  }
+};
+
+// Structure for encapsulating button debounce and management
+struct Button {
+public:
+  // Constructor
+  Button(byte newInputPin, boolean newActiveLow) : inputPin(0), activeLow(false) { inputPin = newInputPin; activeLow = newActiveLow; }
+
+  // ************************************************************
+  // MAIN BUTTON CHECK ENTRY POINT - should be called periodically
+  // See if the button was pressed and debounce. We perform a
+  // sort of preview here, then confirm by releasing. We track
+  // 3 lengths of button press: momentarily, 1S and 2S.
+  // ************************************************************
+  void checkButton(long nowMillis) {
+    checkButtonInternal(nowMillis);
+  }
+  
+  // ************************************************************
+  // Reset everything
+  // ************************************************************
+  void reset() {
+    resetInternal();
+  }
+  
+  // ************************************************************
+  // Check if button is pressed right now (just debounce)
+  // ************************************************************
+  boolean isButtonPressedNow() {
+    return button1PressedCount == debounceCounter;
+  }
+
+  // ************************************************************
+  // Check if button is pressed momentarily
+  // ************************************************************
+  boolean isButtonPressed() {
+    return buttonPress;
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a long time (> 1S)
+  // ************************************************************
+  boolean isButtonPressed1S() {
+    return buttonPress1S;
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a moderately long time (> 2S)
+  // ************************************************************
+  boolean isButtonPressed2S() {
+    return buttonPress2S;
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a very long time (> 8S)
+  // ************************************************************
+  boolean isButtonPressed8S() {
+    return buttonPress8S;
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a short time (> 200mS) and released
+  // ************************************************************
+  boolean isButtonPressedAndReleased() {
+    if (buttonPressRelease) {
+      buttonPressRelease = false;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a long time (> 2) and released
+  // ************************************************************
+  boolean isButtonPressedReleased1S() {
+    if (buttonPressRelease1S) {
+      buttonPressRelease1S = false;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a very moderately time (> 2) and released
+  // ************************************************************
+  boolean isButtonPressedReleased2S() {
+    if (buttonPressRelease2S) {
+      buttonPressRelease2S = false;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // ************************************************************
+  // Check if button is pressed for a very long time (> 8) and released
+  // ************************************************************
+  boolean isButtonPressedReleased8S() {
+    if (buttonPressRelease8S) {
+      buttonPressRelease8S = false;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+private:
+  byte inputPin;
+  boolean activeLow;
+  
+  int  button1PressedCount = 0;
+  long button1PressStartMillis = 0;
+  const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
+  boolean buttonWasReleased = false;
+  boolean buttonPress8S = false;
+  boolean buttonPress2S = false;
+  boolean buttonPress1S = false;
+  boolean buttonPress = false;
+  boolean buttonPressRelease8S = false;
+  boolean buttonPressRelease2S = false;
+  boolean buttonPressRelease1S = false;
+  boolean buttonPressRelease = false;
+  
+  void checkButtonInternal(long nowMillis) {
+    if (digitalRead(inputPin) == 0) {
+      buttonWasReleased = false;
+
+      // We need consecutive pressed counts to treat this is pressed
+      if (button1PressedCount < debounceCounter) {
+        button1PressedCount += 1;
+        // If we reach the debounce point, mark the start time
+        if (button1PressedCount == debounceCounter) {
+          button1PressStartMillis = nowMillis;
+        }
+      } else {
+        // We are pressed and held, maintain the press states
+        if ((nowMillis - button1PressStartMillis) > 8000) {
+          buttonPress8S = true;
+          buttonPress2S = true;
+          buttonPress1S = true;
+          buttonPress = true;
+        } else if ((nowMillis - button1PressStartMillis) > 2000) {
+          buttonPress8S = false;
+          buttonPress2S = true;
+          buttonPress1S = true;
+          buttonPress = true;
+        } else if ((nowMillis - button1PressStartMillis) > 1000) {
+          buttonPress8S = false;
+          buttonPress2S = false;
+          buttonPress1S = true;
+          buttonPress = true;
+        } else {
+          buttonPress8S = false;
+          buttonPress2S = false;
+          buttonPress1S = false;
+          buttonPress = true;
+        }
+      }
+    } else {
+      // mark this as a press and release if we were pressed for less than a long press
+      if (button1PressedCount == debounceCounter) {
+        buttonWasReleased = true;
+
+        buttonPressRelease8S = false;
+        buttonPressRelease2S = false;
+        buttonPressRelease1S = false;
+        buttonPressRelease = false;
+
+        if (buttonPress8S) {
+          buttonPressRelease8S = true;
+        } else if (buttonPress2S) {
+          buttonPressRelease2S = true;
+        } else if (buttonPress1S) {
+          buttonPressRelease1S = true;
+        } else if (buttonPress) {
+          buttonPressRelease = true;
+        }
+      }
+
+      // Reset the switch flags debounce counter
+      buttonPress8S = false;
+      buttonPress2S = false;
+      buttonPress1S = false;
+      buttonPress = false;
+      button1PressedCount = 0;
+    }
+  }
+  
+  void resetInternal() {
+    buttonPressRelease8S = false;
+    buttonPressRelease2S = false;
+    buttonPressRelease1S = false;
+    buttonPressRelease = false;
+    buttonPress8S = false;
+    buttonPress2S = false;
+    buttonPress1S = false;
+    buttonPress = false;
+    button1PressedCount = 0;
+  }
+};
+
+// ********************** HV generator variables *********************
+int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
+int pwmTop = PWM_TOP_DEFAULT;
+int pulseWidth = PWM_PULSE_DEFAULT;
+
+// Used for special mappings of the 74141 -> digit (wiring aid)
+// allows the board wiring to be much simpler<
+byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+
 // Driver pins for the anodes
-int anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
+byte anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
 
 // precalculated values for turning on and off the HV generator
 // Put these in TCCR1B to turn off and on
-int tccrOff;
-int tccrOn;
+byte tccrOff;
+byte tccrOn;
 int rawHVADCThreshold;
 
 // ************************ Display management ************************
-int NumberArray[6]    = {0,0,0,0,0,0};
-int currNumberArray[6]= {0,0,0,0,0,0};
-int displayType[6]    = {FADE,FADE,FADE,FADE,FADE,FADE};
-int fadeState[6]      = {0,0,0,0,0,0};
+byte NumberArray[6]    = {0,0,0,0,0,0};
+byte currNumberArray[6]= {0,0,0,0,0,0};
+byte displayType[6]    = {FADE,FADE,FADE,FADE,FADE,FADE};
+byte fadeState[6]      = {0,0,0,0,0,0};
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
@@ -278,33 +622,36 @@ int  tempDisplayMode;
 
 int acpOffset = 0;        // Used to provide one arm bandit scolling
 int acpTick = 0;          // The number of counts before we scroll
+boolean suppressACP = false;
 
-int currentMode = MODE_TIME;   // Initial cold start mode 
-int nextMode = currentMode; 
+byte currentMode = MODE_TIME;   // Initial cold start mode
+byte nextMode = currentMode;
+int loopCounter = 0;
+byte blankHourStart = 0;
+byte blankHourEnd = 0;
 
-// ************************ Night time dimming ************************
+// ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
 int dimBright = SENSOR_HIGH_DEFAULT;
 double sensorSmoothed = 0;
 double sensorFactor = (double)(DIGIT_DISPLAY_OFF)/(double)(dimBright-dimDark);
 int sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
 
-// Time initial values, overwritten on startup if an RTC is there
-byte hours = 12;
-byte mins = 0;
-byte secs = 0;
-byte days = 1;
-byte months = 1;
-byte years = 14;
-byte dow = 0; // 0 = Sun
-boolean mode12or24 = false;
+// ************************ Clock variables ************************
+// RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
+DS3231 Clock;
+
+#define RTC_I2C_ADDRESS 0x68
+
+// Time initial values, overwritten on startup if a time provider is there
+DateTime displayDate;
 
 // State variables for detecting changes
 byte lastSec;
-//byte intCnt = 0;
+long nowMillis = 0;
 
-int dateFormat = DATE_FORMAT_DEFAULT;
-int dayBlanking = DAY_BLANKING_DEFAULT;
+byte dateFormat = DATE_FORMAT_DEFAULT;
+byte dayBlanking = DAY_BLANKING_DEFAULT;
 boolean blanked = false;
 
 // **************************** LED management ***************************
@@ -315,62 +662,52 @@ boolean upOrDown;
 int ledBlinkCtr = 0;
 int ledBlinkNumber = 0;
 
-int backlightMode = BACKLIGHT_DEFAULT;
+byte backlightMode = BACKLIGHT_DEFAULT;
 
 // Back light intensities
-int redCnl = COLOUR_CNL_DEFAULT;
-int grnCnl = COLOUR_CNL_DEFAULT;
-int bluCnl = COLOUR_CNL_DEFAULT;
+byte redCnl = COLOUR_CNL_DEFAULT;
+byte grnCnl = COLOUR_CNL_DEFAULT;
+byte bluCnl = COLOUR_CNL_DEFAULT;
+byte cycleCount = 0;
+byte cycleSpeed = CYCLE_SPEED_DEFAULT;
 byte ledCycleCount[3] = {0,0,0};
 double ledCycleValue[3] = {0,0,0};
 double ledCycleIncrement[3] = {0,0,0};
 
 // ********************** Input switch management **********************
-// button debounce
-int  button1PressedCount = 0;
-long button1PressStartMillis = 0;
-const int  debounceCounter = 5; // Number of successive reads before we say the switch is down
-boolean buttonWasReleased = false;
-boolean buttonPress8S = false;
-boolean buttonPress2S = false;
-boolean buttonPress1S = false;
-boolean buttonPress = false;
-boolean buttonPressRelease8S = false;
-boolean buttonPressRelease2S = false;
-boolean buttonPressRelease1S = false;
-boolean buttonPressRelease = false;
+Button button1(inputPin1,false);
 
 // **************************** digit healing ****************************
 // This is a special mode which repairs cathode poisoning by driving a
 // single element at full power. To be used with care!
 // In theory, this should not be necessary because we have ACP every 10mins,
 // but some tubes just want to be poisoned
-int digitBurnDigit = 0;
-int digitBurnValue = 0;
+byte digitBurnDigit = 0;
+byte digitBurnValue = 0;
 
 //**********************************************************************************
 //**********************************************************************************
 //*                                    Setup                                       *
 //**********************************************************************************
 //**********************************************************************************
-void setup() 
+void setup()
 {
-  pinMode(ledPin_0_a, OUTPUT);      
-  pinMode(ledPin_0_b, OUTPUT);      
-  pinMode(ledPin_0_c, OUTPUT);      
-  pinMode(ledPin_0_d, OUTPUT);    
+  pinMode(ledPin_0_a, OUTPUT);
+  pinMode(ledPin_0_b, OUTPUT);
+  pinMode(ledPin_0_c, OUTPUT);
+  pinMode(ledPin_0_d, OUTPUT);
 
-  pinMode(ledPin_a_1, OUTPUT);      
-  pinMode(ledPin_a_2, OUTPUT);      
-  pinMode(ledPin_a_3, OUTPUT);     
-  pinMode(ledPin_a_4, OUTPUT);     
-  pinMode(ledPin_a_5, OUTPUT);     
-  pinMode(ledPin_a_6, OUTPUT);     
+  pinMode(ledPin_a_1, OUTPUT);
+  pinMode(ledPin_a_2, OUTPUT);
+  pinMode(ledPin_a_3, OUTPUT);
+  pinMode(ledPin_a_4, OUTPUT);
+  pinMode(ledPin_a_5, OUTPUT);
+  pinMode(ledPin_a_6, OUTPUT);
 
-  pinMode(tickLed, OUTPUT);     
-  pinMode(RLed, OUTPUT);     
-  pinMode(GLed, OUTPUT);     
-  pinMode(BLed, OUTPUT);     
+  pinMode(tickLed, OUTPUT);
+  pinMode(RLed, OUTPUT);
+  pinMode(GLed, OUTPUT);
+  pinMode(BLed, OUTPUT);
 
   // NOTE:
   // Grounding the input pin causes it to actuate
@@ -390,54 +727,76 @@ void setup()
 
   TCCR1A = 0;    // disable all PWM on Timer1 whilst we set it up
   TCCR1B = 0;    // disable all PWM on Timer1 whilst we set it up
-  ICR1 = pwmTop; // Our starting point for the period	
+  ICR1 = pwmTop; // Our starting point for the period
 
   // Configure timer 1 for Fast PWM mode via ICR1, with prescaling=1
   TCCR1A = (1 << WGM11);
   TCCR1B = (1 << WGM13) | (1<<WGM12) | (1 << CS10);
 
   tccrOff = TCCR1A;
-  
+
   TCCR1A |= (1 <<  COM1A1);  // enable PWM on port PD4 in non-inverted compare mode 2
- 
+
   tccrOn = TCCR1A;
-  
+
   OCR1A = pulseWidth;  // Pulse width of the on time
 
   // Set up timer 2 like timer 0 (for RGB leds)
   TCCR2A = (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
   TCCR2B = (1 << CS22);
-  
+
   /* enable global interrupts */
   sei();
 
-  // Start the RTC communication
-  Wire.begin();
+  // **********************************************************************
 
-  // Recover the time from the RTC
-  getRTCTime();
-  
   // Test if the button is pressed for factory reset
-  for (int i = 0 ; i < debounceCounter*2 ; i++ ) {
-    checkButton1(); 
+  for (int i = 0 ; i < 20 ; i++ ) {
+    button1.checkButton(nowMillis);
   }
-  
+
   // Detect factory reset: button pressed on start
-  if (is1PressedNow()) {
+  if (button1.isButtonPressedNow()) {
     // Flash 10 x to signal that we have accepted the factory reset
     for (int i = 0 ; i < 10 ; i++ ) {
       digitalWrite(tickLed, HIGH);
       delay(100);
       digitalWrite(tickLed, LOW);
       delay(100);
-      
+
       factoryReset();
     }
   }
-  
+
   // Pre-calculate the ADC threshold reading, this saves all
-  // of the floating point business
+  // of the floating point business in the main loop
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+  
+   // Calibrate HVGen at full
+  for (int i = 0 ; i < 1000 ; i++ ) {
+    loadNumberArray8s();
+    allBright();
+    outputDisplay();
+    checkHVVoltage();  
+  }
+  
+  // Clear down any spurious button action
+  button1.reset();
+  
+  // initialise the internal time (in case we don't find the time provider)
+  nowMillis = millis();
+  displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
+
+  // Start the RTC communication
+  Wire.begin();
+
+  // Recover the time from the RTC
+  nowMillis = millis();
+  getRTCTime();
+
+  // Show the version for 1 s
+  tempDisplayMode = TEMP_MODE_VERSION;
+  secsDisplayEnd = millis() + 1000;
 }
 
 //**********************************************************************************
@@ -445,24 +804,31 @@ void setup()
 //*                              Main loop                                         *
 //**********************************************************************************
 //**********************************************************************************
-void loop()     
+void loop()
 {
-  // get the time 
-  getRTCTime();
-
-  // Regulate the voltage
-  checkHVVoltage();
+  nowMillis = millis();
   
-  // Check button, we evaluate below
-  checkButton1();
+  // We don't want to get the time from the external time provider always,
+  // just enough to keep the internal time provider correct
+  // This keeps the outer loop fast and responsive
+  if (displayDate.getDeltaMillis(nowMillis) > READ_TIME_PROVIDER_MILLIS) {
+    // get the time from the external provider - slow but accurate
+    getRTCTime();
+  } else {
+    // Get the time from the internal provider - quick and easy
+    getTimeInt();
+  }
+
+  // Check button, we evaluate below  // Get the time from the internal provider
+  button1.checkButton(nowMillis);
 
   // ******* Preview the next display mode *******
-  // What is previewed here will get actioned when 
+  // What is previewed here will get actioned when
   // the button is released
-  if (is1Pressed2S()) {
+  if (button1.isButtonPressed2S()) {
     // Just jump back to the start
     nextMode = MODE_MIN;
-  } else if (is1Pressed1S()) {
+  } else if (button1.isButtonPressed1S()) {
     nextMode = currentMode + 1;
 
     if (nextMode > MODE_MAX) {
@@ -471,7 +837,7 @@ void loop()
   }
 
   // ******* Set the display mode *******
-  if(is1PressedRelease8S()) {
+  if(button1.isButtonPressedReleased8S()) {
     // 8 Sec press toggles burn mode
     if (currentMode == MODE_DIGIT_BURN) {
       currentMode = MODE_MIN;
@@ -480,7 +846,7 @@ void loop()
     }
 
     nextMode = currentMode;
-  } else if(is1PressedRelease2S()) {
+  } else if(button1.isButtonPressedReleased2S()) {
     currentMode = MODE_MIN;
 
     // Store the EEPROM if we exit the config mode
@@ -490,7 +856,7 @@ void loop()
     allFade();
 
     nextMode = currentMode;
-  } else if(is1PressedRelease1S()) {
+  } else if(button1.isButtonPressedReleased1S()) {
     currentMode++;
 
     if (currentMode > MODE_MAX) {
@@ -510,7 +876,7 @@ void loop()
   if (nextMode != currentMode) {
     // turn off blanking
     blanked = false;
-    
+
     if (nextMode == MODE_TIME) {
       loadNumberArrayTime();
       allFade();
@@ -528,21 +894,21 @@ void loop()
 
     if (nextMode == MODE_DAYS_SET) {
       loadNumberArrayDate();
-      highlight0and1();
+      highlightDaysDateFormat();
     }
 
     if (nextMode == MODE_MONTHS_SET) {
       loadNumberArrayDate();
-      highlight2and3();
+      highlightMonthsDateFormat();
     }
 
     if (nextMode == MODE_YEARS_SET) {
       loadNumberArrayDate();
-      highlight4and5();
+      highlightYearsDateFormat();
     }
 
     if (nextMode == MODE_12_24) {
-      loadNumberArrayConfBool(mode12or24,nextMode-MODE_12_24);
+      loadNumberArrayConfBool(displayDate.getHourMode(),nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -565,7 +931,30 @@ void loop()
       loadNumberArrayConfInt(dayBlanking,nextMode-MODE_12_24);
       displayConfig();
     }
+    
+    if (nextMode == MODE_HR_BLNK_START) {
+      if (dayBlanking < DAY_BLANKING_HOURS) {
+        // Skip past the start and end hour if the blanking mode says it is not relevant
+        nextMode++;
+        currentMode++;
+        nextMode++;
+        currentMode++;
+      }
 
+      loadNumberArrayConfInt(blankHourStart,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_HR_BLNK_END) {
+      loadNumberArrayConfInt(blankHourEnd,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_SUPPRESS_ACP) {
+      loadNumberArrayConfBool(suppressACP,nextMode-MODE_12_24);
+      displayConfig();
+    }
+    
     if (nextMode == MODE_FADE_STEPS_UP) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
       displayConfig();
@@ -590,9 +979,9 @@ void loop()
       loadNumberArrayConfInt(backlightMode,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_RED_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
+      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
         // Skip if we are in cycle mode
         nextMode++;
         currentMode++;
@@ -602,7 +991,7 @@ void loop()
     }
 
     if (nextMode == MODE_GRN_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
+      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
         // Skip if we are in cycle mode
         nextMode++;
         currentMode++;
@@ -612,7 +1001,7 @@ void loop()
     }
 
     if (nextMode == MODE_BLU_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
+      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
         // Skip if we are in cycle mode
         nextMode++;
         currentMode++;
@@ -620,34 +1009,44 @@ void loop()
       loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
+    if (nextMode == MODE_CYCLE_SPEED) {
+      if ((backlightMode != BACKLIGHT_CYCLE) && (backlightMode != BACKLIGHT_CYCLE_DIM))  {
+        // Skip if we are in cycle mode
+        nextMode++;
+        currentMode++;
+      }
+      loadNumberArrayConfInt(cycleSpeed,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
     if (nextMode == MODE_TARGET_HV_UP) {
       loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TARGET_HV_DOWN) {
       loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_PULSE_UP) {
       loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_PULSE_DOWN) {
       loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TEMP) {
       loadNumberArrayTemp(nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_VERSION) {
-      loadNumberArrayConfInt(softwareVersion,nextMode-MODE_12_24);
+      loadNumberArrayConfInt(SOFTWARE_VERSION,nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -664,14 +1063,14 @@ void loop()
     if (currentMode == MODE_TIME) {
 
       checkBlanking();
-      
-      if(is1PressedRelease()) {
+
+      if(button1.isButtonPressedAndReleased()) {
         if (blanked) {
           // just turn off blanking - it will turn back on on it's own
           blanked = false;
         } else {
           // Always start from the first mode, or increment the temp mode if we are already in a display
-          if (millis() < secsDisplayEnd) {
+          if (nowMillis < secsDisplayEnd) {
             tempDisplayMode++;
           } else {
             tempDisplayMode = TEMP_MODE_MIN;
@@ -679,12 +1078,12 @@ void loop()
           if (tempDisplayMode > TEMP_MODE_MAX) {
             tempDisplayMode = TEMP_MODE_MIN;
           }
-        
-          secsDisplayEnd = millis() + 5000;
+
+          secsDisplayEnd = nowMillis + 5000;
         }
       }
 
-      if (millis() < secsDisplayEnd) {
+      if (nowMillis < secsDisplayEnd) {
         if (tempDisplayMode == TEMP_MODE_DATE) {
           loadNumberArrayDate();
         }
@@ -692,13 +1091,17 @@ void loop()
         if (tempDisplayMode == TEMP_MODE_TEMP) {
           loadNumberArrayTemp(MODE_TEMP);
         }
-        
+
         if (tempDisplayMode == TEMP_MODE_LDR) {
           loadNumberArrayLDR();
         }
 
-        allFade();
+        if (tempDisplayMode == TEMP_MODE_VERSION) {
+          loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
+        }
         
+        allFade();
+
       } else {
         if (acpOffset > 0) {
           loadNumberArrayACP();
@@ -706,303 +1109,343 @@ void loop()
         } else {
           loadNumberArrayTime();
           allFade();
-          
+
           // Apply leading blanking
           applyBlanking();
         }
-      }    
-    }
-
-    if (currentMode == MODE_MINS_SET) {
-      if(is1PressedRelease()) {
-        incMins();
-        setRTC();      
       }
-      loadNumberArrayTime();
-      highlight2and3();
-    }
-
-    if (currentMode == MODE_HOURS_SET) {
-      if(is1PressedRelease()) {
-        incHours();
-        setRTC();      
-      }
-      loadNumberArrayTime();
-      highlight0and1();
-    }
-
-    if (currentMode == MODE_DAYS_SET) {
-      if(is1PressedRelease()) {
-        incDays();
-        setRTC();
-      }
-      loadNumberArrayDate();
-      highlight0and1();
-    }
-
-    if (currentMode == MODE_MONTHS_SET) {
-      if(is1PressedRelease()) {
-        incMonths();
-        setRTC();      
-      }
-      loadNumberArrayDate();
-      highlight2and3();
-    }
-
-    if (currentMode == MODE_YEARS_SET) {
-      if(is1PressedRelease()) {
-        incYears();
-        setRTC();      
-      }
-      loadNumberArrayDate();
-      highlight4and5();
-    }
-
-    if (currentMode == MODE_12_24) {
-      if(is1PressedRelease()) {
-        mode12or24 = !mode12or24;
-        setRTC();
-      }
-      loadNumberArrayConfBool(mode12or24,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_LEAD_BLANK) {
-      if(is1PressedRelease()) {
-        blankLeading = !blankLeading;
-      }
-      loadNumberArrayConfBool(blankLeading,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_SCROLLBACK) {
-      if(is1PressedRelease()) {
-        scrollback = !scrollback;
-      }
-      loadNumberArrayConfBool(scrollback,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_DATE_FORMAT) {
-      if(is1PressedRelease()) {
-        dateFormat++;
-        if (dateFormat > DATE_FORMAT_MAX) {
-          dateFormat = DATE_FORMAT_MIN;
+    } else {
+      if (currentMode == MODE_MINS_SET) {
+        if(button1.isButtonPressedAndReleased()) {
+          incMins();
         }
+        loadNumberArrayTime();
+        highlight2and3();
       }
-      loadNumberArrayConfInt(dateFormat,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_DAY_BLANKING) {
-      if(is1PressedRelease()) {
-        dayBlanking++;
-        if (dayBlanking > DAY_BLANKING_MAX) {
-          dayBlanking = DAY_BLANKING_MIN;
+      if (currentMode == MODE_HOURS_SET) {
+        if(button1.isButtonPressedAndReleased()) {
+          incHours();
         }
+        loadNumberArrayTime();
+        highlight0and1();
       }
-      loadNumberArrayConfInt(dayBlanking,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_FADE_STEPS_UP) {
-      if(is1PressedRelease()) {
-        fadeSteps++;
-        if (fadeSteps > FADE_STEPS_MAX) {
-          fadeSteps = FADE_STEPS_MIN;
+      if (currentMode == MODE_DAYS_SET) {
+        if(button1.isButtonPressedAndReleased()) {
+          incDays();
         }
+        loadNumberArrayDate();
+        highlightDaysDateFormat();
       }
-      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
-      displayConfig();
-      fadeStep = dispCount / fadeSteps;
-    }
 
-    if (currentMode == MODE_FADE_STEPS_DOWN) {
-      if(is1PressedRelease()) {
-        fadeSteps--;
-        if (fadeSteps < FADE_STEPS_MIN) {
-          fadeSteps = FADE_STEPS_MAX;
+      if (currentMode == MODE_MONTHS_SET) {
+        if(button1.isButtonPressedAndReleased()) {
+          incMonths();
         }
+        loadNumberArrayDate();
+        highlightMonthsDateFormat();
       }
-      loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
-      displayConfig();
-      fadeStep = dispCount / fadeSteps;
-    }
 
-    if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
-      if(is1PressedRelease()) {
-        scrollSteps--;
-        if (scrollSteps < SCROLL_STEPS_MIN) {
-          scrollSteps = SCROLL_STEPS_MAX;
+      if (currentMode == MODE_YEARS_SET) {
+        if(button1.isButtonPressedAndReleased()) {
+          incYears();
         }
+        loadNumberArrayDate();
+        highlightYearsDateFormat();
       }
-      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
-      if(is1PressedRelease()) {
-        scrollSteps++;
-        if (scrollSteps > SCROLL_STEPS_MAX) {
-          scrollSteps = SCROLL_STEPS_MIN;
+      if (currentMode == MODE_12_24) {
+        if(button1.isButtonPressedAndReleased()) {
+          displayDate.setHourMode(!displayDate.getHourMode());
         }
+        loadNumberArrayConfBool(displayDate.getHourMode(),currentMode-MODE_12_24);
+        displayConfig();
       }
-      loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_BACKLIGHT_MODE) {
-      if(is1PressedRelease()) {
-        backlightMode++;
-        if (backlightMode > BACKLIGHT_MAX) {
-          backlightMode = BACKLIGHT_MIN;
+      if (currentMode == MODE_LEAD_BLANK) {
+        if(button1.isButtonPressedAndReleased()) {
+          blankLeading = !blankLeading;
         }
+        loadNumberArrayConfBool(blankLeading,currentMode-MODE_12_24);
+        displayConfig();
       }
-      loadNumberArrayConfInt(backlightMode,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_RED_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+      if (currentMode == MODE_SCROLLBACK) {
+        if(button1.isButtonPressedAndReleased()) {
+          scrollback = !scrollback;
+        }
+        loadNumberArrayConfBool(scrollback,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_DATE_FORMAT) {
+        if(button1.isButtonPressedAndReleased()) {
+          dateFormat++;
+          if (dateFormat > DATE_FORMAT_MAX) {
+            dateFormat = DATE_FORMAT_MIN;
+          }
+        }
+        loadNumberArrayConfInt(dateFormat,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_DAY_BLANKING) {
+        if(button1.isButtonPressedAndReleased()) {
+          dayBlanking++;
+          if (dayBlanking > DAY_BLANKING_MAX) {
+            dayBlanking = DAY_BLANKING_MIN;
+          }
+        }
+        loadNumberArrayConfInt(dayBlanking,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_HR_BLNK_START) {
+        if(button1.isButtonPressedAndReleased()) {
+          blankHourStart++;
+          if (blankHourStart > HOURS_MAX) {
+            blankHourStart = 0;
+          }
+        }
+        loadNumberArrayConfInt(blankHourStart,currentMode-MODE_12_24);
+        displayConfig();
       }
       
-      if(is1PressedRelease()) {
-        redCnl++;
-        if (redCnl > COLOUR_CNL_MAX) {
-          redCnl = COLOUR_CNL_MIN;
+      if (currentMode == MODE_HR_BLNK_END) {
+        if(button1.isButtonPressedAndReleased()) {
+          blankHourEnd++;
+          if (blankHourEnd > HOURS_MAX) {
+            blankHourEnd = 0;
+          }
         }
-      }
-      loadNumberArrayConfInt(redCnl,currentMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (currentMode == MODE_GRN_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+        loadNumberArrayConfInt(blankHourEnd,currentMode-MODE_12_24);
+        displayConfig();
       }
       
-      if(is1PressedRelease()) {
-        grnCnl++;
-        if (grnCnl > COLOUR_CNL_MAX) {
-          grnCnl = COLOUR_CNL_MIN;
+      if (currentMode == MODE_SUPPRESS_ACP) {
+        if(button1.isButtonPressedAndReleased()) {
+          suppressACP = !suppressACP;
         }
+        loadNumberArrayConfBool(suppressACP,currentMode-MODE_12_24);
+        displayConfig();
       }
-      loadNumberArrayConfInt(grnCnl,currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    if (currentMode == MODE_BLU_CNL) {
-      if (backlightMode == BACKLIGHT_CYCLE) {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
-      }
-      
-      if(is1PressedRelease()) {
-        bluCnl++;
-        if (bluCnl > COLOUR_CNL_MAX) {
-          bluCnl = COLOUR_CNL_MIN;
+      if (currentMode == MODE_FADE_STEPS_UP) {
+        if(button1.isButtonPressedAndReleased()) {
+          fadeSteps++;
+          if (fadeSteps > FADE_STEPS_MAX) {
+            fadeSteps = FADE_STEPS_MIN;
+          }
         }
+        loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
+        displayConfig();
+        fadeStep = dispCount / fadeSteps;
       }
-      loadNumberArrayConfInt(bluCnl,currentMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if (currentMode == MODE_TARGET_HV_UP) {
-      if(is1PressedRelease()) {
-        hvTargetVoltage+=5;
-        if (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX) {
-          hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
-        }
-      }
-      loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if (currentMode == MODE_TARGET_HV_DOWN) {
-      if(is1PressedRelease()) {
-        hvTargetVoltage-=5;
-        if (hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) {
-          hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
-        }
-      }
-      loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if (currentMode == MODE_PULSE_UP) {
-      if(is1PressedRelease()) {
-        pulseWidth+=10;
-        if (pulseWidth > PWM_PULSE_MAX) {
-          pulseWidth = PWM_PULSE_MIN;
-        }
-      }
-      OCR1A = pulseWidth;
-      loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if (currentMode == MODE_PULSE_DOWN) {
-      if(is1PressedRelease()) {
-        pulseWidth-=10;
-        if (pulseWidth < PWM_PULSE_MIN) {
-          pulseWidth = PWM_PULSE_MAX;
-        }
-      }
-      OCR1A = pulseWidth;
-      loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if (currentMode == MODE_TEMP) {
-      loadNumberArrayTemp(currentMode-MODE_12_24);
-      displayConfig();
-    }
 
-    // We are setting calibration
-    if (currentMode == MODE_VERSION) {
-      loadNumberArrayConfInt(softwareVersion,currentMode-MODE_12_24);
-      displayConfig();
-    }
+      if (currentMode == MODE_FADE_STEPS_DOWN) {
+        if(button1.isButtonPressedAndReleased()) {
+          fadeSteps--;
+          if (fadeSteps < FADE_STEPS_MIN) {
+            fadeSteps = FADE_STEPS_MAX;
+          }
+        }
+        loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
+        displayConfig();
+        fadeStep = dispCount / fadeSteps;
+      }
 
-    // We are setting calibration
-    if (currentMode == MODE_TUBE_TEST) {
-      allNormal();
-      loadNumberArrayTestDigits();
-    }
+      if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
+        if(button1.isButtonPressedAndReleased()) {
+          scrollSteps--;
+          if (scrollSteps < SCROLL_STEPS_MIN) {
+            scrollSteps = SCROLL_STEPS_MAX;
+          }
+        }
+        loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
+        displayConfig();
+      }
 
-    // We arerepairing cathode poisoning
-    if (currentMode == MODE_DIGIT_BURN) {
-      if(is1PressedRelease()) {
-        digitBurnValue += 1;
-        if (digitBurnValue > 9) {
-          digitBurnValue = 0;
+      if (currentMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
+        if(button1.isButtonPressedAndReleased()) {
+          scrollSteps++;
+          if (scrollSteps > SCROLL_STEPS_MAX) {
+            scrollSteps = SCROLL_STEPS_MIN;
+          }
+        }
+        loadNumberArrayConfInt(scrollSteps,currentMode-MODE_12_24);
+        displayConfig();
+      }
 
-          digitOff(digitBurnDigit);
-          digitBurnDigit += 1;
-          if (digitBurnDigit > 5) {
-            digitBurnDigit = 0;
+      if (currentMode == MODE_BACKLIGHT_MODE) {
+        if(button1.isButtonPressedAndReleased()) {
+          backlightMode++;
+          if (backlightMode > BACKLIGHT_MAX) {
+            backlightMode = BACKLIGHT_MIN;
+          }
+        }
+        loadNumberArrayConfInt(backlightMode,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_RED_CNL) {
+        if (backlightMode == BACKLIGHT_CYCLE) {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+
+        if(button1.isButtonPressedAndReleased()) {
+          redCnl++;
+          if (redCnl > COLOUR_CNL_MAX) {
+            redCnl = COLOUR_CNL_MIN;
+          }
+        }
+        loadNumberArrayConfInt(redCnl,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_GRN_CNL) {
+        if (backlightMode == BACKLIGHT_CYCLE) {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+
+        if(button1.isButtonPressedAndReleased()) {
+          grnCnl++;
+          if (grnCnl > COLOUR_CNL_MAX) {
+            grnCnl = COLOUR_CNL_MIN;
+          }
+        }
+        loadNumberArrayConfInt(grnCnl,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_BLU_CNL) {
+        if (backlightMode == BACKLIGHT_CYCLE) {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+
+        if(button1.isButtonPressedAndReleased()) {
+          bluCnl++;
+          if (bluCnl > COLOUR_CNL_MAX) {
+            bluCnl = COLOUR_CNL_MIN;
+          }
+        }
+        loadNumberArrayConfInt(bluCnl,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_CYCLE_SPEED) {
+        if(button1.isButtonPressedAndReleased()) {
+          cycleSpeed = cycleSpeed + 2;
+          if (cycleSpeed > CYCLE_SPEED_MAX) {
+            cycleSpeed = CYCLE_SPEED_MIN;
+          }
+        }
+        loadNumberArrayConfInt(cycleSpeed,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TARGET_HV_UP) {
+        if(button1.isButtonPressedAndReleased()) {
+          hvTargetVoltage+=5;
+          if (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX) {
+            hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
+          }
+        }
+        loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
+        rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TARGET_HV_DOWN) {
+        if(button1.isButtonPressedAndReleased()) {
+          hvTargetVoltage-=5;
+          if (hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) {
+            hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
+          }
+        }
+        loadNumberArrayConfInt(hvTargetVoltage,currentMode-MODE_12_24);
+        rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_PULSE_UP) {
+        if(button1.isButtonPressedAndReleased()) {
+          pulseWidth+=10;
+          if (pulseWidth > PWM_PULSE_MAX) {
+            pulseWidth = PWM_PULSE_MIN;
+          }
+        }
+        OCR1A = pulseWidth;
+        loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_PULSE_DOWN) {
+        if(button1.isButtonPressedAndReleased()) {
+          pulseWidth-=10;
+          if (pulseWidth < PWM_PULSE_MIN) {
+            pulseWidth = PWM_PULSE_MAX;
+          }
+        }
+        OCR1A = pulseWidth;
+        loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TEMP) {
+        loadNumberArrayTemp(currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_VERSION) {
+        loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_TUBE_TEST) {
+        allNormal();
+        loadNumberArrayTestDigits();
+      }
+
+      if (currentMode == MODE_DIGIT_BURN) {
+        if(button1.isButtonPressedAndReleased()) {
+          digitBurnValue += 1;
+          if (digitBurnValue > 9) {
+            digitBurnValue = 0;
+
+            digitOff();
+            digitBurnDigit += 1;
+            if (digitBurnDigit > 5) {
+              digitBurnDigit = 0;
+            }
           }
         }
       }
-    }  
+    }
   }
 
   // get the LDR ambient light reading
   digitOffCount = getDimmingFromLDR();
   fadeStep = digitOffCount / fadeSteps;
-  
-  // Display. Digit Burn has a different (non-multiplexed) handling
+
   if ((currentMode != MODE_DIGIT_BURN) && (nextMode != MODE_DIGIT_BURN)) {
     // One armed bandit trigger every 10th minute
     if (acpOffset == 0) {
-      if (((mins % 10) == 9) && (secs == 15)) {
-        acpOffset = 1;
+      if (((displayDate.getMins() % 10) == 9) && (displayDate.getSecs() == 15)) {
+        // suppress ACP when fully dimmed
+        if (suppressACP) {
+          if (digitOffCount > DIGIT_DISPLAY_MIN_DIM) {
+            acpOffset = 1;
+          }
+        } else {
+          acpOffset = 1;
+        }
       }
     }
 
@@ -1026,6 +1469,11 @@ void loop()
     digitOn(digitBurnDigit,digitBurnValue);
   }
 
+  loopCounter++;
+  if (loopCounter % 100 == 0) {
+    checkHVVoltage();
+  }
+  
   // Set leds
   setLeds();
 }
@@ -1040,82 +1488,133 @@ void loop()
 // ************************************************************
 void setLeds()
 {
-  // tick led: Only update it on a second change (not every time round the loop)
-  if (secs != lastSec) {
-    lastSec = secs;
+  // Pulse PWM generation - Only update it on a second change (not every time round the loop)
+  if (displayDate.getSecs() != lastSec) {
+    lastSec = displayDate.getSecs();
 
-    upOrDown = (secs % 2 == 0);
+    upOrDown = (displayDate.getSecs() % 2 == 0);
 
     // Reset the PWM every now and again, otherwise it drifts
     if (upOrDown) {
       ledPWMVal = 0;
     }
-
-    // Do the tick led, on 1S, off 1S
-    digitalWrite(tickLed,upOrDown);
   }
 
-  // PWM led output
+  // calculate the PWM value
+  if (upOrDown) {
+    ledPWMVal+=2;
+  } else {
+    ledPWMVal-=2;
+  }
+
+  // Stop it underflowing: This would cause a short, bright flash
+  // Which interrupts the flow of zen
+  if (ledPWMVal < 0) {
+    ledPWMVal = 0;
+  }
+  if (ledPWMVal > 255) {
+    ledPWMVal = 255;
+  }
+
+  // calculate the PWM factor, goes between 0.1 and 1
+  float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_COUNT;
+
+  // Tick led output
+  int dimmedPWMVal = (int)((float) ledPWMVal * dimFactor);
+  analogWrite(tickLed,dimmedPWMVal);
+
+  // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
-      
       case BACKLIGHT_FIXED:
-        analogWrite(RLed,redCnl*16);
-        analogWrite(GLed,grnCnl*16);
-        analogWrite(BLed,bluCnl*16);
+        analogWrite(RLed,(int)((float) redCnl*16));
+        analogWrite(GLed,(int)((float) grnCnl*16));
+        analogWrite(BLed,(int)((float) bluCnl*16));
+        break;
+      case BACKLIGHT_FIXED_DIM:
+        analogWrite(RLed,(int)((float) dimFactor*redCnl*16));
+        analogWrite(GLed,(int)((float) dimFactor*grnCnl*16));
+        analogWrite(BLed,(int)((float) dimFactor*bluCnl*16));
         break;
       case BACKLIGHT_PULSE:
-        if (upOrDown) {
-          ledPWMVal+=2;
-        } else {
-          ledPWMVal-=2;
-        }
-
-        // Stop it underflowing: This would cause a short, bright flash
-        // Which interrupts the flow of zen
-        if (ledPWMVal < 0) {
-         ledPWMVal = 0;
-        }
-        if (ledPWMVal > 255) {
-          ledPWMVal = 255;
-        }
-      
-        analogWrite(RLed,ledPWMVal*redCnl/16);
-        analogWrite(GLed,ledPWMVal*grnCnl/16);
-        analogWrite(BLed,ledPWMVal*bluCnl/16);
+        analogWrite(RLed,dimmedPWMVal*redCnl/16);
+        analogWrite(GLed,dimmedPWMVal*grnCnl/16);
+        analogWrite(BLed,dimmedPWMVal*bluCnl/16);
+        break;
+      case BACKLIGHT_PULSE_DIM:
+        analogWrite(RLed,dimFactor*dimmedPWMVal*redCnl/16);
+        analogWrite(GLed,dimFactor*dimmedPWMVal*grnCnl/16);
+        analogWrite(BLed,dimFactor*dimmedPWMVal*bluCnl/16);
         break;
       case BACKLIGHT_CYCLE:
-        // slow everything down
-        ledPWMVal++;
-        if (ledPWMVal > 10) {
-          ledPWMVal = 0;
-        
+        // slow everything down - just make a change every CYCLE_COUNT_MAX calls
+        cycleCount++;
+        if (cycleCount > cycleSpeed) {
+          cycleCount = 0;
+
           for (int i = 0 ; i < 3 ; i++) {
+            // If one of the cycle counts for a LED has expired, get a new one
             if (ledCycleCount[i] <= 0) {
               ledCycleCount[i] = random(256);
               double randomAbs = random(10);
               ledCycleIncrement[i] = (double) randomAbs-5 / (double) 1000;
             }
-          
+
             ledCycleValue[i] += ledCycleIncrement[i];
-          
-            if (ledCycleValue[i] >= 255) {
+
+            // If we run off the end of the scale, wrap around
+            if (ledCycleValue[i] > 255) {
               ledCycleValue[i] = 255;
               ledCycleIncrement[i] = -ledCycleIncrement[i];
             }
-            if (ledCycleValue[i] <= 0) {
+            if (ledCycleValue[i] < 0) {
               ledCycleValue[i] = 0;
               ledCycleIncrement[i] = -ledCycleIncrement[i];
             }
-          
+
             ledCycleCount[i]--;
           }
-          analogWrite(RLed,ledCycleValue[0]);
-          analogWrite(GLed,ledCycleValue[1]);
-          analogWrite(BLed,ledCycleValue[2]);
+          analogWrite(RLed,(int)((float) ledCycleValue[0]));
+          analogWrite(GLed,(int)((float) ledCycleValue[1]));
+          analogWrite(BLed,(int)((float) ledCycleValue[2]));
         }
+        break;
+      case BACKLIGHT_CYCLE_DIM:
+        // slow everything down - just make a change every CYCLE_COUNT_MAX calls
+        cycleCount++;
+        if (cycleCount > cycleSpeed) {
+          cycleCount = 0;
+
+          for (int i = 0 ; i < 3 ; i++) {
+            // If one of the cycle counts for a LED has expired, get a new one
+            if (ledCycleCount[i] <= 0) {
+              ledCycleCount[i] = random(256);
+              double randomAbs = random(10);
+              ledCycleIncrement[i] = (double) randomAbs-5 / (double) 1000;
+            }
+
+            ledCycleValue[i] += ledCycleIncrement[i];
+
+            // If we run off the end of the scale, wrap around
+            if (ledCycleValue[i] > 255) {
+              ledCycleValue[i] = 255;
+              ledCycleIncrement[i] = -ledCycleIncrement[i];
+            }
+            if (ledCycleValue[i] < 0) {
+              ledCycleValue[i] = 0;
+              ledCycleIncrement[i] = -ledCycleIncrement[i];
+            }
+
+            ledCycleCount[i]--;
+          }
+          analogWrite(RLed,(int)((float) dimFactor*ledCycleValue[0]));
+          analogWrite(GLed,(int)((float) dimFactor*ledCycleValue[1]));
+          analogWrite(BLed,(int)((float) dimFactor*ledCycleValue[2]));
+        }
+        break;
     }
   } else {
+    // Settings modes
     ledBlinkCtr++;
     if (ledBlinkCtr > 40) {
       ledBlinkCtr = 0;
@@ -1151,12 +1650,24 @@ void setLeds()
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayTime() {
-  NumberArray[5] = secs % 10;
-  NumberArray[4] = secs / 10;
-  NumberArray[3] = mins % 10;
-  NumberArray[2] = mins / 10;
-  NumberArray[1] = hours % 10;
-  NumberArray[0] = hours / 10;
+  NumberArray[5] = displayDate.getSecs() % 10;
+  NumberArray[4] = displayDate.getSecs() / 10;
+  NumberArray[3] = displayDate.getMins() % 10;
+  NumberArray[2] = displayDate.getMins() / 10;
+  NumberArray[1] = displayDate.getHours() % 10;
+  NumberArray[0] = displayDate.getHours() / 10;
+}
+
+// ************************************************************
+// Break the time into displayable digits
+// ************************************************************
+void loadNumberArray8s() {
+  NumberArray[5] = 8;
+  NumberArray[4] = 8;
+  NumberArray[3] = 8;
+  NumberArray[2] = 8;
+  NumberArray[1] = 8;
+  NumberArray[0] = 8;
 }
 
 // ************************************************************
@@ -1165,28 +1676,28 @@ void loadNumberArrayTime() {
 void loadNumberArrayDate() {
   switch(dateFormat) {
     case DATE_FORMAT_YYMMDD:
-      NumberArray[5] = days % 10;
-      NumberArray[4] = days / 10;
-      NumberArray[3] = months % 10;
-      NumberArray[2] = months / 10;
-      NumberArray[1] = years % 10;
-      NumberArray[0] = years / 10;
+      NumberArray[5] = displayDate.getDays() % 10;
+      NumberArray[4] = displayDate.getDays() / 10;
+      NumberArray[3] = displayDate.getMonths() % 10;
+      NumberArray[2] = displayDate.getMonths() / 10;
+      NumberArray[1] = displayDate.getYears() % 10;
+      NumberArray[0] = displayDate.getYears() / 10;
       break;
     case DATE_FORMAT_MMDDYY:
-      NumberArray[5] = years % 10;
-      NumberArray[4] = years / 10;
-      NumberArray[3] = days % 10;
-      NumberArray[2] = days / 10;
-      NumberArray[1] = months % 10;
-      NumberArray[0] = months / 10;
+      NumberArray[5] = displayDate.getYears() % 10;
+      NumberArray[4] = displayDate.getYears() / 10;
+      NumberArray[3] = displayDate.getDays() % 10;
+      NumberArray[2] = displayDate.getDays() / 10;
+      NumberArray[1] = displayDate.getMonths() % 10;
+      NumberArray[0] = displayDate.getMonths() / 10;
       break;
     case DATE_FORMAT_DDMMYY:
-      NumberArray[5] = years % 10;
-      NumberArray[4] = years / 10;
-      NumberArray[3] = months % 10;
-      NumberArray[2] = months / 10;
-      NumberArray[1] = days % 10;
-      NumberArray[0] = days / 10;
+      NumberArray[5] = displayDate.getYears() % 10;
+      NumberArray[4] = displayDate.getYears() / 10;
+      NumberArray[3] = displayDate.getMonths() % 10;
+      NumberArray[2] = displayDate.getMonths() / 10;
+      NumberArray[1] = displayDate.getDays() % 10;
+      NumberArray[0] = displayDate.getDays() / 10;
       break;
   }
 }
@@ -1214,7 +1725,7 @@ void loadNumberArrayTemp(int confNum) {
 void loadNumberArrayLDR() {
   NumberArray[5] = 0;
   NumberArray[4] = 0;
-  
+
   NumberArray[3] = (digitOffCount / 1) % 10;
   NumberArray[2] = (digitOffCount / 10) % 10;
   NumberArray[1] = (digitOffCount / 100) % 10;
@@ -1224,24 +1735,24 @@ void loadNumberArrayLDR() {
 // Test digits
 // ************************************************************
 void loadNumberArrayTestDigits() {
-  NumberArray[5] = secs % 10;
-  NumberArray[4] = (secs+1) % 10;
-  NumberArray[3] = (secs+2) % 10;
-  NumberArray[2] = (secs+3) % 10;
-  NumberArray[1] = (secs+4) % 10;
-  NumberArray[0] = (secs+5) % 10;
+  NumberArray[5] = displayDate.getSecs() % 10;
+  NumberArray[4] = (displayDate.getSecs()+1) % 10;
+  NumberArray[3] = (displayDate.getSecs()+2) % 10;
+  NumberArray[2] = (displayDate.getSecs()+3) % 10;
+  NumberArray[1] = (displayDate.getSecs()+4) % 10;
+  NumberArray[0] = (displayDate.getSecs()+5) % 10;
 }
 
 // ************************************************************
 // Do the Anti Cathode Poisoning
 // ************************************************************
 void loadNumberArrayACP() {
-  NumberArray[5] = (secs + acpOffset) % 10;
-  NumberArray[4] = (secs / 10 + acpOffset) % 10;
-  NumberArray[3] = (mins + acpOffset) % 10;
-  NumberArray[2] = (mins / 10 + acpOffset) % 10;
-  NumberArray[1] = (hours+ acpOffset)  % 10;
-  NumberArray[0] = (hours / 10 + acpOffset) % 10;
+  NumberArray[5] = (displayDate.getSecs() + acpOffset) % 10;
+  NumberArray[4] = (displayDate.getSecs() / 10 + acpOffset) % 10;
+  NumberArray[3] = (displayDate.getMins() + acpOffset) % 10;
+  NumberArray[2] = (displayDate.getMins() / 10 + acpOffset) % 10;
+  NumberArray[1] = (displayDate.getHours() + acpOffset)  % 10;
+  NumberArray[0] = (displayDate.getHours() / 10 + acpOffset) % 10;
 }
 
 // ************************************************************
@@ -1273,32 +1784,33 @@ void loadNumberArrayConfBool(boolean confValue, int confNum) {
 // ************************************************************
 // Decode the value to send to the 74141 and send it
 // We do this via the decoder to allow easy adaptation to
-// other pin layouts
+// other pin layouts.
 // ************************************************************
 void SetSN74141Chip(int num1)
 {
-  int a,b,c,d;
-
-  // Load the a,b,c,d.. to send to the SN74141 IC
+  // Map the logical numbers to the hardware pins we send to the SN74141 IC
   int decodedDigit = decodeDigit[num1];
+
+  // Mask all digit bits to 0
+  byte portb = PORTB;
+  portb = portb & B11001010;
   
+  // Set the bits we need
   switch( decodedDigit )
   {
-    case 0: a=0;b=0;c=0;d=0;break;
-    case 1: a=1;b=0;c=0;d=0;break;
-    case 2: a=0;b=1;c=0;d=0;break;
-    case 3: a=1;b=1;c=0;d=0;break;
-    case 4: a=0;b=0;c=1;d=0;break;
-    case 5: a=1;b=0;c=1;d=0;break;
-    case 6: a=0;b=1;c=1;d=0;break;
-    case 7: a=1;b=1;c=1;d=0;break;
-    case 8: a=0;b=0;c=0;d=1;break;
-    case 9: a=1;b=0;c=0;d=1;break;
-    default: a=1;b=1;c=1;d=1;break;
-  }  
-
-  // Write to output pins.
-  setDigit(d,c,b,a);
+    case 0:                             break; // a=0;b=0;c=0;d=0 
+    case 1:  portb = portb | B00100000; break; // a=1;b=0;c=0;d=0
+    case 2:  portb = portb | B00000100; break; // a=0;b=1;c=0;d=0
+    case 3:  portb = portb | B00100100; break; // a=1;b=1;c=0;d=0
+    case 4:  portb = portb | B00000001; break; // a=0;b=0;c=1;d=0
+    case 5:  portb = portb | B00100001; break; // a=1;b=0;c=1;d=0
+    case 6:  portb = portb | B00000101; break; // a=0;b=1;c=1;d=0
+    case 7:  portb = portb | B00100101; break; // a=1;b=1;c=1;d=0
+    case 8:  portb = portb | B00010000; break; // a=0;b=0;c=0;d=1
+    case 9:  portb = portb | B00110000; break; // a=1;b=0;c=0;d=1
+    default: portb = portb | B00110101; break; // a=1;b=1;c=1;d=1 
+  }
+  PORTB = portb;
 }
 
 // ************************************************************
@@ -1307,7 +1819,7 @@ void SetSN74141Chip(int num1)
 // DIGIT_DISPLAY_COUNT times for each digit, with no delays.
 //
 // Possibly we will split this down to be one digit per call
-// if we need more reactiveness. 
+// if we need more reactiveness.
 // ************************************************************
 void outputDisplay()
 {
@@ -1374,7 +1886,7 @@ void outputDisplay()
     }
 
     // Do scrollback when we are going to 0
-    if ((NumberArray[i] != currNumberArray[i]) && 
+    if ((NumberArray[i] != currNumberArray[i]) &&
       (NumberArray[i] == 0) &&
       scrollback) {
       tmpDispType = SCROLL;
@@ -1435,7 +1947,7 @@ void outputDisplay()
       }
 
       if (timer == digitOffTime ) {
-        digitOff(i);
+        digitOff();
       }
     }
   }
@@ -1450,184 +1962,33 @@ void outputDisplay()
 
 // ************************************************************
 // Set a digit with the given value and turn the HVGen on
+// Assumes that all digits have previously been turned off
+// by a call to "digitOff"
 // ************************************************************
 void digitOn(int digit, int value) {
   TCCR1A = tccrOn;
   SetSN74141Chip(value);
-  digitalWrite(anodePins[digit], HIGH);
+  switch (digit) {
+    case 0: PORTC = PORTC | B00001000; break; // PC3
+    case 1: PORTC = PORTC | B00000100; break; // PC2
+    case 2: PORTD = PORTD | B00010000; break; // PD4
+    case 3: PORTD = PORTD | B00000100; break; // PD2
+    case 4: PORTD = PORTD | B00000010; break; // PD1
+    case 5: PORTD = PORTD | B00000001; break; // PD0
+  }
+  //digitalWrite(anodePins[digit], HIGH);
 }
 
 // ************************************************************
 // Finish displaying a digit and turn the HVGen on
 // ************************************************************
-void digitOff(int digit) {
+void digitOff() {
   TCCR1A = tccrOff;
-  digitalWrite(anodePins[digit], LOW);
-}
-
-// ************************************************************
-// See if the button was pressed and debounce. We perform a
-// sort of preview here, then confirm by releasing. We track
-// 3 lengths of button press: momentarily, 1S and 2S. 
-// ************************************************************
-void checkButton1() {
-  if (digitalRead(inputPin1) == 0) {
-    buttonWasReleased = false;
-    
-    long nowMillis = millis();
-
-    // We need consecutive pressed counts to treat this is pressed    
-    if (button1PressedCount < debounceCounter) {
-      button1PressedCount += 1;
-      // If we reach the debounce point, mark the start time
-      if (button1PressedCount == debounceCounter) {
-        button1PressStartMillis = nowMillis;
-      }
-    } else {
-      // We are pressed and held, maintain the press states
-      if ((nowMillis - button1PressStartMillis) > 8000) {
-        buttonPress8S = true;
-        buttonPress2S = true;
-        buttonPress1S = true;
-        buttonPress = true;
-      } else if ((nowMillis - button1PressStartMillis) > 2000) {
-        buttonPress8S = false;
-        buttonPress2S = true;
-        buttonPress1S = true;
-        buttonPress = true;
-      } else if ((nowMillis - button1PressStartMillis) > 1000) {
-        buttonPress8S = false;
-        buttonPress2S = false;
-        buttonPress1S = true;
-        buttonPress = true;
-      } else {
-        buttonPress8S = false;
-        buttonPress2S = false;
-        buttonPress1S = false;
-        buttonPress = true;
-      }
-    }
-  } else {
-    // mark this as a press and release if we were pressed for less than a long press
-    if (button1PressedCount == debounceCounter) {
-      buttonWasReleased = true;
-
-      buttonPressRelease8S = false;
-      buttonPressRelease2S = false;
-      buttonPressRelease1S = false;
-      buttonPressRelease = false;
-
-      if (buttonPress8S) {
-        buttonPressRelease8S = true;
-      } else if (buttonPress2S) {
-        buttonPressRelease2S = true;
-      } else if (buttonPress1S) {
-        buttonPressRelease1S = true;
-      } else if (buttonPress) {
-        buttonPressRelease = true;
-      }
-    }
-
-    // Reset the switch flags debounce counter      
-    buttonPress8S = false;
-    buttonPress2S = false;
-    buttonPress1S = false;
-    buttonPress = false;      
-    button1PressedCount = 0;
-  }
-}
-
-// ************************************************************
-// Check if button is pressed right now (just debounce)
-// ************************************************************
-boolean is1PressedNow() {
-  return button1PressedCount == debounceCounter;
-}
-
-// ************************************************************
-// Check if button is pressed momentarily
-// ************************************************************
-boolean is1Pressed() {
-  return buttonPress;
-}
-
-// ************************************************************
-// Check if button is pressed for a long time (> 1S)
-// ************************************************************
-boolean is1Pressed1S() {
-  return buttonPress1S;
-}
-
-// ************************************************************
-// Check if button is pressed for a moderately long time (> 2S)
-// ************************************************************
-boolean is1Pressed2S() {
-  return buttonPress2S;
-}
-
-// ************************************************************
-// Check if button is pressed for a very long time (> 8S)
-// ************************************************************
-boolean is1Pressed8S() {
-  return buttonPress8S;
-}
-
-// ************************************************************
-// Check if button is pressed for a short time (> 200mS) and released
-// ************************************************************
-boolean is1PressedRelease() {
-  if (buttonPressRelease) {
-    buttonPressRelease = false;
-    return true;
-  } else {
-    return false;
-  }
-}
-
-// ************************************************************
-// Check if button is pressed for a long time (> 2) and released
-// ************************************************************
-boolean is1PressedRelease1S() {
-  if (buttonPressRelease1S) {
-    buttonPressRelease1S = false;
-    return true;
-  } else {
-    return false;
-  }
-}
-
-// ************************************************************
-// Check if button is pressed for a very moderately time (> 2) and released
-// ************************************************************
-boolean is1PressedRelease2S() {
-  if (buttonPressRelease2S) {
-    buttonPressRelease2S = false;
-    return true;
-  } else {
-    return false;
-  }
-}
-
-// ************************************************************
-// Check if button is pressed for a very long time (> 8) and released
-// ************************************************************
-boolean is1PressedRelease8S() {
-  if (buttonPressRelease8S) {
-    buttonPressRelease8S = false;
-    return true;
-  } else {
-    return false;
-  }
-}
-
-// ************************************************************
-// Output the digit to the 74141
-// ************************************************************
-void setDigit(int segD, int segC, int segB, int segA) {
-  digitalWrite(ledPin_0_a, segA);
-  digitalWrite(ledPin_0_b, segB);
-  digitalWrite(ledPin_0_c, segC);
-  digitalWrite(ledPin_0_d, segD);  
+  //digitalWrite(anodePins[digit], LOW);
+  
+  // turn all digits off
+  PORTC = PORTC & B11110011;
+  PORTD = PORTD & B11101000;
 }
 
 // ************************************************************
@@ -1638,7 +1999,7 @@ void applyBlanking() {
   if (blankLeading == false) {
     return;
   }
-  
+
   // We only want to blank the hours tens digit
   if (NumberArray[0] == 0) {
     if (displayType[0] != BLANKED) {
@@ -1669,6 +2030,57 @@ void allBright() {
   if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
   if (displayType[4] != BRIGHT) displayType[4] = BRIGHT;
   if (displayType[5] != BRIGHT) displayType[5] = BRIGHT;
+}
+
+// ************************************************************
+// highlight years taking into account the date format
+// ************************************************************
+void highlightYearsDateFormat() {
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight0and1();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight4and5();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight4and5();
+      break;
+  }
+}
+
+// ************************************************************
+// highlight years taking into account the date format
+// ************************************************************
+void highlightMonthsDateFormat() {
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight2and3();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight0and1();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight2and3();
+      break;
+  }
+}
+
+// ************************************************************
+// highlight days taking into account the date format
+// ************************************************************
+void highlightDaysDateFormat() {
+  switch(dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight4and5();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight2and3();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight0and1();
+      break;
+  }
 }
 
 // ************************************************************
@@ -1771,43 +2183,51 @@ void allBlanked() {
 // increment the time by 1 Sec
 // ************************************************************
 void incSecs() {
-  secs++;
-  if (secs >= SECS_MAX) {
-    secs = 0;
+  byte tmpSecs = displayDate.getSecs();
+  tmpSecs++;
+  if (tmpSecs >= SECS_MAX) {
+    tmpSecs = 0;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),tmpSecs);
+  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),tmpSecs);
 }
 
 // ************************************************************
 // increment the time by 1 min
 // ************************************************************
 void incMins() {
-  mins++;
-  secs=0;
-
-  if (mins >= MINS_MAX) {  
-    mins = 0;
+  byte tmpMins = displayDate.getMins();
+  tmpMins++;
+  if (tmpMins >= MINS_MAX) {
+    tmpMins = 0;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),tmpMins,0);
+  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),tmpMins,0);
 }
 
 // ************************************************************
 // increment the time by 1 hour
 // ************************************************************
 void incHours() {
-  hours++;
+  byte tmpHours = displayDate.getHours24();
+  tmpHours++;
 
-  if (hours >= HOURS_MAX) {
-    hours = 0;
+  if (tmpHours >= HOURS_MAX) {
+    tmpHours = 0;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),tmpHours,displayDate.getMins(),displayDate.getSecs());
+  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),tmpHours,displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
 // increment the date by 1 day
 // ************************************************************
 void incDays() {
-  days++;
+  byte tmpDays = displayDate.getDays();
+  tmpDays++;
 
   int maxDays;
-  switch (months)
+  switch (displayDate.getMonths())
   {
   case 4:
   case 6:
@@ -1829,94 +2249,152 @@ void incDays() {
     }
   }
 
-  if (days > maxDays) {
-    days = 1;
+  if (tmpDays > maxDays) {
+    tmpDays = 1;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),tmpDays,displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
+  setRTC(displayDate.getYears(),displayDate.getMonths(),tmpDays,displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
 // increment the month by 1 month
 // ************************************************************
 void incMonths() {
-  months++;
+  byte tmpMonths = displayDate.getMonths();
+  tmpMonths++;
 
-  if (months > 12) {
-    months = 1;
+  if (tmpMonths > 12) {
+    tmpMonths = 1;
   }
+  displayDate.setSyncTime(nowMillis,displayDate.getYears(),tmpMonths,displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
+  setRTC(displayDate.getYears(),tmpMonths,displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
 }
 
 // ************************************************************
 // increment the year by 1 year
 // ************************************************************
 void incYears() {
-  years++;
+  byte tmpYears = displayDate.getYears();
+  tmpYears++;
 
-  if (years > 50) {
-    years = 14;
+  if (tmpYears > 50) {
+    tmpYears = 15;
   }
+  displayDate.setSyncTime(nowMillis,tmpYears,displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
+  setRTC(tmpYears,displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
 }
 
-// ************************************************************
-// Set the date/time in the RTC
-// ************************************************************
-void setRTC() {
-  Clock.setClockMode(mode12or24); // false = 24h
-
-  Clock.setYear(years);
-  Clock.setMonth(months);
-  Clock.setDate(days);
-  int dow = dayofweek(2000 + years, months, days);
-  Clock.setDoW(dow);
-  Clock.setHour(hours);
-  Clock.setMinute(mins);
-  Clock.setSecond(secs);
-}
-
-// ************************************************************
-// Get the time from the RTC
-// ************************************************************
-void getRTCTime() {
-  bool h12;
-  bool PM;
-  hours=Clock.getHour(h12,PM);
-  mins=Clock.getMinute();
-  secs=Clock.getSecond();
-  years=Clock.getYear();
-  bool century = false;
-  months=Clock.getMonth(century);
-  days=Clock.getDate();
-  dow=Clock.getDoW();
-}
-  
 // ************************************************************
 // Check the blanking
 // ************************************************************
 void checkBlanking() {
   // Check day blanking, but only when we are in
   // normal time mode
-  if ((secs == 0) && (currentMode == MODE_TIME)) {
+  if ((displayDate.getSecs() == 0) && (currentMode == MODE_TIME)) {
     switch(dayBlanking) {
       case DAY_BLANKING_NEVER:
         blanked = false;
         break;
+      case DAY_BLANKING_HOURS:
+        blanked = getHoursBlanked();
+        break;
       case DAY_BLANKING_WEEKEND:
-        blanked = ((dow == 0) || (dow == 6));
+        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7));
+        break;
+      case DAY_BLANKING_WEEKEND_OR_HOURS:
+        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) || getHoursBlanked();
+        break;
+      case DAY_BLANKING_WEEKEND_AND_HOURS:
+        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) && getHoursBlanked();
         break;
       case DAY_BLANKING_WEEKDAY:
-        blanked = ((dow > 0) && (dow < 6));
+        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7));
+        break;
+      case DAY_BLANKING_WEEKDAY_OR_HOURS:
+        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) || getHoursBlanked();
+        break;
+      case DAY_BLANKING_WEEKDAY_AND_HOURS:
+        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) && getHoursBlanked();
         break;
       case DAY_BLANKING_ALWAYS:
         blanked = true;
         break;
     }
-  }  
+  }
 }
 
 // ************************************************************
-// Get the day of week from the RTC
+// If we are currently blanked based on hours
 // ************************************************************
-int getRTCDoW() {
-  return Clock.getDoW();
+boolean getHoursBlanked() {
+  if (blankHourStart > blankHourEnd) {
+    // blanking before midnight
+    return ((displayDate.getHours24() >= blankHourStart) || (displayDate.getHours24() < blankHourEnd));
+  } else if (blankHourStart < blankHourEnd) {
+    // dim at or after midnight
+    return ((displayDate.getHours24() >= blankHourStart) && (displayDate.getHours24() < blankHourEnd));
+  } else {
+    // no dimming if Start = End
+    return false;
+  }
+}
+
+
+// ******************************************************************
+// Work out the day of week.
+// Used in day blanking
+// 1 <= m <= 12,  y > 1752 (in the U.K.)$
+// Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
+// ******************************************************************
+int dayofweek(int y, int m, int d)
+{
+  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+  y -= m < 3;
+  return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
+}
+
+//**********************************************************************************
+//**********************************************************************************
+//*                         RTC Module Time Provider                               *
+//**********************************************************************************
+//**********************************************************************************
+
+// ************************************************************
+// Get the time from the RTC
+// ************************************************************
+void getRTCTime() {
+  
+  Wire.beginTransmission(RTC_I2C_ADDRESS);
+  if(Wire.endTransmission() == 0) {
+    bool PM;
+    bool twentyFourHourClock;
+    bool century = false;
+  
+    byte years=Clock.getYear();
+    byte months=Clock.getMonth(century);
+    byte days=Clock.getDate();
+    byte hours=Clock.getHour(twentyFourHourClock,PM);
+    byte mins=Clock.getMinute();
+    byte secs=Clock.getSecond();
+    displayDate.setSyncTime(nowMillis,years,months,days,hours,mins,secs);
+  }
+}
+
+// ************************************************************
+// Set the date/time in the RTC
+// Always hold the time in 24 format, we convert to 12 in the 
+// display.
+// ************************************************************
+void setRTC(byte newYear,byte newMonth,byte newDay,byte newHour,byte newMin,byte newSec) {
+  Clock.setClockMode(false); // false = 24h
+  Clock.setYear(newYear);
+  Clock.setMonth(newMonth);
+  Clock.setDate(newDay);
+  int dow = dayofweek(2000 + newYear,newMonth,newDay);
+  Clock.setDoW(dow);
+  Clock.setHour(newHour);
+  Clock.setMinute(newMin);
+  Clock.setSecond(newSec);
 }
 
 // ************************************************************
@@ -1926,11 +2404,35 @@ float getRTCTemp() {
   return Clock.getTemperature();
 }
 
+//**********************************************************************************
+//**********************************************************************************
+//*                           Internal Time Provider                               *
+//**********************************************************************************
+//**********************************************************************************
+
 // ************************************************************
-// Save current values back to EEPROM 
+// Get the time from the internal time provider
+// The crystal oscillator is good enough for driving the clock
+// most of the time, and we use the internal time provider
+// for most of the calls. We periodically align the internal
+// provider to the external one, which has better long term
+// stability.
 // ************************************************************
-void saveEEPROMValues() {  
-  EEPROM.write(EE_12_24,mode12or24);
+void getTimeInt() {
+  displayDate.setDeltaMillis(nowMillis);
+}
+
+//**********************************************************************************
+//**********************************************************************************
+//*                               EEPROM interface                                 *
+//**********************************************************************************
+//**********************************************************************************
+
+// ************************************************************
+// Save current values back to EEPROM
+// ************************************************************
+void saveEEPROMValues() {
+  EEPROM.write(EE_12_24,displayDate.getHourMode());
   EEPROM.write(EE_FADE_STEPS,fadeSteps);
   EEPROM.write(EE_DATE_FORMAT, dateFormat);
   EEPROM.write(EE_DAY_BLANKING, dayBlanking);
@@ -1948,20 +2450,24 @@ void saveEEPROMValues() {
   EEPROM.write(EE_BACKLIGHT_MODE,backlightMode);
   EEPROM.write(EE_HV_VOLTAGE,hvTargetVoltage);
   EEPROM.write(EE_PULSE_LO, pulseWidth % 256);
-  EEPROM.write(EE_PULSE_HI, pulseWidth / 256);  
+  EEPROM.write(EE_PULSE_HI, pulseWidth / 256);
+  EEPROM.write(EE_SUPPRESS_ACP,suppressACP);
+  EEPROM.write(EE_HOUR_BLANK_START,blankHourStart);
+  EEPROM.write(EE_HOUR_BLANK_END,blankHourEnd);
+  EEPROM.write(EE_CYCLE_SPEED,cycleSpeed);
 }
 
 // ************************************************************
 // read EEPROM values
 // ************************************************************
 void readEEPROMValues() {
-  mode12or24 = EEPROM.read(EE_12_24);
-  
+  displayDate.setHourMode(EEPROM.read(EE_12_24));
+
   fadeSteps = EEPROM.read(EE_FADE_STEPS);
   if ((fadeSteps < FADE_STEPS_MIN) || (fadeSteps > FADE_STEPS_MAX)) {
     fadeSteps = FADE_STEPS_DEFAULT;
   }
-  
+
   dateFormat = EEPROM.read(EE_DATE_FORMAT);
   if ((dateFormat < DATE_FORMAT_MIN) || (dateFormat > DATE_FORMAT_MAX)) {
     dateFormat = DATE_FORMAT_DEFAULT;
@@ -1984,22 +2490,22 @@ void readEEPROMValues() {
   if ((scrollSteps < SCROLL_STEPS_MIN) || (scrollSteps > SCROLL_STEPS_MAX)) {
     scrollSteps = SCROLL_STEPS_DEFAULT;
   }
-  
+
   dimBright = EEPROM.read(EE_DIM_BRIGHT_HI)*256 + EEPROM.read(EE_DIM_BRIGHT_LO);
   if ((dimBright < SENSOR_HIGH_MIN) || (dimBright > SENSOR_HIGH_MAX)) {
     dimBright = SENSOR_HIGH_DEFAULT;
-  }  
-  
+  }
+
   sensorSmoothCount = EEPROM.read(EE_DIM_SMOOTH_SPEED);
   if ((sensorSmoothCount < SENSOR_SMOOTH_READINGS_MIN) || (sensorSmoothCount > SENSOR_SMOOTH_READINGS_MAX)) {
     sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
   }
-  
+
   dateFormat = EEPROM.read(EE_DATE_FORMAT);
   if ((dateFormat < DATE_FORMAT_MIN) || (dateFormat > DATE_FORMAT_MAX)) {
     dateFormat = DATE_FORMAT_DEFAULT;
   }
-  
+
   dayBlanking = EEPROM.read(EE_DAY_BLANKING);
   if ((dayBlanking < DAY_BLANKING_MIN) || (dayBlanking > DAY_BLANKING_MAX)) {
     dayBlanking = DAY_BLANKING_DEFAULT;
@@ -2009,30 +2515,47 @@ void readEEPROMValues() {
   if ((backlightMode < BACKLIGHT_MIN) || (backlightMode > BACKLIGHT_MAX)) {
     backlightMode = BACKLIGHT_DEFAULT;
   }
-  
+
   redCnl = EEPROM.read(EE_RED_INTENSITY);
   if ((redCnl < COLOUR_CNL_MIN) || (redCnl > COLOUR_CNL_MAX)) {
     redCnl = COLOUR_CNL_DEFAULT;
   }
-  
+
   grnCnl = EEPROM.read(EE_GRN_INTENSITY);
   if ((grnCnl < COLOUR_CNL_MIN) || (grnCnl > COLOUR_CNL_MAX)) {
     grnCnl = COLOUR_CNL_DEFAULT;
   }
-  
+
   bluCnl = EEPROM.read(EE_BLU_INTENSITY);
   if ((bluCnl < COLOUR_CNL_MIN) || (bluCnl > COLOUR_CNL_MAX)) {
     bluCnl = COLOUR_CNL_DEFAULT;
   }
-  
+
   hvTargetVoltage = EEPROM.read(EE_HV_VOLTAGE);
   if ((hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) || (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX)) {
     hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
-  }
-  
+  } 
+
   pulseWidth = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
   if ((pulseWidth < PWM_PULSE_MIN) || (pulseWidth > PWM_PULSE_MAX)) {
     pulseWidth = PWM_PULSE_DEFAULT;
+  }
+  
+  suppressACP = EEPROM.read(EE_SUPPRESS_ACP);
+
+  blankHourStart = EEPROM.read(EE_HOUR_BLANK_START);
+  if ((blankHourStart < 0) || (blankHourStart > HOURS_MAX)) {
+    blankHourStart = 0;
+  }
+
+  blankHourEnd = EEPROM.read(EE_HOUR_BLANK_END);
+  if ((blankHourEnd < 0) || (blankHourEnd > HOURS_MAX)) {
+    blankHourEnd = 7;
+  }
+  
+  cycleSpeed = EEPROM.read(EE_CYCLE_SPEED);
+  if ((cycleSpeed < CYCLE_SPEED_MIN) || (cycleSpeed > CYCLE_SPEED_MAX)) {
+    cycleSpeed = CYCLE_SPEED_DEFAULT;
   }
 }
 
@@ -2040,7 +2563,7 @@ void readEEPROMValues() {
 // Reset EEPROM values back to what they once were
 // ************************************************************
 void factoryReset() {
-  mode12or24 = false;
+  displayDate.setHourMode(false);
   blankLeading = false;
   scrollback = true;
   fadeSteps = FADE_STEPS_DEFAULT;
@@ -2051,34 +2574,53 @@ void factoryReset() {
   dimBright = SENSOR_HIGH_DEFAULT;
   sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
   dateFormat = DATE_FORMAT_DEFAULT;
-  dayBlanking = DAY_BLANKING_DEFAULT;  
+  dayBlanking = DAY_BLANKING_DEFAULT;
   backlightMode = BACKLIGHT_DEFAULT;
   redCnl = COLOUR_CNL_DEFAULT;
   grnCnl = COLOUR_CNL_DEFAULT;
   bluCnl = COLOUR_CNL_DEFAULT;
   hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
   pulseWidth = PWM_PULSE_DEFAULT;
-  
+  suppressACP = false;
+  blankHourStart = 0;
+  blankHourEnd = 7;
+  cycleSpeed = CYCLE_SPEED_DEFAULT;
+
   saveEEPROMValues();
 }
+
+ //**********************************************************************************
+//**********************************************************************************
+//*                          High Voltage generator                                *
+//**********************************************************************************
+//**********************************************************************************
 
 // ************************************************************
 // Adjust the HV gen to achieve the voltage we require
 // Pre-calculate the threshold value of the ADC read and make
 // a simple comparison against this for speed
 // We control only the PWM "off" time, because the "on" time
-// affects the current consumption and MOSFET heating 
+// affects the current consumption and MOSFET heating
 // ************************************************************
 void checkHVVoltage() {
   int rawSensorVal = analogRead(sensorPin);
 
-  pwmTop=(pwmTop+rawSensorVal)/2;
-  
-  // check that we have not got a silly reading: On time cannot be more than 50% of TOP time 
-  if (pulseWidth > (pwmTop-100)) {
-    pwmTop = pulseWidth + 100;
+  // check the read voltage
+  if (rawSensorVal > rawHVADCThreshold) {
+    pwmTop++;
+
+    if (pwmTop >= PWM_TOP_MAX) {
+      pwmTop = PWM_TOP_MAX;
+    }
+  } else {
+    pwmTop--;
+
+    // check that we have not got a silly reading: On time cannot be more than 50% of TOP time
+    if (pulseWidth > pwmTop) {
+      pwmTop = pulseWidth + pwmTop;
+    }
   }
-  
+
   ICR1 = pwmTop; // Our starting point for the period
 }
 
@@ -2092,16 +2634,22 @@ int getRawHVADCThreshold(double targetVoltage) {
   return rawReading;
 }
 
+//**********************************************************************************
+//**********************************************************************************
+//*                          Light Dependent Resistor                              *
+//**********************************************************************************
+//**********************************************************************************
+
 // ******************************************************************
 // Check the ambient light through the LDR (Light Dependent Resistor)
 // Smooths the reading over several reads.
 //
 // The LDR in bright light gives reading of around 50, the reading in
 // total darkness is around 900.
-// 
+//
 // The return value is the dimming count we are using. 999 is full
 // brightness, 100 is very dim.
-// 
+//
 // Because the floating point calculation may return more than the
 // maximum value, we have to clamp it as the final step
 // ******************************************************************
@@ -2109,28 +2657,18 @@ int getDimmingFromLDR() {
   int rawSensorVal = 1023-analogRead(LDRPin);
   double sensorDiff = rawSensorVal - sensorSmoothed;
   sensorSmoothed += (sensorDiff/sensorSmoothCount);
-  
+
   double sensorSmoothedResult = sensorSmoothed - dimDark;
   if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
   if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
   sensorSmoothedResult = (sensorSmoothedResult-dimDark)*sensorFactor;
-  
+
   int returnValue = sensorSmoothedResult;
-  
+
   if (returnValue < DIGIT_DISPLAY_MIN_DIM) returnValue = DIGIT_DISPLAY_MIN_DIM;
   if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
-  
+
   return returnValue;
 }
 
-// ******************************************************************
-// Work out the day of week.
-// Used in day blanking 
-// 1 <= m <= 12,  y > 1752 (in the U.K.)
-// ******************************************************************
-int dayofweek(int y, int m, int d)
-{
-  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-  y -= m < 3;
-  return (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7;
-}
+
