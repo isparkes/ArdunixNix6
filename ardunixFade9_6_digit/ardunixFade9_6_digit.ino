@@ -310,6 +310,7 @@ public:
 
   void setHourMode(boolean newMode) { hourMode = newMode; }
   boolean getHourMode() { return hourMode; }
+  int getDayOfWeek(int year, int month, int day) { return dayofweek(year, month, day); } 
    
 private:
   // Synced time
@@ -370,6 +371,19 @@ private:
     } else {
       return hours;
     }
+  }
+  
+  // ******************************************************************
+  // Work out the day of week.
+  // Used in day blanking
+  // 1 <= m <= 12,  y > 1752 (in the U.K.)$
+  // Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
+  // ******************************************************************
+  int dayofweek(int y, int m, int d)
+  {
+    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    y -= m < 3;
+    return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
   }
 };
 
@@ -2339,20 +2353,6 @@ boolean getHoursBlanked() {
   }
 }
 
-
-// ******************************************************************
-// Work out the day of week.
-// Used in day blanking
-// 1 <= m <= 12,  y > 1752 (in the U.K.)$
-// Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
-// ******************************************************************
-int dayofweek(int y, int m, int d)
-{
-  static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-  y -= m < 3;
-  return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
-}
-
 //**********************************************************************************
 //**********************************************************************************
 //*                         RTC Module Time Provider                               *
@@ -2390,7 +2390,7 @@ void setRTC(byte newYear,byte newMonth,byte newDay,byte newHour,byte newMin,byte
   Clock.setYear(newYear);
   Clock.setMonth(newMonth);
   Clock.setDate(newDay);
-  int dow = dayofweek(2000 + newYear,newMonth,newDay);
+  int dow = displayDate.getDayOfWeek(2000 + newYear,newMonth,newDay);
   Clock.setDoW(dow);
   Clock.setHour(newHour);
   Clock.setMinute(newMin);
