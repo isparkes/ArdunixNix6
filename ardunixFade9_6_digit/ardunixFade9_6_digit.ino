@@ -53,7 +53,7 @@
 
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 35
+#define SOFTWARE_VERSION 40
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
