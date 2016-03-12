@@ -53,7 +53,7 @@
 
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 35
+#define SOFTWARE_VERSION 40
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -89,9 +89,10 @@
 #define PWM_TOP_DEFAULT   1000
 #define PWM_TOP_MIN       300
 #define PWM_TOP_MAX       10000
-#define PWM_PULSE_DEFAULT 150
+#define PWM_PULSE_DEFAULT 200
 #define PWM_PULSE_MIN     50
 #define PWM_PULSE_MAX     500
+#define PWM_OFF_MIN       50
 
 // How quickly the scroll works
 #define SCROLL_STEPS_DEFAULT 4
@@ -180,7 +181,7 @@
 #define TEMP_MODE_DATE                  0 // Display the date for 5 S
 #define TEMP_MODE_TEMP                  1 // Display the temperature for 5 S
 #define TEMP_MODE_LDR                   2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
-#define TEMP_MODE_VERSION               3 // Display the version
+#define TEMP_MODE_VERSION               3 // Display the version for 5S
 #define TEMP_MODE_MAX                   3
 
 #define DATE_FORMAT_MIN                 0
@@ -592,6 +593,7 @@ private:
 int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
 int pulseWidth = PWM_PULSE_DEFAULT;
+int pwmTopMin = pulseWidth + PWM_OFF_MIN;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler<
@@ -647,7 +649,7 @@ byte blankHourEnd = 0;
 // ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
 int dimBright = SENSOR_HIGH_DEFAULT;
-double sensorSmoothed = 0;
+double sensorLDRSmoothed = 0;
 double sensorFactor = (double)(DIGIT_DISPLAY_OFF)/(double)(dimBright-dimDark);
 int sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
 
@@ -667,6 +669,9 @@ long nowMillis = 0;
 byte dateFormat = DATE_FORMAT_DEFAULT;
 byte dayBlanking = DAY_BLANKING_DEFAULT;
 boolean blanked = false;
+byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 min, 2 press = 1 hour, 3 = 1 day
+long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
+long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
 
 // **************************** LED management ***************************
 int ledPWMVal;
@@ -782,6 +787,9 @@ void setup()
     }
   }
 
+  // Make sure the clock keeps running even on battery
+  Clock.enableOscillator(true,true,0);
+  
   // Pre-calculate the ADC threshold reading, this saves all
   // of the floating point business in the main loop
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
@@ -1075,12 +1083,39 @@ void loop()
 
   } else {
     if (currentMode == MODE_TIME) {
+      if (displayDate.getSecs() == 0) {
+        boolean nativeBlanked = checkBlanking();
+        blanked = nativeBlanked && (nowMillis > blankSuppressedEndMillis);
+        
+        if (nowMillis > blankSuppressedEndMillis) {
+          blankSuppressedEndMillis = 0;
+        }
+        
+        if (nowMillis > blankSuppressedStartMillis) {
+          blankSuppressedStartMillis = 0;
+          blankSuppressStep = 0;
+        }
+      }
 
-      checkBlanking();
+      if (button1.isButtonPressedAndReleased()) {
+        if ((nowMillis < blankSuppressedStartMillis) || blanked) {
+          if (blankSuppressedStartMillis == 0) {
+            // Apply 5 sec tineout for setting the suppression time
+            blankSuppressedStartMillis = nowMillis + 5000;
+          }
 
-      if(button1.isButtonPressedAndReleased()) {
-        if (blanked) {
-          // just turn off blanking - it will turn back on on it's own
+          blankSuppressStep++;
+          if (blankSuppressStep > 3) {
+            blankSuppressStep = 3;
+          }
+
+          if (blankSuppressStep == 1) {
+            blankSuppressedEndMillis = nowMillis + 10000;
+          } else if (blankSuppressStep == 2) {
+            blankSuppressedEndMillis = nowMillis + 3600000;
+          } else if (blankSuppressStep == 3) {
+            blankSuppressedEndMillis = nowMillis + 3600000 * 4;
+          }
           blanked = false;
         } else {
           // Always start from the first mode, or increment the temp mode if we are already in a display
@@ -1098,6 +1133,7 @@ void loop()
       }
 
       if (nowMillis < secsDisplayEnd) {
+        blanked = false;
         if (tempDisplayMode == TEMP_MODE_DATE) {
           loadNumberArrayDate();
         }
@@ -1394,8 +1430,9 @@ void loop()
           if (pulseWidth > PWM_PULSE_MAX) {
             pulseWidth = PWM_PULSE_MIN;
           }
+          pwmTopMin = pulseWidth + PWM_OFF_MIN;
+          OCR1A = pulseWidth;
         }
-        OCR1A = pulseWidth;
         loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
         displayConfig();
       }
@@ -1406,8 +1443,9 @@ void loop()
           if (pulseWidth < PWM_PULSE_MIN) {
             pulseWidth = PWM_PULSE_MAX;
           }
+          pwmTopMin = pulseWidth + PWM_OFF_MIN;
+          OCR1A = pulseWidth;
         }
-        OCR1A = pulseWidth;
         loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
         displayConfig();
       }
@@ -1484,12 +1522,15 @@ void loop()
   }
 
   loopCounter++;
-  if (loopCounter % 100 == 0) {
-    checkHVVoltage();
-  }
+
+  checkHVVoltage();
   
-  // Set leds
   setLeds();
+  //if (nowMillis < blankSuppressedStartMillis) {
+  //  digitalWrite(tickLed,HIGH);
+  //} else {
+  //  digitalWrite(tickLed,LOW);
+  //}
 }
 
 // ************************************************************
@@ -1831,9 +1872,6 @@ void SetSN74141Chip(int num1)
 // Do a single complete display, including any fading and
 // dimming requested. Performs the display loop
 // DIGIT_DISPLAY_COUNT times for each digit, with no delays.
-//
-// Possibly we will split this down to be one digit per call
-// if we need more reactiveness.
 // ************************************************************
 void outputDisplay()
 {
@@ -2301,38 +2339,29 @@ void incYears() {
 // ************************************************************
 // Check the blanking
 // ************************************************************
-void checkBlanking() {
+boolean checkBlanking() {
   // Check day blanking, but only when we are in
   // normal time mode
   if ((displayDate.getSecs() == 0) && (currentMode == MODE_TIME)) {
     switch(dayBlanking) {
       case DAY_BLANKING_NEVER:
-        blanked = false;
-        break;
+        return false;
       case DAY_BLANKING_HOURS:
-        blanked = getHoursBlanked();
-        break;
+        return getHoursBlanked();
       case DAY_BLANKING_WEEKEND:
-        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7));
-        break;
+        return ((displayDate.getDow() == 1) || (displayDate.getDow() == 7));
       case DAY_BLANKING_WEEKEND_OR_HOURS:
-        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) || getHoursBlanked();
-        break;
+        return ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) || getHoursBlanked();
       case DAY_BLANKING_WEEKEND_AND_HOURS:
-        blanked = ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) && getHoursBlanked();
-        break;
+        return ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) && getHoursBlanked();
       case DAY_BLANKING_WEEKDAY:
-        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7));
-        break;
+        return ((displayDate.getDow() > 1) && (displayDate.getDow() < 7));
       case DAY_BLANKING_WEEKDAY_OR_HOURS:
-        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) || getHoursBlanked();
-        break;
+        return ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) || getHoursBlanked();
       case DAY_BLANKING_WEEKDAY_AND_HOURS:
-        blanked = ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) && getHoursBlanked();
-        break;
+        return ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) && getHoursBlanked();
       case DAY_BLANKING_ALWAYS:
-        blanked = true;
-        break;
+        return true;
     }
   }
 }
@@ -2616,8 +2645,8 @@ void checkHVVoltage() {
     pwmTop--;
 
     // check that we have not got a silly reading: On time cannot be more than 50% of TOP time
-    if (pulseWidth > pwmTop) {
-      pwmTop = pulseWidth + pwmTop;
+    if (pwmTop <= pwmTopMin) {
+      pwmTop = pwmTopMin;
     }
   }
 
@@ -2655,10 +2684,10 @@ int getRawHVADCThreshold(double targetVoltage) {
 // ******************************************************************
 int getDimmingFromLDR() {
   int rawSensorVal = 1023-analogRead(LDRPin);
-  double sensorDiff = rawSensorVal - sensorSmoothed;
-  sensorSmoothed += (sensorDiff/sensorSmoothCount);
+  double sensorDiff = rawSensorVal - sensorLDRSmoothed;
+  sensorLDRSmoothed += (sensorDiff/sensorSmoothCount);
 
-  double sensorSmoothedResult = sensorSmoothed - dimDark;
+  double sensorSmoothedResult = sensorLDRSmoothed - dimDark;
   if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
   if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
   sensorSmoothedResult = (sensorSmoothedResult-dimDark)*sensorFactor;
