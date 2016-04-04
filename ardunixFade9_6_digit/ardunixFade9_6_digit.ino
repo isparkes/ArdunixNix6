@@ -50,10 +50,12 @@
 #define EE_HOUR_BLANK_START 23     // Start of daily blanking period
 #define EE_HOUR_BLANK_END   24     // End of daily blanking period
 #define EE_CYCLE_SPEED      25     // How fast the color cycling does it's stuff
-
+#define EE_PWM_TOP_LO       26     // The PWM top value if we know it, 0xFF if we need to calculate
+#define EE_PWM_TOP_HI       27     // The PWM top value if we know it, 0xFF if we need to calculate
+#define EE_HVG_NEED_CALIB   28     // 1 if we need to calibrate the HVGenerator, otherwise 0
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 40
+#define SOFTWARE_VERSION 42
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -592,8 +594,7 @@ private:
 // ********************** HV generator variables *********************
 int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
-int pulseWidth = PWM_PULSE_DEFAULT;
-int pwmTopMin = pulseWidth + PWM_OFF_MIN;
+int pwmOn = PWM_PULSE_DEFAULT;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler<
@@ -607,6 +608,7 @@ byte anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledP
 byte tccrOff;
 byte tccrOn;
 int rawHVADCThreshold;
+double sensorHVSmoothed = 0;
 
 // ************************ Display management ************************
 byte NumberArray[6]    = {0,0,0,0,0,0};
@@ -651,7 +653,8 @@ int dimDark = SENSOR_LOW_DEFAULT;
 int dimBright = SENSOR_HIGH_DEFAULT;
 double sensorLDRSmoothed = 0;
 double sensorFactor = (double)(DIGIT_DISPLAY_OFF)/(double)(dimBright-dimDark);
-int sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
+int sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
+int sensorSmoothCountHV = SENSOR_SMOOTH_READINGS_DEFAULT/8;
 
 // ************************ Clock variables ************************
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
@@ -728,6 +731,12 @@ void setup()
   pinMode(GLed, OUTPUT);
   pinMode(BLed, OUTPUT);
 
+  // The LEDS sometimes glow at startup, it annoys me, so turn them completely off
+  analogWrite(tickLed,0);
+  analogWrite(RLed,0);
+  analogWrite(GLed,0);
+  analogWrite(BLed,0);
+
   // NOTE:
   // Grounding the input pin causes it to actuate
   pinMode(inputPin1, INPUT ); // set the input pin 1
@@ -736,9 +745,6 @@ void setup()
   // Set the driver pin to putput
   pinMode(hvDriverPin, OUTPUT);
 
-  // Read EEPROM values
-  readEEPROMValues();
-
   /* disable global interrupts while we set up them up */
   cli();
 
@@ -746,7 +752,6 @@ void setup()
 
   TCCR1A = 0;    // disable all PWM on Timer1 whilst we set it up
   TCCR1B = 0;    // disable all PWM on Timer1 whilst we set it up
-  ICR1 = pwmTop; // Our starting point for the period
 
   // Configure timer 1 for Fast PWM mode via ICR1, with prescaling=1
   TCCR1A = (1 << WGM11);
@@ -758,11 +763,12 @@ void setup()
 
   tccrOn = TCCR1A;
 
-  OCR1A = pulseWidth;  // Pulse width of the on time
-
   // Set up timer 2 like timer 0 (for RGB leds)
   TCCR2A = (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
   TCCR2B = (1 << CS22);
+
+  // we don't need the HV yet
+  TCCR1A = tccrOff;
 
   /* enable global interrupts */
   sei();
@@ -776,6 +782,11 @@ void setup()
 
   // Detect factory reset: button pressed on start
   if (button1.isButtonPressedNow()) {
+    // do this before the flashing, because this way we can set up the EEPROM to
+    // autocalibrate on first start (press factory reset and then power off before
+    // flashing ends)
+    EEPROM.write(EE_HVG_NEED_CALIB,true);
+    
     // Flash 10 x to signal that we have accepted the factory reset
     for (int i = 0 ; i < 10 ; i++ ) {
       digitalWrite(tickLed, HIGH);
@@ -787,30 +798,49 @@ void setup()
     }
   }
 
-  // Make sure the clock keeps running even on battery
-  Clock.enableOscillator(true,true,0);
+  // Start the RTC communication
+  Wire.begin();
+
+  // Set up the RTC
+  Wire.beginTransmission(RTC_I2C_ADDRESS);
+  if(Wire.endTransmission() == 0) {
+    // Make sure the clock keeps running even on battery
+    Clock.enableOscillator(true,true,0);
+  }
+
+  // Read EEPROM values
+  readEEPROMValues();
+
+  // set our PWM profile
+  setPWMOnTime(pwmOn);
+  setPWMTopTime(pwmTop);
   
-  // Pre-calculate the ADC threshold reading, this saves all
-  // of the floating point business in the main loop
-  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+  // HV GOOOO!!!!
+  TCCR1A = tccrOn;
   
-   // Calibrate HVGen at full
-  for (int i = 0 ; i < 1000 ; i++ ) {
-    loadNumberArray8s();
-    allBright();
-    outputDisplay();
-    checkHVVoltage();  
+  // Set up the HVG if we need to
+  if(EEPROM.read(EE_HVG_NEED_CALIB)) {
+    calibrateHVG();
+
+    // Save the PWM values
+    EEPROM.write(EE_PULSE_LO, pwmOn % 256);
+    EEPROM.write(EE_PULSE_HI, pwmOn / 256);
+    EEPROM.write(EE_PWM_TOP_LO, pwmTop % 256);
+    EEPROM.write(EE_PWM_TOP_HI, pwmTop / 256);
+
+    // Mark that we don't need to do this next time
+    EEPROM.write(EE_HVG_NEED_CALIB,false);
   }
   
+  // and return it to target voltage so we can regulate the PWM on time
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+
   // Clear down any spurious button action
   button1.reset();
   
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
   displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
-
-  // Start the RTC communication
-  Wire.begin();
 
   // Recover the time from the RTC
   nowMillis = millis();
@@ -1053,12 +1083,12 @@ void loop()
     }
 
     if (nextMode == MODE_PULSE_UP) {
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
+      loadNumberArrayConfInt(pwmOn,nextMode-MODE_12_24);
       displayConfig();
     }
 
     if (nextMode == MODE_PULSE_DOWN) {
-      loadNumberArrayConfInt(pulseWidth,nextMode-MODE_12_24);
+      loadNumberArrayConfInt(pwmOn,nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -1426,27 +1456,17 @@ void loop()
 
       if (currentMode == MODE_PULSE_UP) {
         if(button1.isButtonPressedAndReleased()) {
-          pulseWidth+=10;
-          if (pulseWidth > PWM_PULSE_MAX) {
-            pulseWidth = PWM_PULSE_MIN;
-          }
-          pwmTopMin = pulseWidth + PWM_OFF_MIN;
-          OCR1A = pulseWidth;
+          setPWMOnTime(pwmOn+10);
         }
-        loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
+        loadNumberArrayConfInt(pwmOn,currentMode-MODE_12_24);
         displayConfig();
       }
 
       if (currentMode == MODE_PULSE_DOWN) {
         if(button1.isButtonPressedAndReleased()) {
-          pulseWidth-=10;
-          if (pulseWidth < PWM_PULSE_MIN) {
-            pulseWidth = PWM_PULSE_MAX;
-          }
-          pwmTopMin = pulseWidth + PWM_OFF_MIN;
-          OCR1A = pulseWidth;
+          setPWMOnTime(pwmOn-10);
         }
-        loadNumberArrayConfInt(pulseWidth,currentMode-MODE_12_24);
+        loadNumberArrayConfInt(pwmOn,currentMode-MODE_12_24);
         displayConfig();
       }
 
@@ -2472,18 +2492,20 @@ void saveEEPROMValues() {
   EEPROM.write(EE_SCROLL_STEPS,scrollSteps);
   EEPROM.write(EE_DIM_BRIGHT_LO, dimBright % 256);
   EEPROM.write(EE_DIM_BRIGHT_HI, dimBright / 256);
-  EEPROM.write(EE_DIM_SMOOTH_SPEED, sensorSmoothCount);
+  EEPROM.write(EE_DIM_SMOOTH_SPEED, sensorSmoothCountLDR);
   EEPROM.write(EE_RED_INTENSITY,redCnl);
   EEPROM.write(EE_GRN_INTENSITY,grnCnl);
   EEPROM.write(EE_BLU_INTENSITY,bluCnl);
   EEPROM.write(EE_BACKLIGHT_MODE,backlightMode);
   EEPROM.write(EE_HV_VOLTAGE,hvTargetVoltage);
-  EEPROM.write(EE_PULSE_LO, pulseWidth % 256);
-  EEPROM.write(EE_PULSE_HI, pulseWidth / 256);
   EEPROM.write(EE_SUPPRESS_ACP,suppressACP);
   EEPROM.write(EE_HOUR_BLANK_START,blankHourStart);
   EEPROM.write(EE_HOUR_BLANK_END,blankHourEnd);
   EEPROM.write(EE_CYCLE_SPEED,cycleSpeed);
+  EEPROM.write(EE_PULSE_LO, pwmOn % 256);
+  EEPROM.write(EE_PULSE_HI, pwmOn / 256);
+  EEPROM.write(EE_PWM_TOP_LO, pwmTop % 256);
+  EEPROM.write(EE_PWM_TOP_LO, pwmTop / 256);
 }
 
 // ************************************************************
@@ -2525,9 +2547,9 @@ void readEEPROMValues() {
     dimBright = SENSOR_HIGH_DEFAULT;
   }
 
-  sensorSmoothCount = EEPROM.read(EE_DIM_SMOOTH_SPEED);
-  if ((sensorSmoothCount < SENSOR_SMOOTH_READINGS_MIN) || (sensorSmoothCount > SENSOR_SMOOTH_READINGS_MAX)) {
-    sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
+  sensorSmoothCountLDR = EEPROM.read(EE_DIM_SMOOTH_SPEED);
+  if ((sensorSmoothCountLDR < SENSOR_SMOOTH_READINGS_MIN) || (sensorSmoothCountLDR > SENSOR_SMOOTH_READINGS_MAX)) {
+    sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
   }
 
   dateFormat = EEPROM.read(EE_DATE_FORMAT);
@@ -2565,9 +2587,20 @@ void readEEPROMValues() {
     hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
   } 
 
-  pulseWidth = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
-  if ((pulseWidth < PWM_PULSE_MIN) || (pulseWidth > PWM_PULSE_MAX)) {
-    pulseWidth = PWM_PULSE_DEFAULT;
+  pwmOn = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
+  if ((pwmOn < PWM_PULSE_MIN) || (pwmOn > PWM_PULSE_MAX)) {
+    pwmOn = PWM_PULSE_DEFAULT;
+    
+    // Hmmm, need calibration
+    EEPROM.write(EE_HVG_NEED_CALIB,true);
+  }
+  
+  pwmTop = EEPROM.read(EE_PWM_TOP_HI)*256 + EEPROM.read(EE_PWM_TOP_LO);
+  if ((pwmTop < PWM_TOP_MIN) || (pwmTop > PWM_TOP_MAX)) {
+    pwmTop = PWM_TOP_DEFAULT;
+
+    // Hmmm, need calibration
+    EEPROM.write(EE_HVG_NEED_CALIB,true);
   }
   
   suppressACP = EEPROM.read(EE_SUPPRESS_ACP);
@@ -2585,7 +2618,7 @@ void readEEPROMValues() {
   cycleSpeed = EEPROM.read(EE_CYCLE_SPEED);
   if ((cycleSpeed < CYCLE_SPEED_MIN) || (cycleSpeed > CYCLE_SPEED_MAX)) {
     cycleSpeed = CYCLE_SPEED_DEFAULT;
-  }
+  }  
 }
 
 // ************************************************************
@@ -2601,7 +2634,7 @@ void factoryReset() {
   dimDark = SENSOR_LOW_DEFAULT;
   scrollSteps = SCROLL_STEPS_DEFAULT;
   dimBright = SENSOR_HIGH_DEFAULT;
-  sensorSmoothCount = SENSOR_SMOOTH_READINGS_DEFAULT;
+  sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
   dateFormat = DATE_FORMAT_DEFAULT;
   dayBlanking = DAY_BLANKING_DEFAULT;
   backlightMode = BACKLIGHT_DEFAULT;
@@ -2609,11 +2642,12 @@ void factoryReset() {
   grnCnl = COLOUR_CNL_DEFAULT;
   bluCnl = COLOUR_CNL_DEFAULT;
   hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
-  pulseWidth = PWM_PULSE_DEFAULT;
   suppressACP = false;
   blankHourStart = 0;
   blankHourEnd = 7;
-  cycleSpeed = CYCLE_SPEED_DEFAULT;
+  cycleSpeed = CYCLE_SPEED_DEFAULT;  
+  pwmOn = PWM_PULSE_DEFAULT;
+  pwmTop = PWM_TOP_DEFAULT;
 
   saveEEPROMValues();
 }
@@ -2632,25 +2666,11 @@ void factoryReset() {
 // affects the current consumption and MOSFET heating
 // ************************************************************
 void checkHVVoltage() {
-  int rawSensorVal = analogRead(sensorPin);
-
-  // check the read voltage
-  if (rawSensorVal > rawHVADCThreshold) {
-    pwmTop++;
-
-    if (pwmTop >= PWM_TOP_MAX) {
-      pwmTop = PWM_TOP_MAX;
-    }
+  if (getSmoothedHVSensorReading() > rawHVADCThreshold) {
+    setPWMTopTime(pwmTop+1);
   } else {
-    pwmTop--;
-
-    // check that we have not got a silly reading: On time cannot be more than 50% of TOP time
-    if (pwmTop <= pwmTopMin) {
-      pwmTop = pwmTopMin;
-    }
+    setPWMTopTime(pwmTop-1);
   }
-
-  ICR1 = pwmTop; // Our starting point for the period
 }
 
 // ************************************************************
@@ -2685,7 +2705,7 @@ int getRawHVADCThreshold(double targetVoltage) {
 int getDimmingFromLDR() {
   int rawSensorVal = 1023-analogRead(LDRPin);
   double sensorDiff = rawSensorVal - sensorLDRSmoothed;
-  sensorLDRSmoothed += (sensorDiff/sensorSmoothCount);
+  sensorLDRSmoothed += (sensorDiff/sensorSmoothCountLDR);
 
   double sensorSmoothedResult = sensorLDRSmoothed - dimDark;
   if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
@@ -2700,4 +2720,180 @@ int getDimmingFromLDR() {
   return returnValue;
 }
 
+// ******************************************************************
+// Routine to check the PWM LEDs
+// brightens and dims a PWM capable LED
+// - 0 to 255 ramp up
+// - 256 to 511 plateau
+// - 512 to 767 ramp down
+// ******************************************************************
+void checkLEDPWM(byte LEDPin, int step) {
+  if (step > 767) {
+    analogWrite(LEDPin,0);
+  } else if (step > 512) {
+    analogWrite(LEDPin,255-(step-512));
+  } else if (step > 255) {
+    analogWrite(LEDPin,255);
+  } else if (step > 0) {
+    analogWrite(LEDPin,step);
+  } 
+}
+
+// ******************************************************************
+// Calibrate the HV generator
+// The idea here is to get the right combination of PWM on and top
+// time to provide the right high voltage with the minimum power
+// Consumption.
+//
+// Every combination of tubes and external power supply is different
+// and we need to pick the right PWM total duration ("top") and 
+// PWM on time ("on") to match the power supply and tubes.
+// Once we pick the "on" time, it is not adjusted during run time.
+// PWM top is adjusted during run.
+//
+// The PWM on time is picked so that we reach just the point that the
+// inductor goes into saturation - any more time on is just being used
+// to heat the MOSFET and the inductor, but not provide any voltage.
+//
+// We go through two cycles: each time we decrease the PWM top
+// (increase frequency) to give more voltage, then reduce PWM on
+// until we notice a drop in voltage.
+// ******************************************************************
+void calibrateHVG() {
+
+  // *************** first pass - get approximate frequency *************
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage + 5);
+
+  setPWMOnTime(PWM_PULSE_DEFAULT);
+  // Calibrate HVGen at full
+  for (int i = 0 ; i < 768 ; i++ ) {
+    loadNumberArray8s();
+    allBright();
+    outputDisplay();
+    checkHVVoltage();
+    checkLEDPWM(tickLed,i);
+  }
+
+  // *************** second pass - get on time minimum *************
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+
+  // run up the on time from the minimum to where we reach the required voltage
+  setPWMOnTime(PWM_PULSE_MIN);
+  for (int i = 0 ; i < 768 ; i++ ) {
+    //loadNumberArray8s();
+    loadNumberArrayConfInt(pwmOn,currentMode-MODE_12_24);
+    allBright();
+    outputDisplay();
+
+    if (getSmoothedHVSensorReading() < rawHVADCThreshold) {
+      if ((i % 8) == 0 ) {
+        incPWMOnTime();
+      }
+    }
+    checkLEDPWM(RLed,i);
+  }
+
+  int bottomOnValue = pwmOn;
+
+  // *************** third pass - get on time maximum *************
+  setPWMOnTime(pwmOn + 50);
+  for (int i = 0 ; i < 768 ; i++ ) {
+    //loadNumberArray8s();
+    loadNumberArrayConfInt(pwmOn,currentMode-MODE_12_24);
+    allBright();
+    outputDisplay();
+
+    if (getSmoothedHVSensorReading() > rawHVADCThreshold) {
+      if ((i % 8) == 0 ) {
+        decPWMOnTime();
+      }
+    }
+    checkLEDPWM(GLed,i);
+  }
+
+  int topOnValue = pwmOn;
+
+  int aveOnValue = (bottomOnValue+topOnValue)/2;
+  setPWMOnTime(aveOnValue);
+  
+  // *************** fourth pass - adjust the frequency *************
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage + 5);
+
+  // Calibrate HVGen at full
+  for (int i = 0 ; i < 768 ; i++ ) {
+    loadNumberArray8s();
+    allBright();
+    outputDisplay();
+    checkHVVoltage();
+    checkLEDPWM(BLed,i);
+  }
+}
+
+/**
+ * Set the PWM top time. Bounds check it so that it stays
+ * between the defined minimum and maximum, and that it
+ * does not go under the PWM On time (plus a safety margin).
+ * 
+ * Set both the internal "pwmTop" value and the register.
+ */
+void setPWMTopTime(int newTopTime) {
+  if (newTopTime < PWM_TOP_MIN) {
+    newTopTime = PWM_TOP_MIN;
+  }
+  
+  if (newTopTime > PWM_TOP_MAX) {
+    newTopTime = PWM_TOP_MAX;
+  }
+
+  if (newTopTime < (pwmOn + PWM_OFF_MIN)) {
+    newTopTime = pwmOn + PWM_OFF_MIN;
+  }
+
+  ICR1 = newTopTime;
+  pwmTop = newTopTime;
+}
+
+/**
+ * Set the new PWM on time. Bounds check it to make sure
+ * that is stays between pulse min and max, and that it
+ * does not get bigger than PWM top, less the safety margin.
+ * 
+ * Set both the internal "pwmOn" value and the register.
+ */
+void setPWMOnTime(int newOnTime) {
+  if (newOnTime < PWM_PULSE_MIN) {
+    newOnTime = PWM_PULSE_MIN;
+  }
+  
+  if (newOnTime > PWM_PULSE_MAX) {
+    newOnTime = PWM_PULSE_MAX;
+  }
+
+  if (newOnTime > (pwmTop - PWM_OFF_MIN)) {
+    newOnTime = pwmTop - PWM_OFF_MIN;
+  }
+
+  OCR1A = newOnTime;
+  pwmOn = newOnTime;
+}
+
+void incPWMOnTime() {
+  setPWMOnTime(pwmOn+1);
+}
+
+void decPWMOnTime() {
+  setPWMOnTime(pwmOn-1);
+}
+
+/**
+ * Get the HV sensor reading. Smooth it using a simple 
+ * moving average calculation.
+ */
+int getSmoothedHVSensorReading() {
+  int rawSensorVal = analogRead(sensorPin);
+  double sensorDiff = rawSensorVal - sensorHVSmoothed;
+  sensorHVSmoothed += (sensorDiff/sensorSmoothCountHV);
+  int sensorHVSmoothedInt = (int) sensorHVSmoothed;
+  return sensorHVSmoothedInt;
+}
 
