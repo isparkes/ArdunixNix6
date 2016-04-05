@@ -23,20 +23,19 @@ Nixie Clock based on Arduino<br>
 ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
 <br>
 The instruction manual and construction guidelines are available at:<br>
-    http://www.open-rate.com/Downloads/NixieClockV8InstructionManual.pdf<br>
+    http://www.open-rate.com/Downloads/NixieClockInstructionManualRev4V41.pdf<br>
 <br>
-There is a kit of parts or just the PCB is currently on sale. You can get it on EBay,<br>
-or for a discounted price ($39 full kit, $10 PCB) from me at this address: isparkes@protonmail.ch<br>
+For the PCB only, PCB with programmed controller or a kit of parts see:<br>
 <br>
-Full Kit on EBay ($49): http://www.ebay.com/itm/131564434344<br>
-PCB only on EBay ($10): http://www.ebay.com/itm/131560655665<br>
+  EBay link: http://www.ebay.com/itm/6-Digit-Nixie-Clock-Kit-Easy-Build-No-Tubes-Open-Source-Arduino-/131740553919?ssPageName=STRK:MESE:IT<br>
 <br>
+
 <strong>Construction and prototyping:</strong><br>
 hvTest.ino: code for testing the HV generation<br>
 buttonTest.ino: Code for testing button presses<br>
 <br>
 <br>
-YouTube video of the clock in action:<br>
+YouTube video of an early version of the clock in action:<br>
 <br>
     https://www.youtube.com/watch?v=Js-7MJpCtvI<br>
 <br>
