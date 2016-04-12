@@ -2505,7 +2505,7 @@ void saveEEPROMValues() {
   EEPROM.write(EE_PULSE_LO, pwmOn % 256);
   EEPROM.write(EE_PULSE_HI, pwmOn / 256);
   EEPROM.write(EE_PWM_TOP_LO, pwmTop % 256);
-  EEPROM.write(EE_PWM_TOP_LO, pwmTop / 256);
+  EEPROM.write(EE_PWM_TOP_HI, pwmTop / 256);
 }
 
 // ************************************************************
