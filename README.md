@@ -23,7 +23,7 @@ Nixie Clock based on Arduino<br>
 ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
 <br>
 The instruction manual and construction guidelines are available at:<br>
-    http://www.open-rate.com/Downloads/NixieClockInstructionManualRev4V41.pdf<br>
+    http://www.open-rate.com/Downloads/NixieClockInstructionManualRev4V42.pdf<br>
 <br>
 For the PCB only, PCB with programmed controller or a kit of parts see:<br>
 <br>
