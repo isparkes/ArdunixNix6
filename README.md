@@ -29,11 +29,20 @@ For the PCB only, PCB with programmed controller or a kit of parts see:<br>
 <br>
   EBay link: http://www.ebay.com/itm/6-Digit-Nixie-Clock-Kit-Easy-Build-No-Tubes-Open-Source-Arduino-/131740553919?ssPageName=STRK:MESE:IT<br>
 <br>
-
+<br>
+For a fully assembled and tests module see:<br>
+<br>
+  EBay link: http://www.ebay.com/itm/6-Digit-Nixie-Clock-Module-No-Tubes-Open-Source-Arduino-Built-and-tested-/131730036509?ssPageName=STRK:MESE:IT<br>
+<br>
+<br>
 <strong>Construction and prototyping:</strong><br>
 hvTest.ino: code for testing the HV generation<br>
 buttonTest.ino: Code for testing button presses<br>
 <br>
+<br>
+YouTube video of version 42 of the clock in action:<br>
+<br>
+https://youtu.be/9lNWKlWbXSg<br>
 <br>
 YouTube video of an early version of the clock in action:<br>
 <br>
