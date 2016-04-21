@@ -1,6 +1,8 @@
 /*
    ESP8266 Webserver for the Arduino Nixie clock
-   Starts the ESP8266 as an access point and provides a web interface to configure WiFi credentials
+    - Starts the ESP8266 as an access point and provides a web interface to configure and store WiFi credentials.
+    - Allows the time server to be defined and stored
+    
 
    Go to http://192.168.4.1 in a web browser connected to this access point to see it
 */
@@ -16,25 +18,21 @@
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
-#define AP_USE_PASSWORD_OFF   // AP_USE_PASSWORD or AP_USE_PASSWORD_OFF
-
-// Access point credentials
+// Access point credentials, be default it is as open AP
 const char *ap_ssid = "NixieTimeModule";
-#ifdef AP_USE_PASSWORD
-const char *ap_password = "thereisnospoon";
-#endif
+const char *ap_password = "";
 
 #define blueLedPin 1
 boolean blueLedState = true;
 
 long lastMillis = 0;
-
 long lastI2CUpdateTime = -60000;
 
 String timeServerURL = "";
 
+// I2C Interface definition
 #define I2C_SLAVE_ADDR 0x68
-#define I2C_TIME_UPDATE 0x00
+#define I2C_TIME_UPDATE 0x00 // takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
 
 ESP8266WebServer server(80);
 
@@ -56,11 +54,11 @@ void setup()
   delay(10);
 
   // You can add the password parameter if you want the AP to be password protected
-#ifdef AP_USE_PASSWORD
-  Wifi.softAP(ssid, password);
-#else
-  WiFi.softAP(ap_ssid);
-#endif
+  if (strlen(ap_password) > 0) {
+    WiFi.softAP(ap_ssid, ap_password);
+  } else {
+    WiFi.softAP(ap_ssid);
+  }
 
   // read eeprom for ssid and pass
   String esid = getSSIDFromEEPROM();
@@ -140,43 +138,28 @@ void loop()
 */
 void rootPageHandler()
 {
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>Arduino Nixie Clock Time Module</center></h1>";
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
+  response_message += getTableHead2Col("Current Configuration","Name","Value");
 
   if (WiFi.status() == WL_CONNECTED)
   {
     IPAddress ip = WiFi.localIP();
     String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
     IPAddress softapip = WiFi.softAPIP();
-    String ipStr1 = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
-    response_message += "<center>WLAN Status: Connected<br>";
-    response_message += "WLAN IP: ";
-    response_message += ipStr;
-    response_message += "<br>";
-    response_message += "AP IP: ";
-    response_message += ipStr1;
-    response_message += "<br>";
-    response_message += "WLAN SSID: ";
-    response_message += WiFi.SSID();
-    response_message += "<br>";
-    response_message += "<br>";
-    response_message += "Time server URL: ";
-    response_message += timeServerURL;
-    response_message += "<br>";
-    response_message += "Time according to time server: ";
-    response_message += getTimeFromTimeZoneServer();
-    response_message += "<br>";
-    response_message += "</center><br>";
+    String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
+
+    response_message += getTableRow2Col("WLAN IP",ipStr);
+    response_message += getTableRow2Col("AP IP",ipStrAP);
+    response_message += getTableRow2Col("WLAN SSID",WiFi.SSID());
+    response_message += getTableRow2Col("Time server URL",timeServerURL);
+    response_message += getTableRow2Col("Time according to server",getTimeFromTimeZoneServer());
   }
   else
   {
     IPAddress softapip = WiFi.softAPIP();
-    String ipStr1 = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
-    response_message += "<center>WLAN Status: Disconnected<br>";
-    response_message += "AP IP: ";
-    response_message += ipStr1;
-    response_message += "<br>";
-    response_message += "</center><br>";
+    String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
+    response_message += getTableRow2Col("AP IP",ipStrAP);
   }
 
   // Make the uptime readable
@@ -184,21 +167,12 @@ void rootPageHandler()
   long upDays = upSecs / 86400;
   long upHours = (upSecs - (upDays * 86400)) / 3600;
   long upMins = (upSecs - (upDays * 86400) - (upHours * 3600)) / 60;
+  upSecs = upSecs - (upDays*86400) - (upHours*3600) - (upMins*60); 
+  String uptimeString = ""; uptimeString += upDays; uptimeString += " days, "; uptimeString += upHours, uptimeString += " hours, "; uptimeString += upMins; uptimeString += " mins, "; uptimeString += upSecs; uptimeString += " secs";
 
-  response_message += "<center>Uptime: ";
-  response_message += upDays;
-  response_message += " days, ";
-  response_message += upHours;
-  response_message += " hours, ";
-  response_message += upMins;
-  response_message += " mins</center><br>";
-  response_message += "<ul><li><a href=\"/wlan_config\">Configure WLAN settings</a></li>";
-  response_message += "<li><a href=\"/time\">Configure Time Server</a></li>";
-  response_message += "<li><a href=\"/scan_i2c\">Scan I2C</h4></li>";
-  response_message += "<li><a href=\"/ntp\">Get NTP time</h4></li>";
-  response_message += "<li><a href=\"/info\">Show Information about the ESP8266</h4></li>";
-  response_message += "<li><a href=\"/updatetime\">Update the time now</h4></li></ul>";
-  response_message += "</body></html>";
+  response_message += getTableRow2Col("Uptime",uptimeString);
+  response_message += getTableFoot();
+  response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
@@ -240,21 +214,9 @@ void wlanPageHandler()
 #endif
   }
 
-  String response_message = "";
-  response_message += "<html>";
-  response_message += "<head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>WLAN Settings</center></h1>";
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
 
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    response_message += "Status: Connected<br>";
-  }
-  else
-  {
-    response_message += "Status: Disconnected<br>";
-  }
-
-  response_message += "<p>To connect to a WiFi network, please select a network...</p>";
 
   // Get number of visible access points
   int ap_count = WiFi.scanNetworks();
@@ -811,6 +773,7 @@ void clearTimeServerURLFromEEPROM() {
 // ----------------------------------------------------------------------------------------------------
 // ----------------------------------------- Utility functions ----------------------------------------
 // ----------------------------------------------------------------------------------------------------
+
 /**
    Switch the state of the blue LED and send it to the GPIO. Used in normal "heartbeat" processing and to show processing.
 */
@@ -820,9 +783,9 @@ void toggleBlueLED() {
 }
 
 /**
-   Send the time to the I2C slave.
+   Send the time to the I2C slave. If the transmission went OK, return true, otherwise false.
 */
-int sendTimeToI2C(String timeString) {
+boolean sendTimeToI2C(String timeString) {
 
   int year = getIntValue(timeString, ',', 0);
   byte month = getIntValue(timeString, ',', 1);
@@ -841,7 +804,7 @@ int sendTimeToI2C(String timeString) {
   Wire.write(minute);
   Wire.write(sec);
   int error = Wire.endTransmission();
-  return error;
+  return (error == 0);
 }
 
 /**
@@ -862,8 +825,86 @@ String getValue(String data, char separator, int index)
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
+/**
+   Split a string based on a separator, get the element given by index, return an integer value
+*/
 int getIntValue(String data, char separator, int index) {
   String result = getValue(data, separator, index);
   return atoi(result.c_str());
+}
+
+// ----------------------------------------------------------------------------------------------------
+// ------------------------------------------- HTML functions -----------------------------------------
+// ----------------------------------------------------------------------------------------------------
+
+String getHTMLHead() {
+  return "<html><head><title>Arduino Nixie Clock Time Module</title></head><body>";
+}
+
+/**
+ * Get the bootstrap top row navbar, including the Bootstrap links
+ */
+String getNavBar() {
+  String navbar = "<link href=\"http://www.open-rate.com/bs336.css\" rel=\"stylesheet\">";
+  navbar += "<link href=\"http://www.open-rate.com/wl.css\" rel=\"stylesheet\">";
+  navbar += "<script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js\"></script>";
+  navbar += "<script src=\"http://www.open-rate.com/bs.js\"></script>";
+  navbar += "<nav class=\"navbar navbar-inverse navbar-fixed-top\">";
+  navbar += "<div class=\"container-fluid\"><div class=\"navbar-header\"><button type=\"button\" class=\"navbar-toggle collapsed\" data-toggle=\"collapse\" data-target=\"#navbar\" aria-expanded=\"false\" aria-controls=\"navbar\">";
+  navbar += "<span class=\"sr-only\">Toggle navigation</span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span></button>";
+  navbar += "<a class=\"navbar-brand\" href=\"#\">Arduino Nixie Clock Time Module</a></div><div id=\"navbar\" class=\"navbar-collapse collapse\"><ul class=\"nav navbar-nav navbar-right\">";
+  navbar += "<li><a href=\"/time\">Configure Time Server</a></li><li><a href=\"/wlan_config\">Configure WLAN settings</a></li><li><a href=\"/scan_i2c\">Scan I2C</a></li><li><a href=\"/info\">ESP8266 Info</a></li><li><a href=\"/updatetime\">Update the time now</a></li></ul></div></div></nav>";
+  return navbar;
+}
+
+/**
+ * Get the header for a 2 column table
+ */
+String getTableHead2Col(String tableHeader, String col1Header, String col2Header) {
+  String tableHead = "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
+  tableHead += tableHeader;
+  tableHead += "</h3><div class=\"table-responsive\"><table class=\"table table-striped\"><thead><tr><th>";
+  tableHead += col1Header;
+  tableHead += "</th><th>";
+  tableHead += col2Header;
+  tableHead += "</th></tr></thead><tbody>";
+  
+  return tableHead;
+}
+
+String getTableRow2Col(String col1Val, String col2Val) {
+  String tableRow = "<tr><td>";
+  tableRow += col1Val;
+  tableRow += "</td><td>";
+  tableRow += col2Val;
+  tableRow += "</td></tr>";
+  
+  return tableRow;
+}
+
+String getTableFoot() {
+  return "</div></tbody></table>";
+}
+  
+/**
+ * Get the header for an input form
+ */
+String getFormHead(String formTitle) {
+  String tableHead = "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
+  tableHead += formTitle;
+  tableHead += "<form class=\"form-horizontal\">";
+  
+  return tableHead;
+}
+
+/**
+ * Get the header for an input form
+ */
+String getFormFoot() {
+  return "</form></div>";
+}
+
+String getHTMLFoot() {
+  return "</body></html>";
 }
 
