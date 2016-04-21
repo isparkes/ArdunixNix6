@@ -13,7 +13,6 @@
 #include <ESP8266HTTPClient.h>
 #include <Wire.h>
 #include <EEPROM.h>
-#include <WiFiUdp.h>
 #include <time.h>
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
@@ -68,10 +67,6 @@ void setup()
   // Connect
   int connectResult = connectToWLAN(esid.c_str(), epass.c_str());
 
-  if (connectResult != 0) {
-    clearCredentialsFromEEPROM();
-  }
-
   IPAddress apIP = WiFi.softAPIP();
   IPAddress myIP = WiFi.localIP();
 #ifdef DEBUG
@@ -90,7 +85,6 @@ void setup()
   server.on("/",            rootPageHandler);
   server.on("/wlan_config", wlanPageHandler);
   server.on("/scan_i2c",    i2cScanPageHandler);
-  server.on("/ntp",         ntpPageHandler);
   server.on("/info",        infoPageHandler);
   server.on("/time",        timeServerPageHandler);
   server.on("/reset",       resetPageHandler);
@@ -202,7 +196,7 @@ void wlanPageHandler()
 #endif
     }
 
-    storeWLANCredentialsInEEPROM(server.arg("ssid"), server.arg("password"));
+    storeCredentialsInEEPROM(server.arg("ssid"), server.arg("password"));
 
 #ifdef DEBUG
     Serial.println("");
@@ -217,6 +211,9 @@ void wlanPageHandler()
   String response_message = getHTMLHead();
   response_message += getNavBar();
 
+  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
+  response_message += "Set WIFI credentials";
+  response_message += "</h3>";
 
   // Get number of visible access points
   int ap_count = WiFi.scanNetworks();
@@ -227,7 +224,7 @@ void wlanPageHandler()
   }
   else
   {
-    response_message += "<form method=\"get\">";
+    response_message += "<form method=\"get\"><div class=\"form-group\">";
 
     // Show access points
     for (uint8_t ap_idx = 0; ap_idx < ap_count; ap_idx++)
@@ -241,10 +238,10 @@ void wlanPageHandler()
     response_message += "WiFi password (if required):<br>";
     response_message += "<input type=\"text\" name=\"password\"><br>";
     response_message += "<input type=\"submit\" value=\"Connect\">";
-    response_message += "</form>";
+    response_message += "</div></form>";
   }
 
-  response_message += "<a href=\"/\">Go back to main page</a>";
+  response_message += "</div>";
   response_message += "</body></html>";
 
   server.send(200, "text/html", response_message);
@@ -255,8 +252,12 @@ void wlanPageHandler()
 */
 void i2cScanPageHandler()
 {
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>Arduino Nixie Clock Time Module</center></h1>";
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
+
+  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
+  response_message += "Scan I2C bus for slaves";
+  response_message += "</h3>";
 
   for (int idx = 0 ; idx < 128 ; idx++)
   {
@@ -266,34 +267,11 @@ void i2cScanPageHandler()
       response_message += "<center>Found I2C slave at ";
       response_message += idx;
       response_message += "</center><br>";
-    } else {
-      response_message += ".";
     }
   }
-  response_message += "<br>";
-  response_message += "<a href=\"/\">Go back to main page</a>";
+  response_message += "<br></div>";
   response_message += "</body></html>";
 
-
-  server.send(200, "text/html", response_message);
-}
-
-/**
-   Get the NTP time
-*/
-void ntpPageHandler()
-{
-
-  long epoch = getNTPTime();
-
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>NTP Status</center></h1>";
-
-  response_message += "<center>got epoch ";
-  response_message += epoch;
-  response_message += "</center><br>";
-  response_message += "<a href=\"/\">Go back to main page</a>";
-  response_message += "</body></html>";
 
   server.send(200, "text/html", response_message);
 }
@@ -313,24 +291,21 @@ void timeServerPageHandler()
     }
   }
 
-  String timeString = getTimeFromTimeZoneServer();
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
 
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>Time Status</center></h1>";
+  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Set Time Server URL</h3>";
 
-  response_message += "<center>got time string ";
-  response_message += timeString;
-  response_message += "</center><br>";
-
-  response_message += "<form method=\"get\">";
-  response_message += "Time Server URL:<br>";
-  response_message += "<input type=\"text\" name=\"timeserverurl\" value=\"";
-  response_message += timeServerURL;
-  response_message += "\"><br>";
-  response_message += "<input type=\"submit\" value=\"Set\">";
-  response_message += "</form>";
-  response_message += "<a href=\"/\">Go back to main page</a>";
-  response_message += "</body></html>";
+  response_message += "<form role=\"form\"><div class=\"form-group\"><input type=\"text\" class=\"form-control input-lg\" name=\"timeserverurl\" placeholder=\"URL\"";
+  if (timeServerURL.length() > 10) {
+    response_message += " value=\"";
+    response_message += timeServerURL;
+    response_message += "\"";
+  }
+  response_message += "><span class=\"input-group-btn\"></div>";
+  response_message += "<input type=\"submit\" value=\"Set\" class=\"btn btn-default\">";
+  response_message += "</form></div>";
+  response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
@@ -341,20 +316,28 @@ void timeServerPageHandler()
 void updateTimePageHandler()
 {
   String timeString = getTimeFromTimeZoneServer();
-  int result = sendTimeToI2C(timeString);
+  boolean result = sendTimeToI2C(timeString);
 
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>Time Status</center></h1>";
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
+
+  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
+  response_message += "Send time to I2C right now";
+  response_message += "</h3>";
 
   response_message += "<center>got time string ";
   response_message += timeString;
   response_message += "</center><br>";
 
   response_message += "<center>update result ";
-  response_message += result;
+  if (result) {
+    response_message += "OK";
+  } else {
+    response_message += "Error";
+  }
   response_message += "</center><br>";
 
-  response_message += "<a href=\"/\">Go back to main page</a>";
+  response_message += "</div>";
   response_message += "</body></html>";
 
   server.send(200, "text/html", response_message);
@@ -363,32 +346,21 @@ void updateTimePageHandler()
    Give info about the ESP8266
 */
 void infoPageHandler() {
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>ESP8266 Status</center></h1>";
-
-  response_message += "<center>Sketch size: ";
-  response_message += ESP.getSketchSize();
-  response_message += "<center>Free sketch size: ";
-  response_message += ESP.getFreeSketchSpace();
-  response_message += "<center>Free heap: ";
-  response_message += ESP.getFreeHeap();
-  response_message += "<center>Boot version: ";
-  response_message += ESP.getBootVersion();
-  response_message += "<center>CPU Freq: ";
-  response_message += ESP.getCpuFreqMHz();
-  response_message += "<center>SDK version: ";
-  response_message += ESP.getSdkVersion();
-  response_message += "<center>Chip ID: ";
-  response_message += ESP.getChipId();
-  response_message += "<center>Flash Chip ID: ";
-  response_message += ESP.getFlashChipId();
-  response_message += "<center>Flash size: ";
-  response_message += ESP.getFlashChipRealSize();
-  response_message += "<center>Vcc: ";
-  response_message += ESP.getVcc();
-  response_message += "</center><br>";
-  response_message += "<a href=\"/\">Go back to main page</a>";
-  response_message += "</body></html>";
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
+  response_message += getTableHead2Col("ESP8266 information","Name","Value");
+  response_message += getTableRow2Col("Sketch size",ESP.getSketchSize());
+  response_message += getTableRow2Col("Free sketch size",ESP.getFreeSketchSpace());
+  response_message += getTableRow2Col("Free heap",ESP.getFreeHeap());
+  response_message += getTableRow2Col("Boot version",ESP.getBootVersion());
+  response_message += getTableRow2Col("CPU Freqency (MHz)",ESP.getCpuFreqMHz());
+  response_message += getTableRow2Col("SDK version",ESP.getSdkVersion());
+  response_message += getTableRow2Col("Chip ID",ESP.getChipId());
+  response_message += getTableRow2Col("Flash Chip ID",ESP.getFlashChipId());
+  response_message += getTableRow2Col("Flash size",ESP.getFlashChipRealSize());
+  response_message += getTableRow2Col("Vcc",ESP.getVcc());
+  response_message += getTableFoot();
+  response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
@@ -397,14 +369,15 @@ void infoPageHandler() {
    Reset the EEPROM and stored values
 */
 void resetPageHandler() {
-  clearCredentialsFromEEPROM();
-  clearTimeServerURLFromEEPROM();
-  String response_message = "<html><head><title>Arduino Nixie Clock Time Module</title></head>";
-  response_message += "<body style=\"background-color:PaleGoldenRod\"><h1><center>Reset</center></h1>";
-
-  response_message += "<center>Reset done</center><br>";
-  response_message += "<a href=\"/\">Go back to main page</a>";
-  response_message += "</body></html>";
+  storeCredentialsInEEPROM("","");
+  storeTimeServerURLInEEPROM("");
+  
+  String response_message = getHTMLHead();
+  response_message += getNavBar();
+  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
+  response_message += "Reset done";
+  response_message += "</h3></div>";
+  response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
@@ -460,139 +433,6 @@ int connectToWLAN(const char* ssid, const char* password) {
     }
   }
 
-  return 0;
-}
-
-// send an NTP request to the time server at the given address
-unsigned long getNTPTime()
-{
-  unsigned int localPort = 2390;      // local port to listen for UDP packets
-
-  IPAddress timeServerIP; // time.nist.gov NTP server address
-  const char* ntpServerName = "time.nist.gov";
-
-  const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
-
-  byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
-
-  // A UDP instance to let us send and receive packets over UDP
-  WiFiUDP udp;
-
-  udp.begin(localPort);
-#ifdef DEBUG
-  Serial.print("UDP Local port: ");
-  Serial.println(udp.localPort());
-#endif
-
-  //get a random server from the pool
-  WiFi.hostByName(ntpServerName, timeServerIP);
-
-#ifdef DEBUG
-  Serial.print("Got target IP: ");
-  Serial.println(timeServerIP);
-  Serial.println("sending NTP packet...");
-#endif
-
-  memset(packetBuffer, 0, NTP_PACKET_SIZE);
-
-  // Initialize values needed to form NTP request
-  // (see URL above for details on the packets)
-  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
-  packetBuffer[1] = 0;     // Stratum, or type of clock
-  packetBuffer[2] = 6;     // Polling Interval
-  packetBuffer[3] = 0xEC;  // Peer Clock Precision
-  // 8 bytes of zero for Root Delay & Root Dispersion
-  packetBuffer[12]  = 49;
-  packetBuffer[13]  = 0x4E;
-  packetBuffer[14]  = 49;
-  packetBuffer[15]  = 52;
-
-  // all NTP fields have been given values, now
-  // you can send a packet requesting a timestamp:
-  udp.beginPacket(timeServerIP, 123); //NTP requests are to port 123
-  udp.write(packetBuffer, NTP_PACKET_SIZE);
-  udp.endPacket();
-
-  // Try for 10 seconds to get a packet
-  delay(1000);
-  int loopCounter = 0;
-  while (loopCounter < 100) {
-    loopCounter++;
-    int cb = udp.parsePacket();
-    if (!cb) {
-#ifdef DEBUG
-      Serial.println("no packet yet");
-#endif
-    } else {
-#ifdef DEBUG
-      Serial.print("packet received, length=");
-      Serial.println(cb);
-#endif
-
-      // We've received a packet, read the data from it
-      udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
-
-      //the timestamp starts at byte 40 of the received packet and is four bytes,
-      // or two words, long. First, esxtract the two words:
-      unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
-      unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
-
-      // combine the four bytes (two words) into a long integer
-      // this is NTP time (seconds since Jan 1 1900):
-      unsigned long secsSince1900 = highWord << 16 | lowWord;
-
-
-#ifdef DEBUG
-      Serial.print("Seconds since Jan 1 1900 = " );
-      Serial.println(secsSince1900);
-
-      // now convert NTP time into everyday time:
-      Serial.print("Unix time = ");
-#endif
-
-      // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
-      const unsigned long seventyYears = 2208988800UL;
-      // subtract seventy years:
-      unsigned long epoch = secsSince1900 - seventyYears;
-
-#ifdef DEBUG
-      // print Unix time:
-      Serial.println(epoch);
-#endif
-
-      byte hours = (epoch  % 86400L) / 3600;
-      byte mins =  (epoch % 3600) / 60;
-      byte secs = (epoch % 60);
-
-#ifdef DEBUG
-      // print the hour, minute and second:
-      Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
-      Serial.print(hours); // print the hour (86400 equals secs per day)
-      Serial.print(':');
-      if (mins < 10 ) {
-        // In the first 10 minutes of each hour, we'll want a leading '0'
-        Serial.print('0');
-      }
-      Serial.print(mins); // print the minute (3600 equals secs per minute)
-      Serial.print(':');
-      if ( secs < 10 ) {
-        // In the first 10 seconds of each minute, we'll want a leading '0'
-        Serial.print('0');
-      }
-      Serial.println(secs); // print the second
-#endif
-
-      time_t def_time = epoch;
-      struct tm *a_tim = localtime(&def_time);
-      Serial.print("Local hours: ");
-      Serial.println(a_tim->tm_hour);
-
-      return epoch;
-    }
-    delay(100);
-  }
-
-  // no result in the time
   return 0;
 }
 
@@ -670,7 +510,7 @@ String getPasswordFromEEPROM() {
   return epass;
 }
 
-void storeWLANCredentialsInEEPROM(String qsid, String qpass) {
+void storeCredentialsInEEPROM(String qsid, String qpass) {
 #ifdef DEBUG
   Serial.print("writing eeprom ssid, length ");
   Serial.println(qsid.length());
@@ -704,16 +544,6 @@ void storeWLANCredentialsInEEPROM(String qsid, String qpass) {
     }
   }
 
-  EEPROM.commit();
-}
-
-void clearCredentialsFromEEPROM() {
-#ifdef DEBUG
-  Serial.println("clearing credentials from eeprom");
-#endif
-  for (int i = 0; i < (96); i++) {
-    EEPROM.write(i, 0);
-  }
   EEPROM.commit();
 }
 
@@ -757,16 +587,6 @@ void storeTimeServerURLInEEPROM(String timeServerURL) {
     }
   }
 
-  EEPROM.commit();
-}
-
-void clearTimeServerURLFromEEPROM() {
-#ifdef DEBUG
-  Serial.println("clearing time server URL from eeprom");
-#endif
-  for (int i = 96; i < (96 + 256); i++) {
-    EEPROM.write(i, 0);
-  }
   EEPROM.commit();
 }
 
@@ -853,7 +673,7 @@ String getNavBar() {
   navbar += "<div class=\"container-fluid\"><div class=\"navbar-header\"><button type=\"button\" class=\"navbar-toggle collapsed\" data-toggle=\"collapse\" data-target=\"#navbar\" aria-expanded=\"false\" aria-controls=\"navbar\">";
   navbar += "<span class=\"sr-only\">Toggle navigation</span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span></button>";
   navbar += "<a class=\"navbar-brand\" href=\"#\">Arduino Nixie Clock Time Module</a></div><div id=\"navbar\" class=\"navbar-collapse collapse\"><ul class=\"nav navbar-nav navbar-right\">";
-  navbar += "<li><a href=\"/time\">Configure Time Server</a></li><li><a href=\"/wlan_config\">Configure WLAN settings</a></li><li><a href=\"/scan_i2c\">Scan I2C</a></li><li><a href=\"/info\">ESP8266 Info</a></li><li><a href=\"/updatetime\">Update the time now</a></li></ul></div></div></nav>";
+  navbar += "<li><a href=\"/\">Summary</a></li><li><a href=\"/time\">Configure Time Server</a></li><li><a href=\"/wlan_config\">Configure WLAN settings</a></li><li><a href=\"/scan_i2c\">Scan I2C</a></li><li><a href=\"/info\">ESP8266 Info</a></li><li><a href=\"/updatetime\">Update the time now</a></li></ul></div></div></nav>";
   return navbar;
 }
 
@@ -873,6 +693,16 @@ String getTableHead2Col(String tableHeader, String col1Header, String col2Header
 }
 
 String getTableRow2Col(String col1Val, String col2Val) {
+  String tableRow = "<tr><td>";
+  tableRow += col1Val;
+  tableRow += "</td><td>";
+  tableRow += col2Val;
+  tableRow += "</td></tr>";
+  
+  return tableRow;
+}
+
+String getTableRow2Col(String col1Val, int col2Val) {
   String tableRow = "<tr><td>";
   tableRow += col1Val;
   tableRow += "</td><td>";
