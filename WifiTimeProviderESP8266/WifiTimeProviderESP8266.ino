@@ -31,7 +31,8 @@ String timeServerURL = "";
 
 // I2C Interface definition
 #define I2C_SLAVE_ADDR 0x68
-#define I2C_TIME_UPDATE 0x00 // takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
+#define I2C_TIME_UPDATE 0x00        // takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
+
 
 ESP8266WebServer server(80);
 
@@ -113,8 +114,8 @@ void loop()
     if ((millis() - lastI2CUpdateTime) > 60000) {
       
       // Send the time to the I2C client
-      int result = sendTimeToI2C(getTimeFromTimeZoneServer());
-      if(result == 0) {
+      boolean result = sendTimeToI2C(getTimeFromTimeZoneServer());
+      if(result) {
         lastI2CUpdateTime = millis();
       }
     }
