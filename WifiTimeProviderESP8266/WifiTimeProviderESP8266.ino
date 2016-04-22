@@ -2,7 +2,7 @@
    ESP8266 Webserver for the Arduino Nixie clock
     - Starts the ESP8266 as an access point and provides a web interface to configure and store WiFi credentials.
     - Allows the time server to be defined and stored
-    
+
 
    Go to http://192.168.4.1 in a web browser connected to this access point to see it
 */
@@ -113,10 +113,10 @@ void loop()
 
     // See if it is time to update the Clock
     if ((millis() - lastI2CUpdateTime) > 60000) {
-      
+
       // Send the time to the I2C client
       boolean result = sendTimeToI2C(getTimeFromTimeZoneServer());
-      if(result) {
+      if (result) {
         lastI2CUpdateTime = millis();
       }
     }
@@ -136,7 +136,7 @@ void rootPageHandler()
 {
   String response_message = getHTMLHead();
   response_message += getNavBar();
-  response_message += getTableHead2Col("Current Configuration","Name","Value");
+  response_message += getTableHead2Col("Current Configuration", "Name", "Value");
 
   if (WiFi.status() == WL_CONNECTED)
   {
@@ -145,17 +145,17 @@ void rootPageHandler()
     IPAddress softapip = WiFi.softAPIP();
     String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
 
-    response_message += getTableRow2Col("WLAN IP",ipStr);
-    response_message += getTableRow2Col("AP IP",ipStrAP);
-    response_message += getTableRow2Col("WLAN SSID",WiFi.SSID());
-    response_message += getTableRow2Col("Time server URL",timeServerURL);
-    response_message += getTableRow2Col("Time according to server",getTimeFromTimeZoneServer());
+    response_message += getTableRow2Col("WLAN IP", ipStr);
+    response_message += getTableRow2Col("AP IP", ipStrAP);
+    response_message += getTableRow2Col("WLAN SSID", WiFi.SSID());
+    response_message += getTableRow2Col("Time server URL", timeServerURL);
+    response_message += getTableRow2Col("Time according to server", getTimeFromTimeZoneServer());
   }
   else
   {
     IPAddress softapip = WiFi.softAPIP();
     String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
-    response_message += getTableRow2Col("AP IP",ipStrAP);
+    response_message += getTableRow2Col("AP IP", ipStrAP);
   }
 
   // Make the uptime readable
@@ -163,10 +163,10 @@ void rootPageHandler()
   long upDays = upSecs / 86400;
   long upHours = (upSecs - (upDays * 86400)) / 3600;
   long upMins = (upSecs - (upDays * 86400) - (upHours * 3600)) / 60;
-  upSecs = upSecs - (upDays*86400) - (upHours*3600) - (upMins*60); 
+  upSecs = upSecs - (upDays * 86400) - (upHours * 3600) - (upMins * 60);
   String uptimeString = ""; uptimeString += upDays; uptimeString += " days, "; uptimeString += upHours, uptimeString += " hours, "; uptimeString += upMins; uptimeString += " mins, "; uptimeString += upSecs; uptimeString += " secs";
 
-  response_message += getTableRow2Col("Uptime",uptimeString);
+  response_message += getTableRow2Col("Uptime", uptimeString);
   response_message += getTableFoot();
   response_message += getHTMLFoot();
 
@@ -350,17 +350,17 @@ void updateTimePageHandler()
 void infoPageHandler() {
   String response_message = getHTMLHead();
   response_message += getNavBar();
-  response_message += getTableHead2Col("ESP8266 information","Name","Value");
-  response_message += getTableRow2Col("Sketch size",ESP.getSketchSize());
-  response_message += getTableRow2Col("Free sketch size",ESP.getFreeSketchSpace());
-  response_message += getTableRow2Col("Free heap",ESP.getFreeHeap());
-  response_message += getTableRow2Col("Boot version",ESP.getBootVersion());
-  response_message += getTableRow2Col("CPU Freqency (MHz)",ESP.getCpuFreqMHz());
-  response_message += getTableRow2Col("SDK version",ESP.getSdkVersion());
-  response_message += getTableRow2Col("Chip ID",ESP.getChipId());
-  response_message += getTableRow2Col("Flash Chip ID",ESP.getFlashChipId());
-  response_message += getTableRow2Col("Flash size",ESP.getFlashChipRealSize());
-  response_message += getTableRow2Col("Vcc",ESP.getVcc());
+  response_message += getTableHead2Col("ESP8266 information", "Name", "Value");
+  response_message += getTableRow2Col("Sketch size", ESP.getSketchSize());
+  response_message += getTableRow2Col("Free sketch size", ESP.getFreeSketchSpace());
+  response_message += getTableRow2Col("Free heap", ESP.getFreeHeap());
+  response_message += getTableRow2Col("Boot version", ESP.getBootVersion());
+  response_message += getTableRow2Col("CPU Freqency (MHz)", ESP.getCpuFreqMHz());
+  response_message += getTableRow2Col("SDK version", ESP.getSdkVersion());
+  response_message += getTableRow2Col("Chip ID", ESP.getChipId());
+  response_message += getTableRow2Col("Flash Chip ID", ESP.getFlashChipId());
+  response_message += getTableRow2Col("Flash size", ESP.getFlashChipRealSize());
+  response_message += getTableRow2Col("Vcc", ESP.getVcc());
   response_message += getTableFoot();
   response_message += getHTMLFoot();
 
@@ -371,9 +371,9 @@ void infoPageHandler() {
    Reset the EEPROM and stored values
 */
 void resetPageHandler() {
-  storeCredentialsInEEPROM("","");
+  storeCredentialsInEEPROM("", "");
   storeTimeServerURLInEEPROM("");
-  
+
   String response_message = getHTMLHead();
   response_message += getNavBar();
   response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
@@ -633,17 +633,20 @@ boolean sendTimeToI2C(String timeString) {
    Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean getClockOptionsFromI2C() {
-  Wire.beginTransmission(I2C_SLAVE_ADDR);
-  Wire.write(I2C_GET_OPTIONS); // Command
-  byte receivedByte = Wire.read();
+  int available = Wire.requestFrom(I2C_SLAVE_ADDR, 1);
+
+  // right now exepct only 1 test byte
+  if (available == 1) {
+    byte receivedByte = Wire.read();
+  }
   int error = Wire.endTransmission();
   return (error == 0);
 }
 
 /**
-   Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
+   Send the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
-boolean getClockOptionsFromI2C(byte newOption) {
+boolean sendClockOptionsToI2C(byte newOption) {
   Wire.beginTransmission(I2C_SLAVE_ADDR);
   Wire.write(I2C_SET_OPTIONS); // Command
   Wire.write(newOption);
@@ -686,8 +689,8 @@ String getHTMLHead() {
 }
 
 /**
- * Get the bootstrap top row navbar, including the Bootstrap links
- */
+   Get the bootstrap top row navbar, including the Bootstrap links
+*/
 String getNavBar() {
   String navbar = "<link href=\"http://www.open-rate.com/bs336.css\" rel=\"stylesheet\">";
   navbar += "<link href=\"http://www.open-rate.com/wl.css\" rel=\"stylesheet\">";
@@ -702,8 +705,8 @@ String getNavBar() {
 }
 
 /**
- * Get the header for a 2 column table
- */
+   Get the header for a 2 column table
+*/
 String getTableHead2Col(String tableHeader, String col1Header, String col2Header) {
   String tableHead = "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
   tableHead += tableHeader;
@@ -712,7 +715,7 @@ String getTableHead2Col(String tableHeader, String col1Header, String col2Header
   tableHead += "</th><th>";
   tableHead += col2Header;
   tableHead += "</th></tr></thead><tbody>";
-  
+
   return tableHead;
 }
 
@@ -722,7 +725,7 @@ String getTableRow2Col(String col1Val, String col2Val) {
   tableRow += "</td><td>";
   tableRow += col2Val;
   tableRow += "</td></tr>";
-  
+
   return tableRow;
 }
 
@@ -732,28 +735,28 @@ String getTableRow2Col(String col1Val, int col2Val) {
   tableRow += "</td><td>";
   tableRow += col2Val;
   tableRow += "</td></tr>";
-  
+
   return tableRow;
 }
 
 String getTableFoot() {
   return "</div></tbody></table>";
 }
-  
+
 /**
- * Get the header for an input form
- */
+   Get the header for an input form
+*/
 String getFormHead(String formTitle) {
   String tableHead = "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
   tableHead += formTitle;
   tableHead += "<form class=\"form-horizontal\">";
-  
+
   return tableHead;
 }
 
 /**
- * Get the header for an input form
- */
+   Get the header for an input form
+*/
 String getFormFoot() {
   return "</form></div>";
 }
