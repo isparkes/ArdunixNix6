@@ -219,6 +219,9 @@
 #define CYCLE_SPEED_MAX                 64
 #define CYCLE_SPEED_DEFAULT             10
 
+#define I2C_TIME_UPDATE 0x00        // send time to the clock module: takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
+#define I2C_GET_OPTIONS 0x01        // get the options from the clock module
+#define I2C_SET_OPTIONS 0x02        // set the options to the clock module  
 
 //**********************************************************************************
 //**********************************************************************************
@@ -797,6 +800,7 @@ void setup()
   // Start the RTC communication
   Wire.begin(I2C_ADDRESS);
   Wire.onReceive(receiveEvent);
+  Wire.onRequest(requestEvent);
  
   // Read EEPROM values
   readEEPROMValues();
@@ -2827,18 +2831,39 @@ int getSmoothedHVSensorReading() {
   return sensorHVSmoothedInt;
 }
 
+//**********************************************************************************
+//**********************************************************************************
+//*                                 I2C interface                                  *
+//**********************************************************************************
+//**********************************************************************************
 
+/**
+ * receive information from the master
+ */
 void receiveEvent(int bytes) {
   // the operation tells us what we are getting
   int operation = Wire.read();
 
-  int newYears = Wire.read();
-  int newMonths = Wire.read();
-  int newDays = Wire.read();
+  if (operation == I2C_TIME_UPDATE) {
+    int newYears = Wire.read();
+    int newMonths = Wire.read();
+    int newDays = Wire.read();
 
-  int newHours = Wire.read();
-  int newMins = Wire.read();
-  int newSecs = Wire.read();
+    int newHours = Wire.read();
+    int newMins = Wire.read();
+    int newSecs = Wire.read();
   
-  displayDate.setSyncTime(nowMillis,newYears,newMonths,newDays,newHours,newMins,newSecs);
+    displayDate.setSyncTime(nowMillis,newYears,newMonths,newDays,newHours,newMins,newSecs);
+  } else if (operation == I2C_SET_OPTIONS) {
+    byte newHourModeByte = Wire.read();
+    boolean newHourMode = (newHourModeByte == 1);
+    displayDate.setHourMode(newHourMode);
+  }
+}
+
+/**
+ * send information to the master
+ */
+void requestEvent() {
+  Wire.write(displayDate.getHourMode());
 }
