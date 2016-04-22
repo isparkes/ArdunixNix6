@@ -31,8 +31,9 @@ String timeServerURL = "";
 
 // I2C Interface definition
 #define I2C_SLAVE_ADDR 0x68
-#define I2C_TIME_UPDATE 0x00        // takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
-
+#define I2C_TIME_UPDATE 0x00        // send time to the clock module: takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
+#define I2C_GET_OPTIONS 0x01        // get the options from the clock module
+#define I2C_SET_OPTIONS 0x02        // set the options to the clock module
 
 ESP8266WebServer server(80);
 
@@ -624,6 +625,28 @@ boolean sendTimeToI2C(String timeString) {
   Wire.write(hour);
   Wire.write(minute);
   Wire.write(sec);
+  int error = Wire.endTransmission();
+  return (error == 0);
+}
+
+/**
+   Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
+*/
+boolean getClockOptionsFromI2C() {
+  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.write(I2C_GET_OPTIONS); // Command
+  byte receivedByte = Wire.read();
+  int error = Wire.endTransmission();
+  return (error == 0);
+}
+
+/**
+   Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
+*/
+boolean getClockOptionsFromI2C(byte newOption) {
+  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.write(I2C_SET_OPTIONS); // Command
+  Wire.write(newOption);
   int error = Wire.endTransmission();
   return (error == 0);
 }
