@@ -325,18 +325,21 @@ void timeServerPageHandler()
   response_message += getNavBar();
 
   response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Set Time Server URL</h3>";
-  response_message += "<form role=\"form\"><div class=\"form-group\"><input type=\"text\" class=\"form-control input-lg\" name=\"timeserverurl\" placeholder=\"URL\"";
 
+  // form header
+  response_message += "<form class=\"form-horizontal\"><div class=\"form-group\"><label class=\"control-label col-xs-3\" for=\"timeserverurl\">URL:</label><div class=\"col-xs-8\">";
+  response_message += "<input type=\"text\" class=\"form-control\" name=\"timeserverurl\" placeholder=\"URL\"";
+        
   // only fill in the value we have if it looks realistic
   if (timeServerURL.length() > 10) {
     response_message += " value=\"";
     response_message += timeServerURL;
-    response_message += "\"";
+    response_message += "\">";
   }
 
-  response_message += "><span class=\"input-group-btn\"></div>";
   response_message += "<div class=\"form-group\"><div class=\"col-xs-offset-3 col-xs-9\"><input type=\"submit\" class=\"btn btn-primary\" value=\"Set\"></div></div>";
-  response_message += "</form></div>";
+
+  response_message += "</form>";
 
   response_message += getHTMLFoot();
 
@@ -710,7 +713,7 @@ void clockConfigPageHandler()
   //response_message += getCheckBox("useScrollback", "on", "Use scrollback effect", (configScrollback == 1));
 
   // Suppress ACP
-  response_message += getRadioGroupHeader("Use ACP when dimmed:");
+  response_message += getRadioGroupHeader("Suppress ACP when dimmed:");
   if (configSuppressACP) {
     response_message += getRadioButton("suppressACP", "On", "on", true);
     response_message += getRadioButton("suppressACP", "Off", "off", false);

@@ -215,7 +215,7 @@
 #define BACKLIGHT_MAX                   5
 #define BACKLIGHT_DEFAULT               0
 
-#define CYCLE_SPEED_MIN                 4
+#define CYCLE_SPEED_MIN                 2
 #define CYCLE_SPEED_MAX                 64
 #define CYCLE_SPEED_DEFAULT             10
 
