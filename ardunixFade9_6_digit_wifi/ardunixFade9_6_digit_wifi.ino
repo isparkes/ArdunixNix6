@@ -149,7 +149,7 @@
 #define MODE_FADE_STEPS_DOWN            15 // Mode "09"
 #define MODE_DISPLAY_SCROLL_STEPS_UP    16 // Mode "10"
 #define MODE_DISPLAY_SCROLL_STEPS_DOWN  17 // Mode "11"
-
+  
 // Back light
 #define MODE_BACKLIGHT_MODE             18 // Mode "12"
 #define MODE_RED_CNL                    19 // Mode "13"
@@ -847,7 +847,7 @@ void setup()
   
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
-  displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
+  displayDate.setSyncTime(nowMillis,16,5,1,0,0,0);
 
   // Recover the time from the RTC
   nowMillis = millis();

@@ -290,16 +290,14 @@ void i2cScanPageHandler()
   String response_message = getHTMLHead();
   response_message += getNavBar();
 
-  response_message += getTableHead2Col("I2C Slaves", "Addr Dec", "Addr Hex");
+  response_message += getTableHead2Col("I2C Slaves", "Message", "Address");
 
   for (int idx = 0 ; idx < 128 ; idx++)
   {
     Wire.beginTransmission(idx);
     int error = Wire.endTransmission();
     if (error == 0) {
-      String hexAddr = String(printf("%x", idx));
-      String decAddr = String(printf("%d", idx));
-      response_message += getTableRow2Col(decAddr, hexAddr);
+      response_message += getTableRow2Col("Found",idx);
     }
   }
 
@@ -421,14 +419,14 @@ void clockConfigPageHandler()
 #endif
     if ((server.arg("12h24hMode") == "24h") && (configHourMode)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set 24h mode");
+      Serial.println("I2C --> Set 24h mode");
 #endif
       setClockOption12H24H(true);
     }
 
     if ((server.arg("12h24hMode") == "12h")  && (!configHourMode)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set 12h mode");
+      Serial.println("I2C --> Set 12h mode");
 #endif
       setClockOption12H24H(false);
     }
@@ -443,14 +441,14 @@ void clockConfigPageHandler()
 #endif
     if ((server.arg("blankLeading") == "blank") && (!configBlankLead)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set blank leading zero");
+      Serial.println("I2C --> Set blank leading zero");
 #endif
       setClockOptionBlankLeadingZero(false);
     }
 
     if ((server.arg("blankLeading") == "show") && (configBlankLead)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set show leading zero");
+      Serial.println("I2C --> Set show leading zero");
 #endif
       setClockOptionBlankLeadingZero(true);
     }
@@ -465,14 +463,14 @@ void clockConfigPageHandler()
 #endif
     if ((server.arg("useScrollback") == "on") && (!configScrollback)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set scrollback on");
+      Serial.println("I2C --> Set scrollback on");
 #endif
       setClockOptionScrollback(false);
     }
 
     if ((server.arg("useScrollback") == "off") && (configScrollback)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set scrollback off");
+      Serial.println("I2C --> Set scrollback off");
 #endif
       setClockOptionScrollback(true);
     }
@@ -487,14 +485,14 @@ void clockConfigPageHandler()
 #endif
     if ((server.arg("suppressACP") == "on") && (!configSuppressACP)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set suppressACP on");
+      Serial.println("I2C --> Set suppressACP on");
 #endif
       setClockOptionSuppressACP(false);
     }
 
     if ((server.arg("suppressACP") == "off") && (configSuppressACP)) {
 #ifdef DEBUG
-      Serial.println("I2C: Set suppressACP off");
+      Serial.println("I2C --> Set suppressACP off");
 #endif
       setClockOptionSuppressACP(true);
     }
@@ -510,7 +508,7 @@ void clockConfigPageHandler()
     if (newDateFormat != configDateFormat) {
       setClockOptionDateFormat(newDateFormat);
 #ifdef DEBUG
-      Serial.print("I2C: Set dateFormat: "); Serial.println(newDateFormat);
+      Serial.print("I2C --> Set dateFormat: "); Serial.println(newDateFormat);
 #endif
     }
   }
@@ -525,7 +523,7 @@ void clockConfigPageHandler()
     if (newDayBlanking != configDayBlanking) {
       setClockOptionDayBlanking(newDayBlanking);
 #ifdef DEBUG
-      Serial.print("I2C: Set dayBlanking: "); Serial.println(newDayBlanking);
+      Serial.print("I2C --> Set dayBlanking: "); Serial.println(newDayBlanking);
 #endif
     }
   }
@@ -540,7 +538,7 @@ void clockConfigPageHandler()
     if (newBlankFrom != configBlankFrom) {
       setClockOptionBlankFrom(newBlankFrom);
 #ifdef DEBUG
-      Serial.print("I2C: Set blankFrom: "); Serial.println(newBlankFrom);
+      Serial.print("I2C --> Set blankFrom: "); Serial.println(newBlankFrom);
 #endif
     }
   }
@@ -555,7 +553,7 @@ void clockConfigPageHandler()
     if (newBlankTo != configBlankTo) {
       setClockOptionBlankTo(newBlankTo);
 #ifdef DEBUG
-      Serial.print("I2C: Set blankTo: "); Serial.println(newBlankTo);
+      Serial.print("I2C --> Set blankTo: "); Serial.println(newBlankTo);
 #endif
     }
   }
@@ -570,7 +568,7 @@ void clockConfigPageHandler()
     if (newFadeSteps != configFadeSteps) {
       setClockOptionFadeSteps(newFadeSteps);
 #ifdef DEBUG
-      Serial.print("I2C: Set fadeSteps: "); Serial.println(newFadeSteps);
+      Serial.print("I2C --> Set fadeSteps: "); Serial.println(newFadeSteps);
 #endif
     }
   }
@@ -585,7 +583,7 @@ void clockConfigPageHandler()
     if (newScrollSteps != configScrollSteps) {
       setClockOptionScrollSteps(newScrollSteps);
 #ifdef DEBUG
-      Serial.print("I2C: Set fadeSteps: "); Serial.println(newScrollSteps);
+      Serial.print("I2C --> Set fadeSteps: "); Serial.println(newScrollSteps);
 #endif
     }
   }
@@ -600,7 +598,7 @@ void clockConfigPageHandler()
     if (newBacklight != configBacklightMode) {
       setClockOptionBacklightMode(newBacklight);
 #ifdef DEBUG
-      Serial.print("I2C: Set backLight: "); Serial.println(newBacklight);
+      Serial.print("I2C --> Set backLight: "); Serial.println(newBacklight);
 #endif
     }
   }
@@ -615,7 +613,7 @@ void clockConfigPageHandler()
     if (newRedCnl != configRedCnl) {
       setClockOptionRedCnl(newRedCnl);
 #ifdef DEBUG
-      Serial.print("I2C: Set redCnl: "); Serial.println(newRedCnl);
+      Serial.print("I2C --> Set redCnl: "); Serial.println(newRedCnl);
 #endif
     }
   }
@@ -630,7 +628,7 @@ void clockConfigPageHandler()
     if (newGreenCnl != configGreenCnl) {
       setClockOptionGrnCnl(newGreenCnl);
 #ifdef DEBUG
-      Serial.print("I2C: Set grnCnl: "); Serial.println(newGreenCnl);
+      Serial.print("I2C --> Set grnCnl: "); Serial.println(newGreenCnl);
 #endif
     }
   }
@@ -645,7 +643,7 @@ void clockConfigPageHandler()
     if (newBlueCnl != configBlueCnl) {
       setClockOptionBluCnl(newBlueCnl);
 #ifdef DEBUG
-      Serial.print("I2C: Set bluCnl: "); Serial.println(newBlueCnl);
+      Serial.print("I2C --> Set bluCnl: "); Serial.println(newBlueCnl);
 #endif
     }
   }
@@ -660,7 +658,7 @@ void clockConfigPageHandler()
     if (newCycleSpeed != configCycleSpeed) {
       setClockOptionCycleSpeed(newCycleSpeed);
 #ifdef DEBUG
-      Serial.print("I2C: Set cycleSpeed: "); Serial.println(newCycleSpeed);
+      Serial.print("I2C --> Set cycleSpeed: "); Serial.println(newCycleSpeed);
 #endif
     }
   }
@@ -760,9 +758,9 @@ void clockConfigPageHandler()
   // Back light
   response_message += getDropDownHeader("Back light:", "backLight", true);
   response_message += getDropDownOption("0", "Fixed RGB backlight, no dimming", (configBacklightMode == 0));
-  response_message += getDropDownOption("1", "Pulsing RGB backlight, no dimming", (configBacklightMode = 1));
-  response_message += getDropDownOption("2", "Cycling RGB backlight, no dimming", (configBacklightMode = 2));
-  response_message += getDropDownOption("3", "Fixed RGB backlight, dims with ambient light", (configBacklightMode = 3));
+  response_message += getDropDownOption("1", "Pulsing RGB backlight, no dimming", (configBacklightMode == 1));
+  response_message += getDropDownOption("2", "Cycling RGB backlight, no dimming", (configBacklightMode == 2));
+  response_message += getDropDownOption("3", "Fixed RGB backlight, dims with ambient light", (configBacklightMode == 3));
   response_message += getDropDownOption("4", "Pulsing RGB backlight, dims with ambient light", (configBacklightMode == 4));
   response_message += getDropDownOption("5", "Cycling RGB backlight, dims with ambient light", (configBacklightMode == 5));
   response_message += getDropDownFooter();
@@ -773,7 +771,7 @@ void clockConfigPageHandler()
   response_message += getNumberInput("Blue intensity:", "bluCnl", 0, 15, configBlueCnl, false);
 
   // Cycle peed
-  response_message += getNumberInput("Backlight Cycle Speed:", "cycleSpeed", 1, 64, configCycleSpeed, false);
+  response_message += getNumberInput("Backlight Cycle Speed:", "cycleSpeed", 2, 64, configCycleSpeed, false);
 
   // form footer
   response_message += "<div class=\"form-group\"><div class=\"col-xs-offset-3 col-xs-9\"><input type=\"submit\" class=\"btn btn-primary\" value=\"Submit\"></div></div>";
@@ -1067,119 +1065,119 @@ boolean getClockOptionsFromI2C() {
   int available = Wire.requestFrom(I2C_SLAVE_ADDR, 16);
 
 #ifdef DEBUG
-  Serial.print("I2C: Received bytes: ");
+  Serial.print("I2C <-- Received bytes: ");
   Serial.println(available);
 #endif
   if (available == 16) {
 
     byte receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got hour mode: ");
+    Serial.print("I2C <-- Got hour mode: ");
     Serial.println(receivedByte);
 #endif
     configHourMode = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got blank lead: ");
+    Serial.print("I2C <-- Got blank lead: ");
     Serial.println(receivedByte);
 #endif
     configBlankLead = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got scrollback: ");
+    Serial.print("I2C <-- Got scrollback: ");
     Serial.println(receivedByte);
 #endif
     configScrollback = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got suppress ACP: ");
+    Serial.print("I2C <-- Got suppress ACP: ");
     Serial.println(receivedByte);
 #endif
     configSuppressACP = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got date format: ");
+    Serial.print("I2C <-- Got date format: ");
     Serial.println(receivedByte);
 #endif
     configDateFormat = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got day blanking: ");
+    Serial.print("I2C <-- Got day blanking: ");
     Serial.println(receivedByte);
 #endif
     configDayBlanking = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got blank hour start: ");
+    Serial.print("I2C <-- Got blank hour start: ");
     Serial.println(receivedByte);
 #endif
     configBlankFrom = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got blank hour end: ");
+    Serial.print("I2C <-- Got blank hour end: ");
     Serial.println(receivedByte);
 #endif
     configBlankTo = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got fade steps: ");
+    Serial.print("I2C <-- Got fade steps: ");
     Serial.println(receivedByte);
 #endif
     configFadeSteps = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got scroll steps: ");
+    Serial.print("I2C <-- Got scroll steps: ");
     Serial.println(receivedByte);
 #endif
     configScrollSteps = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got backlight mode: ");
+    Serial.print("I2C <-- Got backlight mode: ");
     Serial.println(receivedByte);
 #endif
     configBacklightMode = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got red channel: ");
+    Serial.print("I2C <-- Got red channel: ");
     Serial.println(receivedByte);
 #endif
     configRedCnl = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got green channel: ");
+    Serial.print("I2C <-- Got green channel: ");
     Serial.println(receivedByte);
 #endif
     configGreenCnl = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got blue channel: ");
+    Serial.print("I2C <-- Got blue channel: ");
     Serial.println(receivedByte);
 #endif
     configBlueCnl = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got cycle speed: ");
+    Serial.print("I2C <-- Got cycle speed: ");
     Serial.println(receivedByte);
 #endif
     configCycleSpeed = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C: Got trailer: ");
+    Serial.print("I2C <-- Got trailer: ");
     Serial.println(receivedByte);
 #endif
   }
@@ -1252,7 +1250,7 @@ boolean setClockOptionCycleSpeed(byte newMode) {
 */
 boolean setClockOptionBoolean(byte option, boolean newMode) {
 #ifdef DEBUG
-  Serial.print("I2C: setting boolean option: ");
+  Serial.print("I2C --> setting boolean option: ");
   Serial.print(option);
   Serial.print(" with value: ");
   Serial.println(newMode);
@@ -1277,7 +1275,7 @@ boolean setClockOptionBoolean(byte option, boolean newMode) {
 */
 boolean setClockOptionByte(byte option, byte newMode) {
 #ifdef DEBUG
-  Serial.print("I2C: setting byte option: ");
+  Serial.print("I2C --> setting byte option: ");
   Serial.print(option);
   Serial.print(" with value: ");
   Serial.println(newMode);
