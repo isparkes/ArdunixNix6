@@ -219,9 +219,25 @@
 #define CYCLE_SPEED_MAX                 64
 #define CYCLE_SPEED_DEFAULT             10
 
-#define I2C_TIME_UPDATE 0x00        // send time to the clock module: takes 6 bytes of arguments yy,mm,dd,HH,MM,ss
-#define I2C_GET_OPTIONS 0x01        // get the options from the clock module
-#define I2C_SET_OPTIONS 0x02        // set the options to the clock module  
+// I2C Interface definition
+#define I2C_SLAVE_ADDR                0x68
+#define I2C_TIME_UPDATE               0x00
+#define I2C_GET_OPTIONS               0x01
+#define I2C_SET_OPTION_12_24          0x02
+#define I2C_SET_OPTION_BLANK_LEAD     0x03
+#define I2C_SET_OPTION_SCROLLBACK     0x04
+#define I2C_SET_OPTION_SUPPRESS_ACP   0x05
+#define I2C_SET_OPTION_DATE_FORMAT    0x06
+#define I2C_SET_OPTION_DAY_BLANKING   0x07
+#define I2C_SET_OPTION_BLANK_START    0x08
+#define I2C_SET_OPTION_BLANK_END      0x09
+#define I2C_SET_OPTION_FADE_STEPS     0x0a
+#define I2C_SET_OPTION_SCROLL_STEPS   0x0b
+#define I2C_SET_OPTION_BACKLIGHT_MODE 0x0c
+#define I2C_SET_OPTION_RED_CHANNEL    0x0d
+#define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
+#define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
+#define I2C_SET_OPTION_CYCLE_SPEED    0x10
 
 //**********************************************************************************
 //**********************************************************************************
@@ -669,9 +685,6 @@ double sensorFactor = (double)(DIGIT_DISPLAY_OFF)/(double)(dimBright-dimDark);
 int sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
 int sensorSmoothCountHV = SENSOR_SMOOTH_READINGS_DEFAULT/8;
 
-// ************************ I2C variables ************************
-#define I2C_ADDRESS 0x68
-
 // Time initial values, overwritten on startup if a time provider is there
 DateTime displayDate;
 
@@ -798,7 +811,7 @@ void setup()
   }
 
   // Start the RTC communication
-  Wire.begin(I2C_ADDRESS);
+  Wire.begin(I2C_SLAVE_ADDR);
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
  
@@ -2854,10 +2867,56 @@ void receiveEvent(int bytes) {
     int newSecs = Wire.read();
   
     displayDate.setSyncTime(nowMillis,newYears,newMonths,newDays,newHours,newMins,newSecs);
-  } else if (operation == I2C_SET_OPTIONS) {
-    byte newHourModeByte = Wire.read();
-    boolean newHourMode = (newHourModeByte == 1);
+  } else if (operation == I2C_SET_OPTION_12_24) {
+    byte readByte1224 = Wire.read();
+    boolean newHourMode = (readByte1224 == 1);
     displayDate.setHourMode(newHourMode);
+    EEPROM.write(EE_12_24,displayDate.getHourMode());
+  } else if (operation == I2C_SET_OPTION_BLANK_LEAD) {
+    byte readByteBlank = Wire.read();
+    blankLeading = (readByteBlank == 1);
+    EEPROM.write(EE_BLANK_LEAD_ZERO,blankLeading);
+  } else if (operation == I2C_SET_OPTION_SCROLLBACK) {
+    byte readByteSB = Wire.read();
+    scrollback = (readByteSB == 1);
+    EEPROM.write(EE_SCROLLBACK,scrollback);
+  } else if (operation == I2C_SET_OPTION_SUPPRESS_ACP) {
+    byte readByteSA = Wire.read();
+    suppressACP = (readByteSA == 1);
+      EEPROM.write(EE_SUPPRESS_ACP,suppressACP);
+  } else if (operation == I2C_SET_OPTION_DATE_FORMAT) {
+    dateFormat = Wire.read();
+    EEPROM.write(EE_DATE_FORMAT, dateFormat);
+  } else if (operation == I2C_SET_OPTION_DAY_BLANKING) {
+    dayBlanking = Wire.read();
+    EEPROM.write(EE_DAY_BLANKING, dayBlanking);
+  } else if (operation == I2C_SET_OPTION_BLANK_START) {
+    blankHourStart = Wire.read();
+    EEPROM.write(EE_HOUR_BLANK_START,blankHourStart);
+  } else if (operation == I2C_SET_OPTION_BLANK_END) {
+    blankHourEnd = Wire.read();
+    EEPROM.write(EE_HOUR_BLANK_END,blankHourEnd);
+  } else if (operation == I2C_SET_OPTION_FADE_STEPS) {
+    fadeSteps = Wire.read();
+    EEPROM.write(EE_FADE_STEPS,fadeSteps);
+  } else if (operation == I2C_SET_OPTION_SCROLL_STEPS) {
+    scrollSteps = Wire.read();
+    EEPROM.write(EE_SCROLL_STEPS,scrollSteps);
+  } else if (operation == I2C_SET_OPTION_BACKLIGHT_MODE) {
+    backlightMode = Wire.read();
+    EEPROM.write(EE_BACKLIGHT_MODE,backlightMode);
+  } else if (operation == I2C_SET_OPTION_RED_CHANNEL) {
+    redCnl = Wire.read();
+    EEPROM.write(EE_RED_INTENSITY,redCnl);
+  } else if (operation == I2C_SET_OPTION_GREEN_CHANNEL) {
+    grnCnl = Wire.read();
+    EEPROM.write(EE_GRN_INTENSITY,grnCnl);
+  } else if (operation == I2C_SET_OPTION_BLUE_CHANNEL) {
+    bluCnl = Wire.read();
+    EEPROM.write(EE_BLU_INTENSITY,bluCnl);
+  } else if (operation == I2C_SET_OPTION_CYCLE_SPEED) {
+    cycleSpeed = Wire.read();
+    EEPROM.write(EE_CYCLE_SPEED,cycleSpeed);
   }
 }
 
@@ -2865,5 +2924,35 @@ void receiveEvent(int bytes) {
  * send information to the master
  */
 void requestEvent() {
-  Wire.write(displayDate.getHourMode());
+  byte configArray[16];
+  int idx = 0;
+  configArray[idx++] = encodeBooleanForI2C(displayDate.getHourMode());
+  configArray[idx++] = encodeBooleanForI2C(blankLeading); 
+  configArray[idx++] = encodeBooleanForI2C(scrollback);
+  configArray[idx++] = encodeBooleanForI2C(suppressACP);
+  configArray[idx++] = dateFormat;
+  configArray[idx++] = dayBlanking;
+  configArray[idx++] = blankHourStart;
+  configArray[idx++] = blankHourEnd;
+  configArray[idx++] = fadeSteps;
+  configArray[idx++] = scrollSteps;
+  configArray[idx++] = backlightMode;
+  configArray[idx++] = redCnl;
+  configArray[idx++] = grnCnl;
+  configArray[idx++] = bluCnl;
+  configArray[idx++] = cycleSpeed;
+  configArray[idx++] = 27;
+ 
+  Wire.write(configArray,16);
 }
+
+byte encodeBooleanForI2C(boolean valueToProcess) {
+  if (valueToProcess) {
+    byte byteToSend = 1;
+    return byteToSend;
+  } else {
+    byte byteToSend = 0;
+    return byteToSend;
+  }
+}
+
