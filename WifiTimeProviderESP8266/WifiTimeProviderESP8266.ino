@@ -835,7 +835,9 @@ String getTimeFromTimeZoneServer() {
   String payload = "ERROR";
 
   http.begin(timeServerURL);
-
+  String espId = "";espId += ESP.getChipId();
+  http.addHeader("ESP",espId);
+  
   int httpCode = http.GET();
 
   if (httpCode > 0) {
