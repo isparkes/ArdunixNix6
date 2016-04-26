@@ -3,6 +3,9 @@
     - Starts the ESP8266 as an access point and provides a web interface to configure and store WiFi credentials.
     - Allows the time server to be defined and stored
 
+   Program with following settings (status line in IDE):
+
+   Generic ESP8266 Module, 80MHz, 80MHz, DIO, 115200, 1M (64k SPIFFS), ck, Disabled, none
 
    Go to http://192.168.4.1 in a web browser connected to this access point to see it
 */
@@ -117,8 +120,6 @@ void setup()
   /* Set page handler functions */
   server.on("/",            rootPageHandler);
   server.on("/wlan_config", wlanPageHandler);
-  server.on("/scan_i2c",    i2cScanPageHandler);
-  server.on("/info",        infoPageHandler);
   server.on("/time",        timeServerPageHandler);
   server.on("/reset",       resetPageHandler);
   server.on("/updatetime",  updateTimePageHandler);
@@ -200,7 +201,36 @@ void rootPageHandler()
   String uptimeString = ""; uptimeString += upDays; uptimeString += " days, "; uptimeString += upHours, uptimeString += " hours, "; uptimeString += upMins; uptimeString += " mins, "; uptimeString += upSecs; uptimeString += " secs";
 
   response_message += getTableRow2Col("Uptime", uptimeString);
+
+  String lastUpdateString = ""; lastUpdateString += (millis() - lastI2CUpdateTime);
+  response_message += getTableRow2Col("Time last update", lastUpdateString);
+
+  // Scan I2C bus
+  for (int idx = 0 ; idx < 128 ; idx++)
+  {
+    Wire.beginTransmission(idx);
+    int error = Wire.endTransmission();
+    if (error == 0) {
+      response_message += getTableRow2Col("Found I2C slave at",idx);
+    }
+  }
+
+  
   response_message += getTableFoot();
+  
+  response_message += getTableHead2Col("ESP8266 information", "Name", "Value");
+  response_message += getTableRow2Col("Sketch size", ESP.getSketchSize());
+  response_message += getTableRow2Col("Free sketch size", ESP.getFreeSketchSpace());
+  response_message += getTableRow2Col("Free heap", ESP.getFreeHeap());
+  response_message += getTableRow2Col("Boot version", ESP.getBootVersion());
+  response_message += getTableRow2Col("CPU Freqency (MHz)", ESP.getCpuFreqMHz());
+  response_message += getTableRow2Col("SDK version", ESP.getSdkVersion());
+  response_message += getTableRow2Col("Chip ID", ESP.getChipId());
+  response_message += getTableRow2Col("Flash Chip ID", ESP.getFlashChipId());
+  response_message += getTableRow2Col("Flash size", ESP.getFlashChipRealSize());
+  response_message += getTableRow2Col("Vcc", ESP.getVcc());
+  response_message += getTableFoot();
+
   response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
@@ -283,31 +313,6 @@ void wlanPageHandler()
 }
 
 /**
-   Scan the I2C bus - master mode looking for slaves
-*/
-void i2cScanPageHandler()
-{
-  String response_message = getHTMLHead();
-  response_message += getNavBar();
-
-  response_message += getTableHead2Col("I2C Slaves", "Message", "Address");
-
-  for (int idx = 0 ; idx < 128 ; idx++)
-  {
-    Wire.beginTransmission(idx);
-    int error = Wire.endTransmission();
-    if (error == 0) {
-      response_message += getTableRow2Col("Found",idx);
-    }
-  }
-
-  response_message += getTableFoot();
-  response_message += getHTMLFoot();
-
-  server.send(200, "text/html", response_message);
-}
-
-/**
    Get the local time from the time server, and modify the time server URL if needed
 */
 void timeServerPageHandler()
@@ -339,7 +344,7 @@ void timeServerPageHandler()
 
   response_message += "<div class=\"form-group\"><div class=\"col-xs-offset-3 col-xs-9\"><input type=\"submit\" class=\"btn btn-primary\" value=\"Set\"></div></div>";
 
-  response_message += "</form>";
+  response_message += "</div></form>";
 
   response_message += getHTMLFoot();
 
@@ -365,29 +370,6 @@ void updateTimePageHandler()
     response_message += "<div class=\"alert alert-danger fade in\"><strong>Error!</strong> Update was not sent.</div>";
   }
 
-  response_message += getHTMLFoot();
-
-  server.send(200, "text/html", response_message);
-}
-
-/**
-   Give info about the ESP8266
-*/
-void infoPageHandler() {
-  String response_message = getHTMLHead();
-  response_message += getNavBar();
-  response_message += getTableHead2Col("ESP8266 information", "Name", "Value");
-  response_message += getTableRow2Col("Sketch size", ESP.getSketchSize());
-  response_message += getTableRow2Col("Free sketch size", ESP.getFreeSketchSpace());
-  response_message += getTableRow2Col("Free heap", ESP.getFreeHeap());
-  response_message += getTableRow2Col("Boot version", ESP.getBootVersion());
-  response_message += getTableRow2Col("CPU Freqency (MHz)", ESP.getCpuFreqMHz());
-  response_message += getTableRow2Col("SDK version", ESP.getSdkVersion());
-  response_message += getTableRow2Col("Chip ID", ESP.getChipId());
-  response_message += getTableRow2Col("Flash Chip ID", ESP.getFlashChipId());
-  response_message += getTableRow2Col("Flash size", ESP.getFlashChipRealSize());
-  response_message += getTableRow2Col("Vcc", ESP.getVcc());
-  response_message += getTableFoot();
   response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
@@ -1312,7 +1294,7 @@ String getNavBar() {
   navbar += "<div class=\"container-fluid\"><div class=\"navbar-header\"><button type=\"button\" class=\"navbar-toggle collapsed\" data-toggle=\"collapse\" data-target=\"#navbar\" aria-expanded=\"false\" aria-controls=\"navbar\">";
   navbar += "<span class=\"sr-only\">Toggle navigation</span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span></button>";
   navbar += "<a class=\"navbar-brand\" href=\"#\">Arduino Nixie Clock Time Module</a></div><div id=\"navbar\" class=\"navbar-collapse collapse\"><ul class=\"nav navbar-nav navbar-right\">";
-  navbar += "<li><a href=\"/\">Summary</a></li><li><a href=\"/time\">Configure Time Server</a></li><li><a href=\"/wlan_config\">Configure WLAN settings</a></li><li><a href=\"/clockconfig\">Configure clock settings</a></li><li><a href=\"/scan_i2c\">Scan I2C</a></li><li><a href=\"/info\">ESP8266 Info</a></li><li><a href=\"/updatetime\">Update the time now</a></li></ul></div></div></nav>";
+  navbar += "<li><a href=\"/\">Summary</a></li><li><a href=\"/time\">Configure Time Server</a></li><li><a href=\"/wlan_config\">Configure WLAN settings</a></li><li><a href=\"/clockconfig\">Configure clock settings</a></li></ul></div></div></nav>";
   return navbar;
 }
 
