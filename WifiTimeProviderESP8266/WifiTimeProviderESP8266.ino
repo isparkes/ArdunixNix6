@@ -18,6 +18,8 @@
 #include <EEPROM.h>
 #include <time.h>
 
+#define SOFTWARE_VERSION "1.0.0"
+
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
 // Access point credentials, be default it is as open AP
@@ -205,6 +207,8 @@ void rootPageHandler()
   String lastUpdateString = ""; lastUpdateString += (millis() - lastI2CUpdateTime);
   response_message += getTableRow2Col("Time last update", lastUpdateString);
 
+  response_message += getTableRow2Col("Version", SOFTWARE_VERSION);
+  
   // Scan I2C bus
   for (int idx = 0 ; idx < 128 ; idx++)
   {
