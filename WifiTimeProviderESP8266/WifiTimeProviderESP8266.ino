@@ -26,6 +26,7 @@
 const char *ap_ssid = "NixieTimeModule";
 const char *ap_password = "";
 
+// Pin 1 on ESP-01, pin 2 on ESP-12E
 #define blueLedPin 1
 boolean blueLedState = true;
 
@@ -172,7 +173,9 @@ void rootPageHandler()
 {
   String response_message = getHTMLHead();
   response_message += getNavBar();
-  response_message += getTableHead2Col("Current Configuration", "Name", "Value");
+
+  // Status table
+  response_message += getTableHead2Col("Current Status", "Name", "Value");
 
   if (WiFi.status() == WL_CONNECTED)
   {
@@ -182,7 +185,9 @@ void rootPageHandler()
     String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
 
     response_message += getTableRow2Col("WLAN IP", ipStr);
+    response_message += getTableRow2Col("WLAN MAC", WiFi.macAddress());
     response_message += getTableRow2Col("AP IP", ipStrAP);
+    response_message += getTableRow2Col("AP MAC", WiFi.softAPmacAddress());
     response_message += getTableRow2Col("WLAN SSID", WiFi.SSID());
     response_message += getTableRow2Col("Time server URL", timeServerURL);
     response_message += getTableRow2Col("Time according to server", getTimeFromTimeZoneServer());
@@ -221,7 +226,8 @@ void rootPageHandler()
 
   
   response_message += getTableFoot();
-  
+
+  // ESP8266 Info table
   response_message += getTableHead2Col("ESP8266 information", "Name", "Value");
   response_message += getTableRow2Col("Sketch size", ESP.getSketchSize());
   response_message += getTableRow2Col("Free sketch size", ESP.getFreeSketchSpace());
@@ -240,6 +246,9 @@ void rootPageHandler()
   server.send(200, "text/html", response_message);
 }
 
+// ===================================================================================================================
+// ===================================================================================================================
+
 /**
    WLAN page allows users to set the WiFi credentials
 */
@@ -250,11 +259,23 @@ void wlanPageHandler()
   {
     if (server.hasArg("password"))
     {
+#ifdef DEBUG
+    Serial.println("Connect WiFi");
+    Serial.print("SSID:");
+    Serial.println(server.arg("ssid"));
+    Serial.print("PASSWORD:");
+    Serial.println(server.arg("password"));
+#endif
       WiFi.begin(server.arg("ssid").c_str(), server.arg("password").c_str());
     }
     else
     {
       WiFi.begin(server.arg("ssid").c_str());
+#ifdef DEBUG
+    Serial.println("Connect WiFi");
+    Serial.print("SSID:");
+    Serial.println(server.arg("ssid"));
+#endif
     }
 
     while (WiFi.status() != WL_CONNECTED)
@@ -277,44 +298,66 @@ void wlanPageHandler()
 #endif
   }
 
+  String esid = getSSIDFromEEPROM();
+  
   String response_message = getHTMLHead();
   response_message += getNavBar();
 
-  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
-  response_message += "Set WIFI credentials";
-  response_message += "</h3>";
-
+  // form header
+  response_message += getFormHead("Set Configuration");
+  
   // Get number of visible access points
   int ap_count = WiFi.scanNetworks();
 
+  // Day blanking
+  response_message += getDropDownHeader("WiFi:", "ssid", true);
+  
   if (ap_count == 0)
   {
-    response_message += "No access points found.<br>";
+    response_message += getDropDownOption("-1", "No wifi found", true);
   }
   else
   {
-    response_message += "<form method=\"get\"><div class=\"form-group\">";
-
     // Show access points
     for (uint8_t ap_idx = 0; ap_idx < ap_count; ap_idx++)
     {
-      response_message += "<input type=\"radio\" name=\"ssid\" value=\"" + String(WiFi.SSID(ap_idx)) + "\">";
-      response_message += String(WiFi.SSID(ap_idx)) + " (RSSI: " + WiFi.RSSI(ap_idx) + ")";
-      (WiFi.encryptionType(ap_idx) == ENC_TYPE_NONE) ? response_message += " " : response_message += "*";
-      response_message += "<br><br>";
+      String ssid = String(WiFi.SSID(ap_idx));
+      String wlanId = String(WiFi.SSID(ap_idx));
+      (WiFi.encryptionType(ap_idx) == ENC_TYPE_NONE) ? wlanId += "" : wlanId += " (requires password)";
+      wlanId += " (RSSI: ";
+      wlanId += String(WiFi.RSSI(ap_idx));
+      wlanId += ")";
+
+#ifdef DEBUG
+    Serial.println("");
+    Serial.print("found ssid: ");
+    Serial.println(WiFi.SSID(ap_idx));
+    Serial.print("Is current: ");
+    if ((esid==ssid)) {
+      Serial.println("Y");
+    } else {
+      Serial.println("N");
+    }
+#endif
+
+      response_message += getDropDownOption(ssid, wlanId, (esid==ssid));
     }
 
-    response_message += "WiFi password (if required):<br>";
-    response_message += "<input type=\"text\" name=\"password\"><br>";
-    response_message += "<input type=\"submit\" value=\"Connect\">";
-    response_message += "</div></form>";
+    response_message += getDropDownFooter();
+    
+    response_message += getTextInput("WiFi password (if required)","password","",false);
+    response_message += getSubmitButton("Set");
+    
+    response_message += getFormFoot();
   }
 
-  response_message += "</div>";
-  response_message += "</body></html>";
+  response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
+
+// ===================================================================================================================
+// ===================================================================================================================
 
 /**
    Get the local time from the time server, and modify the time server URL if needed
@@ -333,27 +376,25 @@ void timeServerPageHandler()
   String response_message = getHTMLHead();
   response_message += getNavBar();
 
-  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Set Time Server URL</h3>";
-
   // form header
-  response_message += "<form class=\"form-horizontal\"><div class=\"form-group\"><label class=\"control-label col-xs-3\" for=\"timeserverurl\">URL:</label><div class=\"col-xs-8\">";
-  response_message += "<input type=\"text\" class=\"form-control\" name=\"timeserverurl\" placeholder=\"URL\"";
-        
+  response_message += getFormHead("Select time server");
+
   // only fill in the value we have if it looks realistic
-  if (timeServerURL.length() > 10) {
-    response_message += " value=\"";
-    response_message += timeServerURL;
-    response_message += "\">";
+  if ((timeServerURL.length() < 10) || (timeServerURL.length() > 250)) {
+    timeServerURL = "";
   }
 
-  response_message += "<div class=\"form-group\"><div class=\"col-xs-offset-3 col-xs-9\"><input type=\"submit\" class=\"btn btn-primary\" value=\"Set\"></div></div>";
-
-  response_message += "</div></form>";
-
+  response_message += getTextInputWide("URL", "timeserverurl", timeServerURL, false);
+  response_message += getSubmitButton("Set");
+        
+  response_message += getFormFoot();
   response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
+
+// ===================================================================================================================
+// ===================================================================================================================
 
 /**
    Get the local time from the time server, and send it via I2C right now
@@ -369,9 +410,9 @@ void updateTimePageHandler()
   response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Send time to I2C right now</h3>";
 
   if (result) {
-    response_message += "<div class=\"alert alert-success fade in\"><strong>Success!</strong> Update sent.</div>";
+    response_message += "<div class=\"alert alert-success fade in\"><strong>Success!</strong> Update sent.</div></div>";
   } else {
-    response_message += "<div class=\"alert alert-danger fade in\"><strong>Error!</strong> Update was not sent.</div>";
+    response_message += "<div class=\"alert alert-danger fade in\"><strong>Error!</strong> Update was not sent.</div></div>";
   }
 
   response_message += getHTMLFoot();
@@ -379,22 +420,28 @@ void updateTimePageHandler()
   server.send(200, "text/html", response_message);
 }
 
+// ===================================================================================================================
+// ===================================================================================================================
+
 /**
    Reset the EEPROM and stored values
 */
 void resetPageHandler() {
-  storeCredentialsInEEPROM("", "");
-  storeTimeServerURLInEEPROM("");
+  resetEEPROM();
 
   String response_message = getHTMLHead();
   response_message += getNavBar();
-  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
-  response_message += "Reset done";
-  response_message += "</h3></div>";
+
+  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Send time to I2C right now</h3>";
+  response_message += "<div class=\"alert alert-success fade in\"><strong>Success!</strong> Reset done.</div></div>";
+
   response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
+
+// ===================================================================================================================
+// ===================================================================================================================
 
 /**
    Page for the clock configuration.
@@ -661,7 +708,7 @@ void clockConfigPageHandler()
   response_message += getNavBar();
 
   // form header
-  response_message += "<div class=\"container\" role=\"main\"><h3>Set Clock Configuration</h3><form class=\"form-horizontal\">";
+  response_message += getFormHead("Set Configuration");
 
   // 12/24 mode
   response_message += getRadioGroupHeader("12H/24H mode:");
@@ -763,14 +810,18 @@ void clockConfigPageHandler()
   response_message += getNumberInput("Backlight Cycle Speed:", "cycleSpeed", 2, 64, configCycleSpeed, false);
 
   // form footer
-  response_message += "<div class=\"form-group\"><div class=\"col-xs-offset-3 col-xs-9\"><input type=\"submit\" class=\"btn btn-primary\" value=\"Submit\"></div></div>";
-  response_message += "</div></form>";
+  response_message += getSubmitButton("Set");
+  
+  response_message += "</form></div>";
 
   // all done
   response_message += getHTMLFoot();
 
   server.send(200, "text/html", response_message);
 }
+
+// ===================================================================================================================
+// ===================================================================================================================
 
 /* Called if requested page is not found */
 void handleNotFound()
@@ -977,6 +1028,15 @@ void storeTimeServerURLInEEPROM(String timeServerURL) {
     } else {
       EEPROM.write(96 + i, 0);
     }
+  }
+
+  EEPROM.commit();
+}
+
+void resetEEPROM() {
+  for (int i = 0; i < 344; i++)
+  {
+    EEPROM.write(i, 0);
   }
 
   EEPROM.commit();
@@ -1285,24 +1345,27 @@ boolean setClockOptionByte(byte option, byte newMode) {
 // ----------------------------------------------------------------------------------------------------
 
 String getHTMLHead() {
-  return "<!DOCTYPE html><html><head><title>Arduino Nixie Clock Time Module</title></head><body>";
+  String header = "<!DOCTYPE html><html><head>";
+  header += "<link href=\"http://www.open-rate.com/bs336.css\" rel=\"stylesheet\" type=\"text/css\">";
+  header += "<link href=\"http://www.open-rate.com/wl.css\" rel=\"stylesheet\" type=\"text/css\">";
+  header += "<script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js\" type=\"text/javascript\"></script>";
+  header += "<script src=\"http://www.open-rate.com/bs.js\" type=\"text/javascript\"></script>";
+  header += "<title>Arduino Nixie Clock Time Module</title></head>";
+  header += "<body>";
+  return header;
 }
 
 /**
    Get the bootstrap top row navbar, including the Bootstrap links
 */
 String getNavBar() {
-  String navbar = "<link href=\"http://www.open-rate.com/bs336.css\" rel=\"stylesheet\" type=\"text/css\">";
-  navbar += "<link href=\"http://www.open-rate.com/wl.css\" rel=\"stylesheet\" type=\"text/css\">";
-  navbar += "<script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js\" type=\"text/javascript\"></script>";
-  navbar += "<script src=\"http://www.open-rate.com/bs.js\" type=\"text/javascript\"></script>";
-  navbar += "<nav class=\"navbar navbar-inverse navbar-fixed-top\">";
+  String navbar = "<nav class=\"navbar navbar-inverse navbar-fixed-top\">";
   navbar += "<div class=\"container-fluid\"><div class=\"navbar-header\"><button type=\"button\" class=\"navbar-toggle collapsed\" data-toggle=\"collapse\" data-target=\"#navbar\" aria-expanded=\"false\" aria-controls=\"navbar\">";
   navbar += "<span class=\"sr-only\">Toggle navigation</span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span><span class=\"icon-bar\"></span></button>";
   navbar += "<a class=\"navbar-brand\" href=\"#\">Arduino Nixie Clock Time Module</a></div><div id=\"navbar\" class=\"navbar-collapse collapse\"><ul class=\"nav navbar-nav navbar-right\">";
   navbar += "<li><a href=\"/\">Summary</a></li><li><a href=\"/time\">Configure Time Server</a></li><li><a href=\"/wlan_config\">Configure WLAN settings</a></li><li><a href=\"/clockconfig\">Configure clock settings</a></li></ul></div></div></nav>";
   return navbar;
-}
+} 
 
 /**
    Get the header for a 2 column table
@@ -1349,7 +1412,7 @@ String getTableFoot() {
 String getFormHead(String formTitle) {
   String tableHead = "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">";
   tableHead += formTitle;
-  tableHead += "<form class=\"form-horizontal\">";
+  tableHead += "</h3><form class=\"form-horizontal\">";
 
   return tableHead;
 }
@@ -1449,6 +1512,8 @@ String getNumberInput(String heading, String input_name, byte minVal, byte maxVa
   result += heading;
   result += "</label><div class=\"col-xs-2\"><input type=\"number\" class=\"form-control\" name=\"";
   result += input_name;
+  result += "\" id=\"";
+  result += input_name;
   result += "\" min=\"";
   result += minVal;
   result += "\" max=\"";
@@ -1460,6 +1525,74 @@ String getNumberInput(String heading, String input_name, byte minVal, byte maxVa
   }
   result += "\"></div></div>";
 
+  return result;
+}
+
+String getNumberInputWide(String heading, String input_name, byte minVal, byte maxVal, byte value, boolean disabled) {
+  String result = "<div class=\"form-group\"><label class=\"control-label col-xs-8\" for=\"";
+  result += input_name;
+  result += "\">";
+  result += heading;
+  result += "</label><div class=\"col-xs-2\"><input type=\"number\" class=\"form-control\" name=\"";
+  result += input_name;
+  result += "\" id=\"";
+  result += input_name;
+  result += "\" min=\"";
+  result += minVal;
+  result += "\" max=\"";
+  result += maxVal;
+  result += "\" value=\"";
+  result += value;
+  if (disabled) {
+    result += " disabled";
+  }
+  result += "\"></div></div>";
+
+  return result;
+}
+
+String getTextInput(String heading, String input_name, String value, boolean disabled) {
+  String result = "<div class=\"form-group\"><label class=\"control-label col-xs-3\" for=\"";
+  result += input_name;
+  result += "\">";
+  result += heading;
+  result += "</label><div class=\"col-xs-2\"><input type=\"text\" class=\"form-control\" name=\"";
+  result += input_name;
+  result += "\" id=\"";
+  result += input_name;
+  result += "\" value=\"";
+  result += value;
+  if (disabled) {
+    result += " disabled";
+  }
+  result += "\"></div></div>";
+
+  return result;
+}
+
+String getTextInputWide(String heading, String input_name, String value, boolean disabled) {
+  String result = "<div class=\"form-group\"><label class=\"control-label col-xs-3\" for=\"";
+  result += input_name;
+  result += "\">";
+  result += heading;
+  result += "</label><div class=\"col-xs-8\"><input type=\"text\" class=\"form-control\" name=\"";
+  result += input_name;
+  result += "\" id=\"";
+  result += input_name;
+  result += "\" value=\"";
+  result += value;
+  if (disabled) {
+    result += " disabled";
+  }
+  result += "\"></div></div>";
+
+  return result;
+}
+
+String getSubmitButton(String buttonText) {
+  String result = "<div class=\"form-group\"><div class=\"col-xs-offset-3 col-xs-9\"><input type=\"submit\" class=\"btn btn-primary\" value=\"";
+  result += buttonText;
+  result += "\"></div></div>";
   return result;
 }
 
