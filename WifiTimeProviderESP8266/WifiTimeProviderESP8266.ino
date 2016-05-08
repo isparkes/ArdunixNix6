@@ -767,14 +767,14 @@ void clockConfigPageHandler()
   // Day blanking
   response_message += getDropDownHeader("Day blanking:", "dayBlanking", true);
   response_message += getDropDownOption("0", "Never blank", (configDayBlanking == 0));
-  response_message += getDropDownOption("1", "Blank all days on weekends", (configDayBlanking == 1));
+  response_message += getDropDownOption("1", "Blank all day on weekends", (configDayBlanking == 1));
   response_message += getDropDownOption("2", "Blank all day on week days", (configDayBlanking == 2));
   response_message += getDropDownOption("3", "Blank always", (configDayBlanking == 3));
-  response_message += getDropDownOption("4", "Blank during selected hours on week days and all day at weekends", (configDayBlanking == 4));
-  response_message += getDropDownOption("5", "Blank during selected hours on weekends and all day on week days", (configDayBlanking == 5));
-  response_message += getDropDownOption("6", "Blank during selected hours on weekends", (configDayBlanking == 6));
-  response_message += getDropDownOption("7", "Blank during selected hours on weekends", (configDayBlanking == 7));
-  response_message += getDropDownOption("8", "Blank between start and end hour during week days", (configDayBlanking == 8));
+  response_message += getDropDownOption("4", "Blank during selected hours every day", (configDayBlanking == 4));
+  response_message += getDropDownOption("5", "Blank during selected hours on week days and all day on weekends", (configDayBlanking == 5));
+  response_message += getDropDownOption("6", "Blank during selected hours on weekends and all day on week days", (configDayBlanking == 6));
+  response_message += getDropDownOption("7", "Blank during selected hours on weekends only", (configDayBlanking == 7));
+  response_message += getDropDownOption("8", "Blank during selected hours on week days only", (configDayBlanking == 8));
   response_message += getDropDownFooter();
 
   boolean hoursDisabled = (configDayBlanking < 4);
