@@ -636,9 +636,8 @@ byte fadeState[6]      = {0,0,0,0,0,0};
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
-int dispCount = DIGIT_DISPLAY_COUNT;
 int fadeSteps = FADE_STEPS_DEFAULT;
-float fadeStep = dispCount / fadeSteps;
+float fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
 int digitOffCount = DIGIT_DISPLAY_OFF;
 int scrollSteps = SCROLL_STEPS_DEFAULT;
 boolean scrollback = true;
@@ -1318,7 +1317,7 @@ void loop()
         }
         loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
         displayConfig();
-        fadeStep = dispCount / fadeSteps;
+        fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
       }
 
       if (currentMode == MODE_FADE_STEPS_DOWN) {
@@ -1330,7 +1329,7 @@ void loop()
         }
         loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
         displayConfig();
-        fadeStep = dispCount / fadeSteps;
+        fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
       }
 
       if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
@@ -1591,7 +1590,7 @@ void setLeds()
 
   // calculate the PWM factor, goes between 0.1 and 1
   float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_COUNT;
-
+  
   // Tick led output
   int dimmedPWMVal = (int)((float) ledPWMVal * dimFactor);
   analogWrite(tickLed,dimmedPWMVal);
@@ -1896,7 +1895,6 @@ void outputDisplay()
   int digitOnTime;
   int digitOffTime;
   int digitSwitchTime;
-  float digitSwitchTimeFloat;
   int tmpDispType;
 
   // used to blank all leading digits if 0
@@ -1931,6 +1929,7 @@ void outputDisplay()
         }
         case FADE:
         case NORMAL:
+        case SCROLL:
         {
           digitOnTime = DIGIT_DISPLAY_ON;
           digitOffTime = digitOffCount;
@@ -1945,12 +1944,6 @@ void outputDisplay()
             digitOnTime = DIGIT_DISPLAY_NEVER;
             digitOffTime = DIGIT_DISPLAY_ON;
           }
-          break;
-        }
-        case SCROLL:
-        {
-          digitOnTime = DIGIT_DISPLAY_ON;
-          digitOffTime = digitOffCount;
           break;
         }
     }
