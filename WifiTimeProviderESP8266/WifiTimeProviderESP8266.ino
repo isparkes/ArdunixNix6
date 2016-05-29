@@ -1346,10 +1346,10 @@ boolean setClockOptionByte(byte option, byte newMode) {
 
 String getHTMLHead() {
   String header = "<!DOCTYPE html><html><head>";
-  header += "<link href=\"http://www.open-rate.com/bs336.css\" rel=\"stylesheet\" type=\"text/css\">";
+  header += "<link href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css\" rel=\"stylesheet\" integrity=\"sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7\" crossorigin=\"anonymous\">";
   header += "<link href=\"http://www.open-rate.com/wl.css\" rel=\"stylesheet\" type=\"text/css\">";
-  header += "<script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js\" type=\"text/javascript\"></script>";
-  header += "<script src=\"http://www.open-rate.com/bs.js\" type=\"text/javascript\"></script>";
+  header += "<script src=\"http://code.jquery.com/jquery-1.12.3.min.js\" integrity=\"sha256-aaODHAgvwQW1bFOGXMeX+pC4PZIPsvn2h1sArYOhgXQ=\" crossorigin=\"anonymous\"></script>";
+  header += "<script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js\" integrity=\"sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS\" crossorigin=\"anonymous\"></script>";
   header += "<title>Arduino Nixie Clock Time Module</title></head>";
   header += "<body>";
   return header;
