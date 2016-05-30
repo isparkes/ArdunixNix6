@@ -91,20 +91,23 @@ void setup()
   EEPROM.begin(512);
   delay(10);
 
-  // You can add the password parameter if you want the AP to be password protected
-  if (strlen(ap_password) > 0) {
-    WiFi.softAP(ap_ssid, ap_password);
-  } else {
-    WiFi.softAP(ap_ssid);
-  }
-
   // read eeprom for ssid and pass
   String esid = getSSIDFromEEPROM();
   String epass = getPasswordFromEEPROM();
   timeServerURL = getTimeServerURLFromEEPROM();
 
-  // Connect
+  // Try to connect
   int connectResult = connectToWLAN(esid.c_str(), epass.c_str());
+
+  // If we can't connect, fall back into AP mode
+  if (!connectResult) {
+    // You can add the password parameter if you want the AP to be password protected
+    if (strlen(ap_password) > 0) {
+      WiFi.softAP(ap_ssid, ap_password);
+    } else {
+      WiFi.softAP(ap_ssid);
+    }
+  }
 
   IPAddress apIP = WiFi.softAPIP();
   IPAddress myIP = WiFi.localIP();
@@ -150,8 +153,17 @@ void loop()
     // See if it is time to update the Clock
     if ((millis() - lastI2CUpdateTime) > 60000) {
 
+      // Try to recover the current time
+      String timeStr = getTimeFromTimeZoneServer();
+
       // Send the time to the I2C client
-      boolean result = sendTimeToI2C(getTimeFromTimeZoneServer());
+      boolean result;
+      if (timeStr == "ERROR") {
+        result = false;
+      } else {
+        result = sendTimeToI2C(timeStr);
+      }
+
       if (result) {
         lastI2CUpdateTime = millis();
       }
@@ -848,10 +860,10 @@ void handleNotFound()
 // ----------------------------------------------------------------------------------------------------
 
 /**
-   Try to connect to the WiFi with the given credentials. Give up after 10 seconds
+   Try to connect to the WiFi with the given credentials. Give up after 10 seconds or 20 retries
    if we can't get in.
 */
-int connectToWLAN(const char* ssid, const char* password) {
+boolean connectToWLAN(const char* ssid, const char* password) {
   int retries = 0;
 #ifdef DEBUG
   Serial.println("Connecting to WLAN");
@@ -870,11 +882,11 @@ int connectToWLAN(const char* ssid, const char* password) {
 #endif
     retries++;
     if (retries > 20) {
-      return 1;
+      return false;
     }
   }
 
-  return 0;
+  return true;
 }
 
 /**
@@ -921,6 +933,8 @@ String getSSIDFromEEPROM() {
     byte readByte = EEPROM.read(i);
     if (readByte == 0) {
       break;
+    } else if ((readByte < 32) || (readByte == 0xFF)) {
+      continue;
     }
     esid += char(readByte);
   }
@@ -942,6 +956,8 @@ String getPasswordFromEEPROM() {
     byte readByte = EEPROM.read(i);
     if (readByte == 0) {
       break;
+    } else if ((readByte < 32) || (readByte == 0xFF)) {
+      continue;
     }
     epass += char(EEPROM.read(i));
   }
@@ -999,9 +1015,12 @@ String getTimeServerURLFromEEPROM() {
   for (int i = 96; i < (96 + 256); i++)
   {
     byte readByte = EEPROM.read(i);
-    if (readByte != 0) {
-      eurl += char(readByte);
+    if (readByte == 0) {
+      break;
+    } else if ((readByte < 32) || (readByte == 0xFF)) {
+      continue;
     }
+    eurl += char(readByte);
   }
 #ifdef DEBUG
   Serial.print("Recovered time server URL: ");
