@@ -100,10 +100,19 @@ void setup()
   timeServerURL = getTimeServerURLFromEEPROM();
 
   // Try to connect
-  int connectResult = connectToWLAN(esid.c_str(), epass.c_str());
+  boolean wlanConnected = connectToWLAN(esid.c_str(), epass.c_str());
 
   // If we can't connect, fall back into AP mode
-  if (!connectResult) {
+  if (wlanConnected) {
+#ifdef DEBUG
+    Serial.println("WiFi connected, stop softAP");
+#endif
+    WiFi.mode(WIFI_STA);
+  } else {
+#ifdef DEBUG
+    Serial.println("WiFi not connected, start softAP");
+#endif
+    WiFi.mode(WIFI_AP_STA);
     // You can add the password parameter if you want the AP to be password protected
     if (strlen(ap_password) > 0) {
       WiFi.softAP(ap_ssid, ap_password);
@@ -196,13 +205,9 @@ void rootPageHandler()
   {
     IPAddress ip = WiFi.localIP();
     String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-    IPAddress softapip = WiFi.softAPIP();
-    String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
 
     response_message += getTableRow2Col("WLAN IP", ipStr);
     response_message += getTableRow2Col("WLAN MAC", WiFi.macAddress());
-    response_message += getTableRow2Col("AP IP", ipStrAP);
-    response_message += getTableRow2Col("AP MAC", WiFi.softAPmacAddress());
     response_message += getTableRow2Col("WLAN SSID", WiFi.SSID());
     response_message += getTableRow2Col("Time server URL", timeServerURL);
     response_message += getTableRow2Col("Time according to server", getTimeFromTimeZoneServer());
@@ -212,6 +217,7 @@ void rootPageHandler()
     IPAddress softapip = WiFi.softAPIP();
     String ipStrAP = String(softapip[0]) + '.' + String(softapip[1]) + '.' + String(softapip[2]) + '.' + String(softapip[3]);
     response_message += getTableRow2Col("AP IP", ipStrAP);
+    response_message += getTableRow2Col("AP MAC", WiFi.softAPmacAddress());
   }
 
   // Make the uptime readable
