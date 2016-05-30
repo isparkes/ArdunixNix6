@@ -26,6 +26,9 @@
 const char *ap_ssid = "NixieTimeModule";
 const char *ap_password = "";
 
+const char *serialNumber = "0x0x0x";
+
+
 // Pin 1 on ESP-01, pin 2 on ESP-12E
 #define blueLedPin 1
 boolean blueLedState = true;
@@ -225,6 +228,7 @@ void rootPageHandler()
   response_message += getTableRow2Col("Time last update", lastUpdateString);
 
   response_message += getTableRow2Col("Version", SOFTWARE_VERSION);
+  response_message += getTableRow2Col("Serial Number", serialNumber);
   
   // Scan I2C bus
   for (int idx = 0 ; idx < 128 ; idx++)
@@ -900,6 +904,7 @@ String getTimeFromTimeZoneServer() {
   http.begin(timeServerURL);
   String espId = "";espId += ESP.getChipId();
   http.addHeader("ESP",espId);
+  http.addHeader("ClientID",serialNumber);
   
   int httpCode = http.GET();
 
