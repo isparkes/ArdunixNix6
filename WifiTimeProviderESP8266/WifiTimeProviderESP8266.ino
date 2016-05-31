@@ -158,31 +158,40 @@ void loop()
 {
   server.handleClient();
 
-  // Only works if we are not using the serial interface
-  if ((millis() - lastMillis) > 1000) {
-    lastMillis = millis();
+  int blinkTime;
+  if (WiFi.status() == WL_CONNECTED) {
+    if ((millis() - lastMillis) > 1000) {
+      lastMillis = millis();
+      // See if it is time to update the Clock
+      if ((millis() - lastI2CUpdateTime) > 60000) {
 
-    // See if it is time to update the Clock
-    if ((millis() - lastI2CUpdateTime) > 60000) {
+        // Try to recover the current time
+        String timeStr = getTimeFromTimeZoneServer();
 
-      // Try to recover the current time
-      String timeStr = getTimeFromTimeZoneServer();
+        // Send the time to the I2C client
+        boolean result;
+        if (timeStr == "ERROR") {
+          result = false;
+        } else {
+          result = sendTimeToI2C(timeStr);
+        }
 
-      // Send the time to the I2C client
-      boolean result;
-      if (timeStr == "ERROR") {
-        result = false;
-      } else {
-        result = sendTimeToI2C(timeStr);
+        if (result) {
+          lastI2CUpdateTime = millis();
+        }
       }
-
-      if (result) {
-        lastI2CUpdateTime = millis();
-      }
-    }
 #ifndef DEBUG
-    toggleBlueLED();
+      toggleBlueLED();
 #endif
+    }
+  } else {
+    // offline, flash fast
+    if ((millis() - lastMillis) > 100) {
+      lastMillis = millis();
+#ifndef DEBUG
+      toggleBlueLED();
+#endif
+    }
   }
 }
 
