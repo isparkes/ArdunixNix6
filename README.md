@@ -22,17 +22,37 @@ Nixie Clock based on Arduino<br>
 <br>
 ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
 <br>
-The instruction manual and construction guidelines are available at:<br>
-    http://www.open-rate.com/Downloads/NixieClockInstructionManualRev4V42.pdf<br>
+# ArdunixNix6
+Nixie Clock based on Arduino<br>
 <br>
-For the PCB only, PCB with programmed controller or a kit of parts see:<br>
+//**********************************************************************************<br>
+//**********************************************************************************<br>
+//* Main code for an Arduino based Nixie clock. Features:                          *<br>
+//*  - Real Time Clock interface for DS3231                                        *<br>
+//*  - Digit fading with configurable fade length                                  *<br>
+//*  - Digit scrollback with configurable scroll speed                             *<br>
+//*  - Configuration stored in EEPROM                                              *<br>
+//*  - Low hardware component count (as much as possible done in code)             *<br>
+//*  - Single button operation with software debounce                              *<br>
+//*  - Single 74141 for digit display (other versions use 2 or even 6!)            *<br>
+//*  - Highly modular code                                                         *<br>
+//*  - RGB Back lighting                                                           *<br>
+//*  - Automatic dimming using light sensor                                        *<br>
+//*                                                                                *<br>
+//*  isparkes@protonmail.ch                                                        *<br>
+//*                                                                                *<br>
+//**********************************************************************************<br>
+//**********************************************************************************<br>
 <br>
-  EBay link: http://www.ebay.com/itm/6-Digit-Nixie-Clock-Kit-Easy-Build-No-Tubes-Open-Source-Arduino-/131740553919?ssPageName=STRK:MESE:IT<br>
+ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock<br>
 <br>
+<strong>Instruction and User Manuals (including schematic) can be found at:</strong>
 <br>
-For a fully assembled and tests module see:<br>
+    http://www.open-rate.com/Manuals.html<br>
 <br>
-  EBay link: http://www.ebay.com/itm/6-Digit-Nixie-Clock-Module-No-Tubes-Open-Source-Arduino-Built-and-tested-/131730036509?ssPageName=STRK:MESE:IT<br>
+You can buy this from:
+<br>
+    http://www.open-rate.com/Store.html<br><br>
 <br>
 <br>
 <strong>Construction and prototyping:</strong><br>
