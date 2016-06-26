@@ -18,7 +18,7 @@
 #include <EEPROM.h>
 #include <time.h>
 
-#define SOFTWARE_VERSION "1.0.0"
+#define SOFTWARE_VERSION "1.0.1"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
@@ -926,7 +926,7 @@ boolean connectToWLAN(const char* ssid, const char* password) {
 */
 String getTimeFromTimeZoneServer() {
   HTTPClient http;
-  String payload = "ERROR";
+  String payload;
 
   http.begin(timeServerURL);
   String espId = "";espId += ESP.getChipId();
@@ -943,6 +943,7 @@ String getTimeFromTimeZoneServer() {
   } else {
 #ifdef DEBUG
     Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    payload = http.errorToString(httpCode);
 #endif
   }
 
