@@ -17,7 +17,7 @@
 #include <Wire.h>
 #include <EEPROM.h>
 #include <time.h>
-
+  
 #define SOFTWARE_VERSION "1.0.2"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
@@ -26,7 +26,7 @@
 const char *ap_ssid = "NixieTimeModule";
 const char *ap_password = "";
 
-const char *serialNumber = "0x0x0x";
+const char *serialNumber = "0x0x0x";  // this is to be customized at burn time
 
 
 // Pin 1 on ESP-01, pin 2 on ESP-12E
@@ -37,6 +37,8 @@ long lastMillis = 0;
 long lastI2CUpdateTime = -60000;
 
 String timeServerURL = "";
+
+ADC_MODE(ADC_VCC);
 
 // I2C Interface definition
 #define I2C_SLAVE_ADDR                0x68
@@ -90,7 +92,6 @@ void setup()
   pinMode(blueLedPin, OUTPUT);
 #endif
 
-  // Set that we are using all the 512 bytes of EEPROM
   EEPROM.begin(512);
   delay(10);
 
@@ -258,6 +259,12 @@ void rootPageHandler()
 
   response_message += getTableFoot();
 
+  float voltaje = (float)ESP.getVcc()/(float)1024;
+  voltaje -= 0.01f;  // by default reads high
+  char dtostrfbuffer[15];
+  dtostrf(voltaje,7, 2, dtostrfbuffer);
+  String vccString = String(dtostrfbuffer);
+  
   // ESP8266 Info table
   response_message += getTableHead2Col("ESP8266 information", "Name", "Value");
   response_message += getTableRow2Col("Sketch size", ESP.getSketchSize());
@@ -269,7 +276,7 @@ void rootPageHandler()
   response_message += getTableRow2Col("Chip ID", ESP.getChipId());
   response_message += getTableRow2Col("Flash Chip ID", ESP.getFlashChipId());
   response_message += getTableRow2Col("Flash size", ESP.getFlashChipRealSize());
-  response_message += getTableRow2Col("Vcc", ESP.getVcc());
+  response_message += getTableRow2Col("Vcc", vccString);
   response_message += getTableFoot();
 
   response_message += getHTMLFoot();
