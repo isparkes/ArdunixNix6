@@ -18,7 +18,7 @@
 #include <EEPROM.h>
 #include <time.h>
 
-#define SOFTWARE_VERSION "1.0.1"
+#define SOFTWARE_VERSION "1.0.2"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
@@ -171,7 +171,7 @@ void loop()
 
         // Send the time to the I2C client
         boolean result;
-        if (timeStr == "ERROR") {
+        if (timeStr.substring(1,6) == "ERROR:") {
           result = false;
         } else {
           result = sendTimeToI2C(timeStr);
@@ -245,7 +245,7 @@ void rootPageHandler()
 
   response_message += getTableRow2Col("Version", SOFTWARE_VERSION);
   response_message += getTableRow2Col("Serial Number", serialNumber);
-  
+
   // Scan I2C bus
   for (int idx = 0 ; idx < 128 ; idx++)
   {
@@ -256,7 +256,6 @@ void rootPageHandler()
     }
   }
 
-  
   response_message += getTableFoot();
 
   // ESP8266 Info table
@@ -331,19 +330,19 @@ void wlanPageHandler()
   }
 
   String esid = getSSIDFromEEPROM();
-  
+
   String response_message = getHTMLHead();
   response_message += getNavBar();
 
   // form header
   response_message += getFormHead("Set Configuration");
-  
+
   // Get number of visible access points
   int ap_count = WiFi.scanNetworks();
 
   // Day blanking
   response_message += getDropDownHeader("WiFi:", "ssid", true);
-  
+
   if (ap_count == 0)
   {
     response_message += getDropDownOption("-1", "No wifi found", true);
@@ -376,10 +375,10 @@ void wlanPageHandler()
     }
 
     response_message += getDropDownFooter();
-    
+
     response_message += getTextInput("WiFi password (if required)","password","",false);
     response_message += getSubmitButton("Set");
-    
+
     response_message += getFormFoot();
   }
 
@@ -418,7 +417,7 @@ void timeServerPageHandler()
 
   response_message += getTextInputWide("URL", "timeserverurl", timeServerURL, false);
   response_message += getSubmitButton("Set");
-        
+
   response_message += getFormFoot();
   response_message += getHTMLFoot();
 
@@ -434,17 +433,25 @@ void timeServerPageHandler()
 void updateTimePageHandler()
 {
   String timeString = getTimeFromTimeZoneServer();
-  boolean result = sendTimeToI2C(timeString);
 
   String response_message = getHTMLHead();
   response_message += getNavBar();
 
-  response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Send time to I2C right now</h3>";
 
-  if (result) {
-    response_message += "<div class=\"alert alert-success fade in\"><strong>Success!</strong> Update sent.</div></div>";
+  if (timeString.substring(1,6) == "ERROR:") {
+    response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Send time to I2C right now</h3>";
+    response_message += "<div class=\"alert alert-danger fade in\"><strong>Error!</strong> Could not recover the time from time server. ";
+    response_message += timeString;
+    response_message += "</div></div>";
   } else {
-    response_message += "<div class=\"alert alert-danger fade in\"><strong>Error!</strong> Update was not sent.</div></div>";
+    boolean result = sendTimeToI2C(timeString);
+
+    response_message += "<div class=\"container\" role=\"main\"><h3 class=\"sub-header\">Send time to I2C right now</h3>";
+    if (result) {
+      response_message += "<div class=\"alert alert-success fade in\"><strong>Success!</strong> Update sent.</div></div>";
+    } else {
+      response_message += "<div class=\"alert alert-danger fade in\"><strong>Error!</strong> Update was not sent.</div></div>";
+    }
   }
 
   response_message += getHTMLFoot();
@@ -843,7 +850,7 @@ void clockConfigPageHandler()
 
   // form footer
   response_message += getSubmitButton("Set");
-  
+
   response_message += "</form></div>";
 
   // all done
@@ -921,7 +928,7 @@ boolean connectToWLAN(const char* ssid, const char* password) {
 }
 
 /**
-   Get the local time from the time zone server. Return "ERROR" if something went wrong.
+   Get the local time from the time zone server. Return the error description prefixed by "ERROR:" if something went wrong.
    Uses the global variable timeServerURL.
 */
 String getTimeFromTimeZoneServer() {
@@ -932,7 +939,7 @@ String getTimeFromTimeZoneServer() {
   String espId = "";espId += ESP.getChipId();
   http.addHeader("ESP",espId);
   http.addHeader("ClientID",serialNumber);
-  
+
   int httpCode = http.GET();
 
   if (httpCode > 0) {
@@ -943,7 +950,7 @@ String getTimeFromTimeZoneServer() {
   } else {
 #ifdef DEBUG
     Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-    payload = http.errorToString(httpCode);
+    payload = "ERROR: " + http.errorToString(httpCode);
 #endif
   }
 
