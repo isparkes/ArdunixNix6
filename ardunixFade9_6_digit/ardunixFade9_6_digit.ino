@@ -213,8 +213,8 @@ int ledPin_a_6 = 0;  // low  - Secs  units
 int ledPin_a_5 = 1;  //      - Secs  tens
 int ledPin_a_4 = 2;  //      - Mins  units
 int ledPin_a_3 = 4;  //      - Mins  tens
-int ledPin_a_2 = A2; //      - Hours units
-int ledPin_a_1 = A3; // high - Hours tens 
+int ledPin_a_2 = A3; //      - Hours units
+int ledPin_a_1 = A2; // high - Hours tens 
 
 // button input
 int inputPin1 = 7;
