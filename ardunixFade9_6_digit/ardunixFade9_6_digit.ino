@@ -2,6 +2,7 @@
 //**********************************************************************************
 //* Main code for an Arduino based Nixie clock. Features:                          *
 //*  - Real Time Clock interface for DS3231                                        *
+//*  - WiFi Clock interface for the WiFiModule                                     *
 //*  - Digit fading with configurable fade length                                  *
 //*  - Digit scrollback with configurable scroll speed                             *
 //*  - Configuration stored in EEPROM                                              *
@@ -12,6 +13,7 @@
 //*  - RGB back light management                                                   *
 //*                                                                                *
 //*  isparkes@protonmail.ch                                                        *
+//*  nixie@protonmail.ch                                                           *
 //*                                                                                *
 //**********************************************************************************
 //**********************************************************************************
@@ -55,7 +57,7 @@
 #define EE_HVG_NEED_CALIB   28     // 1 if we need to calibrate the HVGenerator, otherwise 0
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 42
+#define SOFTWARE_VERSION 44
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -219,6 +221,26 @@
 #define CYCLE_SPEED_MIN                 4
 #define CYCLE_SPEED_MAX                 64
 #define CYCLE_SPEED_DEFAULT             10
+
+// I2C Interface definition
+#define I2C_SLAVE_ADDR                0x68
+#define I2C_TIME_UPDATE               0x00
+#define I2C_GET_OPTIONS               0x01
+#define I2C_SET_OPTION_12_24          0x02
+#define I2C_SET_OPTION_BLANK_LEAD     0x03
+#define I2C_SET_OPTION_SCROLLBACK     0x04
+#define I2C_SET_OPTION_SUPPRESS_ACP   0x05
+#define I2C_SET_OPTION_DATE_FORMAT    0x06
+#define I2C_SET_OPTION_DAY_BLANKING   0x07
+#define I2C_SET_OPTION_BLANK_START    0x08
+#define I2C_SET_OPTION_BLANK_END      0x09
+#define I2C_SET_OPTION_FADE_STEPS     0x0a
+#define I2C_SET_OPTION_SCROLL_STEPS   0x0b
+#define I2C_SET_OPTION_BACKLIGHT_MODE 0x0c
+#define I2C_SET_OPTION_RED_CHANNEL    0x0d
+#define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
+#define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
+#define I2C_SET_OPTION_CYCLE_SPEED    0x10
 
 
 //**********************************************************************************
@@ -676,6 +698,8 @@ byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 
 long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
 long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
 
+boolean useRTC = false;
+
 // **************************** LED management ***************************
 int ledPWMVal;
 boolean upOrDown;
@@ -801,11 +825,21 @@ void setup()
   // Start the RTC communication
   Wire.begin();
 
-  // Set up the RTC
+  // Set up the time provider
+  // first try to find the RTC, if not available, go into slave mode
   Wire.beginTransmission(RTC_I2C_ADDRESS);
   if(Wire.endTransmission() == 0) {
     // Make sure the clock keeps running even on battery
     Clock.enableOscillator(true,true,0);
+
+    // show that we are using the RTC
+    useRTC = true;
+  } else {
+    // Wait for I2C in slave mode
+    Wire.end();
+    Wire.begin(I2C_SLAVE_ADDR);
+    Wire.onReceive(receiveEvent);
+    Wire.onRequest(requestEvent);
   }
 
   // Read EEPROM values
@@ -843,12 +877,13 @@ void setup()
   displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
 
   // Recover the time from the RTC
-  nowMillis = millis();
-  getRTCTime();
+  if (useRTC) {
+    getRTCTime(nowMillis);
+  }
 
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
-  secsDisplayEnd = millis() + 1000;
+  secsDisplayEnd = millis() + 1500;
 }
 
 //**********************************************************************************
@@ -865,10 +900,10 @@ void loop()
   // This keeps the outer loop fast and responsive
   if (displayDate.getDeltaMillis(nowMillis) > READ_TIME_PROVIDER_MILLIS) {
     // get the time from the external provider - slow but accurate
-    getRTCTime();
+    getRTCTime(nowMillis);
   } else {
     // Get the time from the internal provider - quick and easy
-    getTimeInt();
+    getTimeInt(nowMillis);
   }
 
   // Check button, we evaluate below  // Get the time from the internal provider
@@ -2041,14 +2076,13 @@ void digitOn(int digit, int value) {
   TCCR1A = tccrOn;
   SetSN74141Chip(value);
   switch (digit) {
-    case 0: PORTC = PORTC | B00001000; break; // PC3
-    case 1: PORTC = PORTC | B00000100; break; // PC2
-    case 2: PORTD = PORTD | B00010000; break; // PD4
-    case 3: PORTD = PORTD | B00000100; break; // PD2
-    case 4: PORTD = PORTD | B00000010; break; // PD1
-    case 5: PORTD = PORTD | B00000001; break; // PD0
+    case 0: PORTC = PORTC | B00001000; break; // PC3 - equivalent to digitalWrite(ledPin_a_1,HIGH);
+    case 1: PORTC = PORTC | B00000100; break; // PC2 - equivalent to digitalWrite(ledPin_a_2,HIGH);
+    case 2: PORTD = PORTD | B00010000; break; // PD4 - equivalent to digitalWrite(ledPin_a_3,HIGH);
+    case 3: PORTD = PORTD | B00000100; break; // PD2 - equivalent to digitalWrite(ledPin_a_4,HIGH);
+    case 4: PORTD = PORTD | B00000010; break; // PD1 - equivalent to digitalWrite(ledPin_a_5,HIGH);
+    case 5: PORTD = PORTD | B00000001; break; // PD0 - equivalent to digitalWrite(ledPin_a_6,HIGH);
   }
-  //digitalWrite(anodePins[digit], HIGH);
 }
 
 // ************************************************************
@@ -2058,7 +2092,7 @@ void digitOff() {
   TCCR1A = tccrOff;
   //digitalWrite(anodePins[digit], LOW);
   
-  // turn all digits off
+  // turn all digits off - equivalent to digitalWrite(ledPin_a_n,LOW); (n=1,2,3,4,5,6) but much faster
   PORTC = PORTC & B11110011;
   PORTD = PORTD & B11101000;
 }
@@ -2411,21 +2445,26 @@ boolean getHoursBlanked() {
 // ************************************************************
 // Get the time from the RTC
 // ************************************************************
-void getRTCTime() {
+void getRTCTime(long currentMillis) {
+
+  if (useRTC) {
+    Wire.beginTransmission(RTC_I2C_ADDRESS);
+    if(Wire.endTransmission() == 0) {
+      bool PM;
+      bool twentyFourHourClock;
+      bool century = false;
   
-  Wire.beginTransmission(RTC_I2C_ADDRESS);
-  if(Wire.endTransmission() == 0) {
-    bool PM;
-    bool twentyFourHourClock;
-    bool century = false;
-  
-    byte years=Clock.getYear();
-    byte months=Clock.getMonth(century);
-    byte days=Clock.getDate();
-    byte hours=Clock.getHour(twentyFourHourClock,PM);
-    byte mins=Clock.getMinute();
-    byte secs=Clock.getSecond();
-    displayDate.setSyncTime(nowMillis,years,months,days,hours,mins,secs);
+      byte years=Clock.getYear();
+      byte months=Clock.getMonth(century);
+      byte days=Clock.getDate();
+      byte hours=Clock.getHour(twentyFourHourClock,PM);
+      byte mins=Clock.getMinute();
+      byte secs=Clock.getSecond();
+      displayDate.setSyncTime(currentMillis,years,months,days,hours,mins,secs);
+    }
+  } else {
+    // just say that we were updated
+    displayDate.setSyncTime(currentMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),0);
   }
 }
 
@@ -2435,22 +2474,28 @@ void getRTCTime() {
 // display.
 // ************************************************************
 void setRTC(byte newYear,byte newMonth,byte newDay,byte newHour,byte newMin,byte newSec) {
-  Clock.setClockMode(false); // false = 24h
-  Clock.setYear(newYear);
-  Clock.setMonth(newMonth);
-  Clock.setDate(newDay);
-  int dow = displayDate.getDayOfWeek(2000 + newYear,newMonth,newDay);
-  Clock.setDoW(dow);
-  Clock.setHour(newHour);
-  Clock.setMinute(newMin);
-  Clock.setSecond(newSec);
+  if (useRTC) {
+    Clock.setClockMode(false); // false = 24h
+    Clock.setYear(newYear);
+    Clock.setMonth(newMonth);
+    Clock.setDate(newDay);
+    int dow = displayDate.getDayOfWeek(2000 + newYear,newMonth,newDay);
+    Clock.setDoW(dow);
+    Clock.setHour(newHour);
+    Clock.setMinute(newMin);
+    Clock.setSecond(newSec);
+  }
 }
 
 // ************************************************************
 // Get the temperature from the RTC
 // ************************************************************
 float getRTCTemp() {
-  return Clock.getTemperature();
+  if (useRTC) {
+    return Clock.getTemperature();
+  } else {
+    return 0.0;
+  }
 }
 
 //**********************************************************************************
@@ -2467,8 +2512,8 @@ float getRTCTemp() {
 // provider to the external one, which has better long term
 // stability.
 // ************************************************************
-void getTimeInt() {
-  displayDate.setDeltaMillis(nowMillis);
+void getTimeInt(long currentMillis) {
+  displayDate.setDeltaMillis(currentMillis);
 }
 
 //**********************************************************************************
@@ -2895,5 +2940,117 @@ int getSmoothedHVSensorReading() {
   sensorHVSmoothed += (sensorDiff/sensorSmoothCountHV);
   int sensorHVSmoothedInt = (int) sensorHVSmoothed;
   return sensorHVSmoothedInt;
+}
+
+//**********************************************************************************
+//**********************************************************************************
+//*                                 I2C interface                                  *
+//**********************************************************************************
+//**********************************************************************************
+
+/**
+ * receive information from the master
+ */
+void receiveEvent(int bytes) {
+  // the operation tells us what we are getting
+  int operation = Wire.read();
+
+  if (operation == I2C_TIME_UPDATE) {
+    int newYears = Wire.read();
+    int newMonths = Wire.read();
+    int newDays = Wire.read();
+
+    int newHours = Wire.read();
+    int newMins = Wire.read();
+    int newSecs = Wire.read();
+  
+    displayDate.setSyncTime(nowMillis,newYears,newMonths,newDays,newHours,newMins,newSecs);
+  } else if (operation == I2C_SET_OPTION_12_24) {
+    byte readByte1224 = Wire.read();
+    boolean newHourMode = (readByte1224 == 1);
+    displayDate.setHourMode(newHourMode);
+    EEPROM.write(EE_12_24,displayDate.getHourMode());
+  } else if (operation == I2C_SET_OPTION_BLANK_LEAD) {
+    byte readByteBlank = Wire.read();
+    blankLeading = (readByteBlank == 1);
+    EEPROM.write(EE_BLANK_LEAD_ZERO,blankLeading);
+  } else if (operation == I2C_SET_OPTION_SCROLLBACK) {
+    byte readByteSB = Wire.read();
+    scrollback = (readByteSB == 1);
+    EEPROM.write(EE_SCROLLBACK,scrollback);
+  } else if (operation == I2C_SET_OPTION_SUPPRESS_ACP) {
+    byte readByteSA = Wire.read();
+    suppressACP = (readByteSA == 1);
+      EEPROM.write(EE_SUPPRESS_ACP,suppressACP);
+  } else if (operation == I2C_SET_OPTION_DATE_FORMAT) {
+    dateFormat = Wire.read();
+    EEPROM.write(EE_DATE_FORMAT, dateFormat);
+  } else if (operation == I2C_SET_OPTION_DAY_BLANKING) {
+    dayBlanking = Wire.read();
+    EEPROM.write(EE_DAY_BLANKING, dayBlanking);
+  } else if (operation == I2C_SET_OPTION_BLANK_START) {
+    blankHourStart = Wire.read();
+    EEPROM.write(EE_HOUR_BLANK_START,blankHourStart);
+  } else if (operation == I2C_SET_OPTION_BLANK_END) {
+    blankHourEnd = Wire.read();
+    EEPROM.write(EE_HOUR_BLANK_END,blankHourEnd);
+  } else if (operation == I2C_SET_OPTION_FADE_STEPS) {
+    fadeSteps = Wire.read();
+    EEPROM.write(EE_FADE_STEPS,fadeSteps);
+  } else if (operation == I2C_SET_OPTION_SCROLL_STEPS) {
+    scrollSteps = Wire.read();
+    EEPROM.write(EE_SCROLL_STEPS,scrollSteps);
+  } else if (operation == I2C_SET_OPTION_BACKLIGHT_MODE) {
+    backlightMode = Wire.read();
+    EEPROM.write(EE_BACKLIGHT_MODE,backlightMode);
+  } else if (operation == I2C_SET_OPTION_RED_CHANNEL) {
+    redCnl = Wire.read();
+    EEPROM.write(EE_RED_INTENSITY,redCnl);
+  } else if (operation == I2C_SET_OPTION_GREEN_CHANNEL) {
+    grnCnl = Wire.read();
+    EEPROM.write(EE_GRN_INTENSITY,grnCnl);
+  } else if (operation == I2C_SET_OPTION_BLUE_CHANNEL) {
+    bluCnl = Wire.read();
+    EEPROM.write(EE_BLU_INTENSITY,bluCnl);
+  } else if (operation == I2C_SET_OPTION_CYCLE_SPEED) {
+    cycleSpeed = Wire.read();
+    EEPROM.write(EE_CYCLE_SPEED,cycleSpeed);
+  }
+}
+
+/**
+ * send information to the master
+ */
+void requestEvent() {
+  byte configArray[16];
+  int idx = 0;
+  configArray[idx++] = encodeBooleanForI2C(displayDate.getHourMode());
+  configArray[idx++] = encodeBooleanForI2C(blankLeading); 
+  configArray[idx++] = encodeBooleanForI2C(scrollback);
+  configArray[idx++] = encodeBooleanForI2C(suppressACP);
+  configArray[idx++] = dateFormat;
+  configArray[idx++] = dayBlanking;
+  configArray[idx++] = blankHourStart;
+  configArray[idx++] = blankHourEnd;
+  configArray[idx++] = fadeSteps;
+  configArray[idx++] = scrollSteps;
+  configArray[idx++] = backlightMode;
+  configArray[idx++] = redCnl;
+  configArray[idx++] = grnCnl;
+  configArray[idx++] = bluCnl;
+  configArray[idx++] = cycleSpeed;
+  configArray[idx++] = 27;
+ 
+  Wire.write(configArray,16);
+}
+
+byte encodeBooleanForI2C(boolean valueToProcess) {
+  if (valueToProcess) {
+    byte byteToSend = 1;
+    return byteToSend;
+  } else {
+    byte byteToSend = 0;
+    return byteToSend;
+  }
 }
 
