@@ -18,7 +18,7 @@
 #include <EEPROM.h>
 #include <time.h>
   
-#define SOFTWARE_VERSION "1.0.2"
+#define SOFTWARE_VERSION "1.0.3"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
@@ -33,7 +33,11 @@ const char *serialNumber = "0x0x0x";  // this is to be customized at burn time
 #define blueLedPin 1
 boolean blueLedState = true;
 
+// used for flashing the blue LED
+int blinkTime;
 long lastMillis = 0;
+
+// Timer for how often we send the I2C data
 long lastI2CUpdateTime = -60000;
 
 String timeServerURL = "";
@@ -160,41 +164,38 @@ void loop()
 {
   server.handleClient();
 
-  int blinkTime;
   if (WiFi.status() == WL_CONNECTED) {
-    if ((millis() - lastMillis) > 1000) {
-      lastMillis = millis();
-      // See if it is time to update the Clock
-      if ((millis() - lastI2CUpdateTime) > 60000) {
+    // See if it is time to update the Clock
+    if ((millis() - lastI2CUpdateTime) > 60000) {
 
-        // Try to recover the current time
-        String timeStr = getTimeFromTimeZoneServer();
+      // Try to recover the current time
+      String timeStr = getTimeFromTimeZoneServer();
 
-        // Send the time to the I2C client
-        boolean result;
-        if (timeStr.substring(1,6) == "ERROR:") {
-          result = false;
-        } else {
-          result = sendTimeToI2C(timeStr);
-        }
-
-        if (result) {
-          lastI2CUpdateTime = millis();
-        }
+      // Send the time to the I2C client, but only if there was no error
+      if (!timeStr.startsWith("ERROR:")) {
+        sendTimeToI2C(timeStr);
+        
+        // all OK, flash 1 second
+        blinkTime = 1000;
+      } else {
+        // connected, but time server not found, flash middle speed
+        blinkTime = 500;
       }
-#ifndef DEBUG
-      toggleBlueLED();
-#endif
+
+      lastI2CUpdateTime = millis();
     }
   } else {
     // offline, flash fast
-    if ((millis() - lastMillis) > 100) {
-      lastMillis = millis();
-#ifndef DEBUG
-      toggleBlueLED();
-#endif
-    }
+    blinkTime = 100;
   }
+  
+  if ((millis() - lastMillis) > blinkTime) {
+    lastMillis = millis();
+#ifndef DEBUG
+    toggleBlueLED();
+#endif
+  }
+
 }
 
 // ----------------------------------------------------------------------------------------------------
@@ -949,17 +950,21 @@ String getTimeFromTimeZoneServer() {
 
   int httpCode = http.GET();
 
-  if (httpCode > 0) {
-    // file found at server
-    if (httpCode == HTTP_CODE_OK) {
-      payload = http.getString();
-    }
+  // file found at server
+  if (httpCode == HTTP_CODE_OK) {
+    payload = http.getString();
   } else {
 #ifdef DEBUG
     Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-    payload = "ERROR: " + http.errorToString(httpCode);
 #endif
-  }
+    if (httpCode > 0) {
+      // RFC error codes don't have a string mapping
+      payload = "ERROR: " + String(httpCode);
+    } else {
+      // ESP error codes have a string mapping
+      payload = "ERROR: " + String(httpCode) + " ("+ http.errorToString(httpCode) + ")";
+    }
+  }    
 
   http.end();
 
