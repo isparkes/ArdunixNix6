@@ -57,13 +57,14 @@
 #define EE_HVG_NEED_CALIB   28     // 1 if we need to calibrate the HVGenerator, otherwise 0
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 44
+#define SOFTWARE_VERSION 45
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
+#define DIGIT_ANTI_GHOST      DIGIT_DISPLAY_COUNT + 10 // To resolve the ghosting issue, we have to let the digit "cool off" before moving to the next one
 #define DIGIT_DISPLAY_ON      0    // Switch on the digit at the beginning by default
 #define DIGIT_DISPLAY_OFF     999  // Switch off the digit at the end by default
 #define DIGIT_DISPLAY_NEVER   -1   // When we don't want to switch on or off (i.e. blanking)
@@ -123,7 +124,9 @@
 #define HOURS_MAX 24
 
 #define COLOUR_CNL_MAX                  15
-#define COLOUR_CNL_DEFAULT              15
+#define COLOUR_RED_CNL_DEFAULT          15
+#define COLOUR_GRN_CNL_DEFAULT          0
+#define COLOUR_BLU_CNL_DEFAULT          0
 #define COLOUR_CNL_MIN                  0
 
 // Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
@@ -619,8 +622,9 @@ int pwmTop = PWM_TOP_DEFAULT;
 int pwmOn = PWM_PULSE_DEFAULT;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
-// allows the board wiring to be much simpler<
+// allows the board wiring to be much simpler
 byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+//byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
 
 // Driver pins for the anodes
 byte anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
@@ -711,9 +715,9 @@ int ledBlinkNumber = 0;
 byte backlightMode = BACKLIGHT_DEFAULT;
 
 // Back light intensities
-byte redCnl = COLOUR_CNL_DEFAULT;
-byte grnCnl = COLOUR_CNL_DEFAULT;
-byte bluCnl = COLOUR_CNL_DEFAULT;
+byte redCnl = COLOUR_RED_CNL_DEFAULT;
+byte grnCnl = COLOUR_GRN_CNL_DEFAULT;
+byte bluCnl = COLOUR_BLU_CNL_DEFAULT;
 byte cycleCount = 0;
 byte cycleSpeed = CYCLE_SPEED_DEFAULT;
 byte ledCycleCount[3] = {0,0,0};
@@ -814,8 +818,14 @@ void setup()
     // Flash 10 x to signal that we have accepted the factory reset
     for (int i = 0 ; i < 10 ; i++ ) {
       digitalWrite(tickLed, HIGH);
+      if (random(3) == 0) {digitalWrite(RLed, HIGH);}
+      if (random(3) == 0) {digitalWrite(GLed, HIGH);}
+      if (random(3) == 0) {digitalWrite(BLed, HIGH);}
       delay(100);
       digitalWrite(tickLed, LOW);
+      digitalWrite(RLed, LOW);
+      digitalWrite(GLed, LOW);
+      digitalWrite(BLed, LOW);
       delay(100);
 
       factoryReset();
@@ -899,8 +909,13 @@ void loop()
   // just enough to keep the internal time provider correct
   // This keeps the outer loop fast and responsive
   if (displayDate.getDeltaMillis(nowMillis) > READ_TIME_PROVIDER_MILLIS) {
-    // get the time from the external provider - slow but accurate
-    getRTCTime(nowMillis);
+    if (useRTC) {
+      // get the time from the external provider - slow but accurate
+      getRTCTime(nowMillis);
+    } else {
+      // We have no RTC, just run, or wait for an I2C update
+      updateInternalTimeDelta(nowMillis);      
+    }
   } else {
     // Get the time from the internal provider - quick and easy
     getTimeInt(nowMillis);
@@ -2044,7 +2059,7 @@ void outputDisplay()
       currNumberArray[i] = NumberArray[i];
     }
 
-    for (int timer = 0 ; timer < DIGIT_DISPLAY_COUNT ; timer++) {
+    for (int timer = 0 ; timer < DIGIT_ANTI_GHOST ; timer++) {
       if (timer == digitOnTime) {
         digitOn(i,currNumberArray[i]);
       }
@@ -2073,8 +2088,6 @@ void outputDisplay()
 // by a call to "digitOff"
 // ************************************************************
 void digitOn(int digit, int value) {
-  TCCR1A = tccrOn;
-  SetSN74141Chip(value);
   switch (digit) {
     case 0: PORTC = PORTC | B00001000; break; // PC3 - equivalent to digitalWrite(ledPin_a_1,HIGH);
     case 1: PORTC = PORTC | B00000100; break; // PC2 - equivalent to digitalWrite(ledPin_a_2,HIGH);
@@ -2083,6 +2096,8 @@ void digitOn(int digit, int value) {
     case 4: PORTD = PORTD | B00000010; break; // PD1 - equivalent to digitalWrite(ledPin_a_5,HIGH);
     case 5: PORTD = PORTD | B00000001; break; // PD0 - equivalent to digitalWrite(ledPin_a_6,HIGH);
   }
+  SetSN74141Chip(value);
+  TCCR1A = tccrOn;
 }
 
 // ************************************************************
@@ -2516,6 +2531,10 @@ void getTimeInt(long currentMillis) {
   displayDate.setDeltaMillis(currentMillis);
 }
 
+void updateInternalTimeDelta(long currentMillis) {
+  displayDate.setSyncTime(currentMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
+}
+
 //**********************************************************************************
 //**********************************************************************************
 //*                               EEPROM interface                                 *
@@ -2614,17 +2633,17 @@ void readEEPROMValues() {
 
   redCnl = EEPROM.read(EE_RED_INTENSITY);
   if ((redCnl < COLOUR_CNL_MIN) || (redCnl > COLOUR_CNL_MAX)) {
-    redCnl = COLOUR_CNL_DEFAULT;
+    redCnl = COLOUR_RED_CNL_DEFAULT;
   }
 
   grnCnl = EEPROM.read(EE_GRN_INTENSITY);
   if ((grnCnl < COLOUR_CNL_MIN) || (grnCnl > COLOUR_CNL_MAX)) {
-    grnCnl = COLOUR_CNL_DEFAULT;
+    grnCnl = COLOUR_GRN_CNL_DEFAULT;
   }
 
   bluCnl = EEPROM.read(EE_BLU_INTENSITY);
   if ((bluCnl < COLOUR_CNL_MIN) || (bluCnl > COLOUR_CNL_MAX)) {
-    bluCnl = COLOUR_CNL_DEFAULT;
+    bluCnl = COLOUR_BLU_CNL_DEFAULT;
   }
 
   hvTargetVoltage = EEPROM.read(EE_HV_VOLTAGE);
@@ -2683,9 +2702,9 @@ void factoryReset() {
   dateFormat = DATE_FORMAT_DEFAULT;
   dayBlanking = DAY_BLANKING_DEFAULT;
   backlightMode = BACKLIGHT_DEFAULT;
-  redCnl = COLOUR_CNL_DEFAULT;
-  grnCnl = COLOUR_CNL_DEFAULT;
-  bluCnl = COLOUR_CNL_DEFAULT;
+  redCnl = COLOUR_RED_CNL_DEFAULT;
+  grnCnl = COLOUR_GRN_CNL_DEFAULT;
+  bluCnl = COLOUR_BLU_CNL_DEFAULT;
   hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
   suppressACP = false;
   blankHourStart = 0;
