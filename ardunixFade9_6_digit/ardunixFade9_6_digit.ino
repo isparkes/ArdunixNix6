@@ -55,6 +55,8 @@
 #define EE_PWM_TOP_LO       26     // The PWM top value if we know it, 0xFF if we need to calculate
 #define EE_PWM_TOP_HI       27     // The PWM top value if we know it, 0xFF if we need to calculate
 #define EE_HVG_NEED_CALIB   28     // 1 if we need to calibrate the HVGenerator, otherwise 0
+#define EE_MIN_DIM_LO       29     // The min dim value
+#define EE_MIN_DIM_HI       30     // The min dim value
 
 // Software version shown in config menu
 #define SOFTWARE_VERSION 45
@@ -70,7 +72,10 @@
 #define DIGIT_DISPLAY_NEVER   -1   // When we don't want to switch on or off (i.e. blanking)
 #define DISPLAY_COUNT_MAX     2000 // Maximum value we can set to
 #define DISPLAY_COUNT_MIN     500  // Minimum value we can set to
-#define DIGIT_DISPLAY_MIN_DIM 100  // The minimum viable dim count
+
+#define MIN_DIM_DEFAULT 100         // The default minimum dim count
+#define MIN_DIM_MIN     100         // The minimum dim count
+#define MIN_DIM_MAX     500         // The maximum dim count
 
 #define SENSOR_LOW_MIN      0
 #define SENSOR_LOW_MAX      900
@@ -169,16 +174,19 @@
 #define MODE_PULSE_UP                   25 // Mode "19"
 #define MODE_PULSE_DOWN                 26 // Mode "20"
 
+#define MODE_MIN_DIM_UP                 27 // Mode "19"
+#define MODE_MIN_DIM_DOWN               28 // Mode "20"
+
 // Temperature
-#define MODE_TEMP                       27 // Mode "21"
+#define MODE_TEMP                       29 // Mode "21"
 
 // Software Version
-#define MODE_VERSION                    28 // Mode "22"
+#define MODE_VERSION                    30 // Mode "22"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  29
+#define MODE_TUBE_TEST                  31
 
-#define MODE_MAX                        29
+#define MODE_MAX                        31
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
@@ -660,6 +668,7 @@ boolean blankLeading = false;
 
 // Dimming value
 const int DIM_VALUE = DIGIT_DISPLAY_COUNT/5;
+int minDim = MIN_DIM_DEFAULT;
 
 long secsDisplayEnd;      // time for the end of the MMSS display
 int  tempDisplayMode;
@@ -1142,6 +1151,16 @@ void loop()
       displayConfig();
     }
 
+    if (nextMode == MODE_MIN_DIM_UP) {
+      loadNumberArrayConfInt(minDim,nextMode-MODE_12_24);
+      displayConfig();
+    }
+
+    if (nextMode == MODE_MIN_DIM_DOWN) {
+      loadNumberArrayConfInt(minDim,nextMode-MODE_12_24);
+      displayConfig();
+    }
+    
     if (nextMode == MODE_TEMP) {
       loadNumberArrayTemp(nextMode-MODE_12_24);
       displayConfig();
@@ -1506,7 +1525,11 @@ void loop()
 
       if (currentMode == MODE_PULSE_UP) {
         if(button1.isButtonPressedAndReleased()) {
-          setPWMOnTime(pwmOn+10);
+          pwmOn+=10;
+          if (pwmOn > PWM_PULSE_MAX) {
+            pwmOn = PWM_PULSE_MAX;
+          }
+          setPWMOnTime(pwmOn);
         }
         loadNumberArrayConfInt(pwmOn,currentMode-MODE_12_24);
         displayConfig();
@@ -1514,9 +1537,35 @@ void loop()
 
       if (currentMode == MODE_PULSE_DOWN) {
         if(button1.isButtonPressedAndReleased()) {
-          setPWMOnTime(pwmOn-10);
+          pwmOn-=10;
+          if (pwmOn > PWM_PULSE_MAX) {
+            pwmOn = PWM_PULSE_MAX;
+          }
+          setPWMOnTime(pwmOn);
         }
         loadNumberArrayConfInt(pwmOn,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_MIN_DIM_UP) {
+        if(button1.isButtonPressedAndReleased()) {
+          minDim+=10;
+          if (minDim > MIN_DIM_MAX) {
+            minDim = MIN_DIM_MAX;
+          }
+        }
+        loadNumberArrayConfInt(minDim,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_MIN_DIM_DOWN) {
+        if(button1.isButtonPressedAndReleased()) {
+          minDim-=10;
+          if (minDim < MIN_DIM_MIN) {
+            minDim = MIN_DIM_MIN;
+          }
+        }
+        loadNumberArrayConfInt(minDim,currentMode-MODE_12_24);
         displayConfig();
       }
 
@@ -1562,7 +1611,7 @@ void loop()
       if (((displayDate.getMins() % 10) == 9) && (displayDate.getSecs() == 15)) {
         // suppress ACP when fully dimmed
         if (suppressACP) {
-          if (digitOffCount > DIGIT_DISPLAY_MIN_DIM) {
+          if (digitOffCount > minDim) {
             acpOffset = 1;
           }
         } else {
@@ -1641,7 +1690,7 @@ void setLeds()
     ledPWMVal = 255;
   }
 
-  // calculate the PWM factor, goes between 0.1 and 1
+  // calculate the PWM factor, goes between minDim% and 100%
   float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_COUNT;
 
   // Tick led output
@@ -2570,6 +2619,8 @@ void saveEEPROMValues() {
   EEPROM.write(EE_PULSE_HI, pwmOn / 256);
   EEPROM.write(EE_PWM_TOP_LO, pwmTop % 256);
   EEPROM.write(EE_PWM_TOP_HI, pwmTop / 256);
+  EEPROM.write(EE_MIN_DIM_LO, minDim % 256);
+  EEPROM.write(EE_MIN_DIM_HI, minDim / 256);
 }
 
 // ************************************************************
@@ -2682,6 +2733,11 @@ void readEEPROMValues() {
   cycleSpeed = EEPROM.read(EE_CYCLE_SPEED);
   if ((cycleSpeed < CYCLE_SPEED_MIN) || (cycleSpeed > CYCLE_SPEED_MAX)) {
     cycleSpeed = CYCLE_SPEED_DEFAULT;
+  }
+  
+  minDim = EEPROM.read(EE_MIN_DIM_HI)*256 + EEPROM.read(EE_MIN_DIM_LO);
+  if ((minDim < MIN_DIM_MIN) || (minDim > MIN_DIM_MAX)) {
+    minDim = MIN_DIM_DEFAULT;
   }  
 }
 
@@ -2778,7 +2834,7 @@ int getDimmingFromLDR() {
 
   int returnValue = sensorSmoothedResult;
 
-  if (returnValue < DIGIT_DISPLAY_MIN_DIM) returnValue = DIGIT_DISPLAY_MIN_DIM;
+  if (returnValue < minDim) returnValue = minDim;
   if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
 
   return returnValue;
