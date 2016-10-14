@@ -57,6 +57,7 @@
 #define EE_HVG_NEED_CALIB   28     // 1 if we need to calibrate the HVGenerator, otherwise 0
 #define EE_MIN_DIM_LO       29     // The min dim value
 #define EE_MIN_DIM_HI       30     // The min dim value
+#define EE_ANTI_GHOST       31     // The value we use for anti-ghosting
 
 // Software version shown in config menu
 #define SOFTWARE_VERSION 45
@@ -66,7 +67,6 @@
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
-#define DIGIT_ANTI_GHOST      DIGIT_DISPLAY_COUNT + 10 // To resolve the ghosting issue, we have to let the digit "cool off" before moving to the next one
 #define DIGIT_DISPLAY_ON      0    // Switch on the digit at the beginning by default
 #define DIGIT_DISPLAY_OFF     999  // Switch off the digit at the end by default
 #define DIGIT_DISPLAY_NEVER   -1   // When we don't want to switch on or off (i.e. blanking)
@@ -174,17 +174,20 @@
 #define MODE_PULSE_UP                   25 // Mode "19"
 #define MODE_PULSE_DOWN                 26 // Mode "20"
 
-#define MODE_MIN_DIM_UP                 27 // Mode "19"
-#define MODE_MIN_DIM_DOWN               28 // Mode "20"
+#define MODE_MIN_DIM_UP                 27 // Mode "21"
+#define MODE_MIN_DIM_DOWN               28 // Mode "22"
+
+#define MODE_ANTI_GHOST_UP              29 // Mode "23"
+#define MODE_ANTI_GHOST_DOWN            30 // Mode "24"
 
 // Temperature
-#define MODE_TEMP                       29 // Mode "21"
+#define MODE_TEMP                       31 // Mode "25"
 
 // Software Version
-#define MODE_VERSION                    30 // Mode "22"
+#define MODE_VERSION                    32 // Mode "26"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  31
+#define MODE_TUBE_TEST                  32
 
 #define MODE_MAX                        31
 
@@ -232,6 +235,10 @@
 #define CYCLE_SPEED_MIN                 4
 #define CYCLE_SPEED_MAX                 64
 #define CYCLE_SPEED_DEFAULT             10
+
+#define ANTI_GHOST_MIN                  0
+#define ANTI_GHOST_MAX                  50
+#define ANTI_GHOST_DEFAULT              0
 
 // I2C Interface definition
 #define I2C_SLAVE_ADDR                0x68
@@ -631,8 +638,8 @@ int pwmOn = PWM_PULSE_DEFAULT;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
-byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
-//byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
+//byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
 
 // Driver pins for the anodes
 byte anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
@@ -652,12 +659,13 @@ byte fadeState[6]      = {0,0,0,0,0,0};
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
-int dispCount = DIGIT_DISPLAY_COUNT;
 int fadeSteps = FADE_STEPS_DEFAULT;
-float fadeStep = dispCount / fadeSteps;
 int digitOffCount = DIGIT_DISPLAY_OFF;
 int scrollSteps = SCROLL_STEPS_DEFAULT;
 boolean scrollback = true;
+byte antiGhost = ANTI_GHOST_DEFAULT;
+int dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
+float fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
 
 // For software blinking
 int blinkCounter = 0;
@@ -1066,22 +1074,12 @@ void loop()
       displayConfig();
     }
     
-    if (nextMode == MODE_FADE_STEPS_UP) {
+    if ((nextMode == MODE_FADE_STEPS_UP) || (nextMode == MODE_FADE_STEPS_DOWN)) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
       displayConfig();
     }
 
-    if (nextMode == MODE_FADE_STEPS_DOWN) {
-      loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DISPLAY_SCROLL_STEPS_UP) {
-      loadNumberArrayConfInt(scrollSteps,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
+    if ((nextMode == MODE_DISPLAY_SCROLL_STEPS_UP) || (nextMode == MODE_DISPLAY_SCROLL_STEPS_DOWN)) {
       loadNumberArrayConfInt(scrollSteps,nextMode-MODE_12_24);
       displayConfig();
     }
@@ -1131,36 +1129,26 @@ void loop()
       displayConfig();
     }
 
-    if (nextMode == MODE_TARGET_HV_UP) {
+    if ((nextMode == MODE_TARGET_HV_UP) || (nextMode == MODE_TARGET_HV_DOWN)) {
       loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
       displayConfig();
     }
 
-    if (nextMode == MODE_TARGET_HV_DOWN) {
-      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_PULSE_UP) {
+    if ((nextMode == MODE_PULSE_UP) || (nextMode == MODE_PULSE_DOWN)) {
       loadNumberArrayConfInt(pwmOn,nextMode-MODE_12_24);
       displayConfig();
     }
 
-    if (nextMode == MODE_PULSE_DOWN) {
-      loadNumberArrayConfInt(pwmOn,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_MIN_DIM_UP) {
+    if ((nextMode == MODE_MIN_DIM_UP) || (nextMode == MODE_MIN_DIM_DOWN)) {
       loadNumberArrayConfInt(minDim,nextMode-MODE_12_24);
       displayConfig();
     }
 
-    if (nextMode == MODE_MIN_DIM_DOWN) {
-      loadNumberArrayConfInt(minDim,nextMode-MODE_12_24);
+    if ((nextMode == MODE_ANTI_GHOST_UP) || (nextMode == MODE_ANTI_GHOST_DOWN)) {
+      loadNumberArrayConfInt(antiGhost,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_TEMP) {
       loadNumberArrayTemp(nextMode-MODE_12_24);
       displayConfig();
@@ -1389,7 +1377,7 @@ void loop()
         }
         loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
         displayConfig();
-        fadeStep = dispCount / fadeSteps;
+        fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
       }
 
       if (currentMode == MODE_FADE_STEPS_DOWN) {
@@ -1401,7 +1389,7 @@ void loop()
         }
         loadNumberArrayConfInt(fadeSteps,currentMode-MODE_12_24);
         displayConfig();
-        fadeStep = dispCount / fadeSteps;
+        fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
       }
 
       if (currentMode == MODE_DISPLAY_SCROLL_STEPS_DOWN) {
@@ -1566,6 +1554,28 @@ void loop()
           }
         }
         loadNumberArrayConfInt(minDim,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_ANTI_GHOST_UP) {
+        if(button1.isButtonPressedAndReleased()) {
+          antiGhost+=1;
+          if (antiGhost > ANTI_GHOST_MAX) {
+            antiGhost = ANTI_GHOST_MAX;
+          }
+        }
+        loadNumberArrayConfInt(antiGhost,currentMode-MODE_12_24);
+        displayConfig();
+      }
+
+      if (currentMode == MODE_ANTI_GHOST_DOWN) {
+        if(button1.isButtonPressedAndReleased()) {
+          antiGhost-=1;
+          if (antiGhost < ANTI_GHOST_MIN) {
+            antiGhost = ANTI_GHOST_MIN;
+          }
+        }
+        loadNumberArrayConfInt(antiGhost,currentMode-MODE_12_24);
         displayConfig();
       }
 
@@ -2108,7 +2118,7 @@ void outputDisplay()
       currNumberArray[i] = NumberArray[i];
     }
 
-    for (int timer = 0 ; timer < DIGIT_ANTI_GHOST ; timer++) {
+    for (int timer = 0 ; timer < dispCount ; timer++) {
       if (timer == digitOnTime) {
         digitOn(i,currNumberArray[i]);
       }
@@ -2562,6 +2572,91 @@ float getRTCTemp() {
   }
 }
 
+const byte dim_curve[] = {
+    0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
+    3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,   4,
+    4,   4,   4,   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   6,   6,   6,
+    6,   6,   6,   6,   6,   7,   7,   7,   7,   7,   7,   7,   8,   8,   8,   8,
+    8,   8,   9,   9,   9,   9,   9,   9,   10,  10,  10,  10,  10,  11,  11,  11,
+    11,  11,  12,  12,  12,  12,  12,  13,  13,  13,  13,  14,  14,  14,  14,  15,
+    15,  15,  16,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19,  19,  20,
+    20,  20,  21,  21,  22,  22,  22,  23,  23,  24,  24,  25,  25,  25,  26,  26,
+    27,  27,  28,  28,  29,  29,  30,  30,  31,  32,  32,  33,  33,  34,  35,  35,
+    36,  36,  37,  38,  38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,
+    48,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,
+    63,  64,  65,  66,  68,  69,  70,  71,  73,  74,  75,  76,  78,  79,  81,  82,
+    83,  85,  86,  88,  90,  91,  93,  94,  96,  98,  99,  101, 103, 105, 107, 109,
+    110, 112, 114, 116, 118, 121, 123, 125, 127, 129, 132, 134, 136, 139, 141, 144,
+    146, 149, 151, 154, 157, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 190,
+    193, 196, 200, 203, 207, 211, 214, 218, 222, 226, 230, 234, 238, 242, 248, 255,
+};
+
+void getRGB(int hue, int sat, int val, int colors[3]) { 
+  /* convert hue, saturation and brightness ( HSB/HSV ) to RGB
+     The dim_curve is used only on brightness/value and on saturation (inverted).
+     This looks the most natural.      
+  */
+ 
+  val = dim_curve[val];
+  sat = 255-dim_curve[255-sat];
+ 
+  int r;
+  int g;
+  int b;
+  int base;
+ 
+  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
+    colors[0]=val;
+    colors[1]=val;
+    colors[2]=val;  
+  } else  { 
+ 
+    base = ((255 - sat) * val)>>8;
+ 
+    switch(hue/60) {
+  case 0:
+    r = val;
+    g = (((val-base)*hue)/60)+base;
+    b = base;
+  break;
+ 
+  case 1:
+    r = (((val-base)*(60-(hue%60)))/60)+base;
+    g = val;
+    b = base;
+  break;
+ 
+  case 2:
+    r = base;
+    g = val;
+    b = (((val-base)*(hue%60))/60)+base;
+  break;
+ 
+  case 3:
+    r = base;
+    g = (((val-base)*(60-(hue%60)))/60)+base;
+    b = val;
+  break;
+ 
+  case 4:
+    r = (((val-base)*(hue%60))/60)+base;
+    g = base;
+    b = val;
+  break;
+ 
+  case 5:
+    r = val;
+    g = base;
+    b = (((val-base)*(60-(hue%60)))/60)+base;
+  break;
+    }
+ 
+    colors[0]=r;
+    colors[1]=g;
+    colors[2]=b; 
+  }   
+}
+
 //**********************************************************************************
 //**********************************************************************************
 //*                           Internal Time Provider                               *
@@ -2621,6 +2716,7 @@ void saveEEPROMValues() {
   EEPROM.write(EE_PWM_TOP_HI, pwmTop / 256);
   EEPROM.write(EE_MIN_DIM_LO, minDim % 256);
   EEPROM.write(EE_MIN_DIM_HI, minDim / 256);
+  EEPROM.write(EE_ANTI_GHOST, antiGhost);
 }
 
 // ************************************************************
@@ -2738,7 +2834,12 @@ void readEEPROMValues() {
   minDim = EEPROM.read(EE_MIN_DIM_HI)*256 + EEPROM.read(EE_MIN_DIM_LO);
   if ((minDim < MIN_DIM_MIN) || (minDim > MIN_DIM_MAX)) {
     minDim = MIN_DIM_DEFAULT;
-  }  
+  }
+  
+  antiGhost = EEPROM.read(EE_ANTI_GHOST);
+  if ((antiGhost < ANTI_GHOST_MIN) || (antiGhost > ANTI_GHOST_MAX)) {
+    antiGhost = ANTI_GHOST_DEFAULT;
+  }
 }
 
 // ************************************************************
@@ -2768,6 +2869,8 @@ void factoryReset() {
   cycleSpeed = CYCLE_SPEED_DEFAULT;  
   pwmOn = PWM_PULSE_DEFAULT;
   pwmTop = PWM_TOP_DEFAULT;
+  minDim = MIN_DIM_DEFAULT;
+  antiGhost = ANTI_GHOST_DEFAULT;
 
   saveEEPROMValues();
 }
