@@ -638,8 +638,8 @@ int pwmOn = PWM_PULSE_DEFAULT;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
-//byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
-byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
+byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+//byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
 
 // Driver pins for the anodes
 byte anodePins[6] = {ledPin_a_1,ledPin_a_2,ledPin_a_3,ledPin_a_4,ledPin_a_5,ledPin_a_6};
@@ -752,6 +752,28 @@ Button button1(inputPin1,false);
 byte digitBurnDigit = 0;
 byte digitBurnValue = 0;
 
+// ************************************************************
+// LED brightness correction: The perceived brightness is not linear 
+// ************************************************************
+const byte dim_curve[] = {
+    0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
+    3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,   4,
+    4,   4,   4,   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   6,   6,   6,
+    6,   6,   6,   6,   6,   7,   7,   7,   7,   7,   7,   7,   8,   8,   8,   8,
+    8,   8,   9,   9,   9,   9,   9,   9,   10,  10,  10,  10,  10,  11,  11,  11,
+    11,  11,  12,  12,  12,  12,  12,  13,  13,  13,  13,  14,  14,  14,  14,  15,
+    15,  15,  16,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19,  19,  20,
+    20,  20,  21,  21,  22,  22,  22,  23,  23,  24,  24,  25,  25,  25,  26,  26,
+    27,  27,  28,  28,  29,  29,  30,  30,  31,  32,  32,  33,  33,  34,  35,  35,
+    36,  36,  37,  38,  38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,
+    48,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,
+    63,  64,  65,  66,  68,  69,  70,  71,  73,  74,  75,  76,  78,  79,  81,  82,
+    83,  85,  86,  88,  90,  91,  93,  94,  96,  98,  99,  101, 103, 105, 107, 109,
+    110, 112, 114, 116, 118, 121, 123, 125, 127, 129, 132, 134, 136, 139, 141, 144,
+    146, 149, 151, 154, 157, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 190,
+    193, 196, 200, 203, 207, 211, 214, 218, 222, 226, 230, 234, 238, 242, 248, 255,
+};
+
 //**********************************************************************************
 //**********************************************************************************
 //*                                    Setup                                       *
@@ -825,6 +847,9 @@ void setup()
     button1.checkButton(nowMillis);
   }
 
+  // Set up the PRNG with something so that it looks random  
+  randomSeed(analogRead(LDRPin));
+  
   // Detect factory reset: button pressed on start
   if (button1.isButtonPressedNow()) {
     // do this before the flashing, because this way we can set up the EEPROM to
@@ -1663,12 +1688,7 @@ void loop()
 }
 
 // ************************************************************
-// Set the seconds tick led(s)
-// We pulse the colons LED using PWM, however, because we do
-// not know for sure how many loops we will do, we have to be
-// a bit careful how we do this. We reset the counter to 0
-// each time we get a new (up) second, and we stop the counter
-// underflowing, because this gives a disturbing flash.
+// Set the seconds tick led(s) and the back lights
 // ************************************************************
 void setLeds()
 {
@@ -1701,34 +1721,25 @@ void setLeds()
   }
 
   // calculate the PWM factor, goes between minDim% and 100%
-  float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_COUNT;
+  float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_OFF;
 
   // Tick led output
-  int dimmedPWMVal = (int)((float) ledPWMVal * dimFactor);
-  analogWrite(tickLed,dimmedPWMVal);
+  analogWrite(tickLed,getTickLEDAdjusted(ledPWMVal,dimFactor));
 
+  byte dimmedPWMVal = (byte)((float) ledPWMVal * dimFactor);
+  
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
       case BACKLIGHT_FIXED:
-        analogWrite(RLed,(int)((float) redCnl*16));
-        analogWrite(GLed,(int)((float) grnCnl*16));
-        analogWrite(BLed,(int)((float) bluCnl*16));
-        break;
-      case BACKLIGHT_FIXED_DIM:
-        analogWrite(RLed,(int)((float) dimFactor*redCnl*16));
-        analogWrite(GLed,(int)((float) dimFactor*grnCnl*16));
-        analogWrite(BLed,(int)((float) dimFactor*bluCnl*16));
+        analogWrite(RLed, getRGBLEDValue(redCnl,1,255));
+        analogWrite(GLed, getRGBLEDValue(grnCnl,1,255));
+        analogWrite(BLed, getRGBLEDValue(bluCnl,1,255));
         break;
       case BACKLIGHT_PULSE:
-        analogWrite(RLed,dimmedPWMVal*redCnl/16);
-        analogWrite(GLed,dimmedPWMVal*grnCnl/16);
-        analogWrite(BLed,dimmedPWMVal*bluCnl/16);
-        break;
-      case BACKLIGHT_PULSE_DIM:
-        analogWrite(RLed,dimFactor*dimmedPWMVal*redCnl/16);
-        analogWrite(GLed,dimFactor*dimmedPWMVal*grnCnl/16);
-        analogWrite(BLed,dimFactor*dimmedPWMVal*bluCnl/16);
+        analogWrite(RLed, getRGBLEDValue(redCnl,1,ledPWMVal));
+        analogWrite(GLed, getRGBLEDValue(grnCnl,1,ledPWMVal));
+        analogWrite(BLed, getRGBLEDValue(bluCnl,1,ledPWMVal));
         break;
       case BACKLIGHT_CYCLE:
         // slow everything down - just make a change every CYCLE_COUNT_MAX calls
@@ -1762,6 +1773,16 @@ void setLeds()
           analogWrite(GLed,(int)((float) ledCycleValue[1]));
           analogWrite(BLed,(int)((float) ledCycleValue[2]));
         }
+        break;
+      case BACKLIGHT_FIXED_DIM:
+        analogWrite(RLed, getRGBLEDValue(redCnl,dimFactor,255));
+        analogWrite(GLed, getRGBLEDValue(grnCnl,dimFactor,255));
+        analogWrite(BLed, getRGBLEDValue(bluCnl,dimFactor,255));
+        break;
+      case BACKLIGHT_PULSE_DIM:
+        analogWrite(RLed, getRGBLEDValue(redCnl,dimFactor,ledPWMVal));
+        analogWrite(GLed, getRGBLEDValue(grnCnl,dimFactor,ledPWMVal));
+        analogWrite(BLed, getRGBLEDValue(bluCnl,dimFactor,ledPWMVal));
         break;
       case BACKLIGHT_CYCLE_DIM:
         // slow everything down - just make a change every CYCLE_COUNT_MAX calls
@@ -1823,6 +1844,27 @@ void setLeds()
     }
   }
 }
+
+byte getTickLEDAdjusted(float ledPWMVal, float dimFactor) {
+  byte dimmedPWMVal = (byte)(ledPWMVal * dimFactor);
+  return dim_curve[dimmedPWMVal];
+}
+
+byte getRGBLEDValue(float rawValue, float dimValue, int pwmVal) {
+  float channelValue = rawValue * 16.0;
+  
+  if (dimValue < 1.0) {
+    channelValue = channelValue * dimValue;
+  }
+  
+  if (pwmVal < 255.0) {
+    float pwmFactor = pwmVal/255.0;
+    channelValue = channelValue * pwmFactor;
+  }
+  byte rawVal = (byte) channelValue;
+  return dim_curve[rawVal];
+}
+
 
 //**********************************************************************************
 //**********************************************************************************
@@ -2571,25 +2613,6 @@ float getRTCTemp() {
     return 0.0;
   }
 }
-
-const byte dim_curve[] = {
-    0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
-    3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,   4,
-    4,   4,   4,   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   6,   6,   6,
-    6,   6,   6,   6,   6,   7,   7,   7,   7,   7,   7,   7,   8,   8,   8,   8,
-    8,   8,   9,   9,   9,   9,   9,   9,   10,  10,  10,  10,  10,  11,  11,  11,
-    11,  11,  12,  12,  12,  12,  12,  13,  13,  13,  13,  14,  14,  14,  14,  15,
-    15,  15,  16,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19,  19,  20,
-    20,  20,  21,  21,  22,  22,  22,  23,  23,  24,  24,  25,  25,  25,  26,  26,
-    27,  27,  28,  28,  29,  29,  30,  30,  31,  32,  32,  33,  33,  34,  35,  35,
-    36,  36,  37,  38,  38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,
-    48,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,
-    63,  64,  65,  66,  68,  69,  70,  71,  73,  74,  75,  76,  78,  79,  81,  82,
-    83,  85,  86,  88,  90,  91,  93,  94,  96,  98,  99,  101, 103, 105, 107, 109,
-    110, 112, 114, 116, 118, 121, 123, 125, 127, 129, 132, 134, 136, 139, 141, 144,
-    146, 149, 151, 154, 157, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 190,
-    193, 196, 200, 203, 207, 211, 214, 218, 222, 226, 230, 234, 238, 242, 248, 255,
-};
 
 void getRGB(int hue, int sat, int val, int colors[3]) { 
   /* convert hue, saturation and brightness ( HSB/HSV ) to RGB
