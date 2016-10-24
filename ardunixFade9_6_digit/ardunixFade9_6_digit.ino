@@ -737,9 +737,9 @@ byte grnCnl = COLOUR_GRN_CNL_DEFAULT;
 byte bluCnl = COLOUR_BLU_CNL_DEFAULT;
 byte cycleCount = 0;
 byte cycleSpeed = CYCLE_SPEED_DEFAULT;
-byte ledCycleCount[3] = {0,0,0};
-double ledCycleValue[3] = {0,0,0};
-double ledCycleIncrement[3] = {0,0,0};
+float hueIncrement = 0.0;
+int hueCount = 0;
+float hue = 0.0;
 
 // ********************** Input switch management **********************
 Button button1(inputPin1,false);
@@ -773,6 +773,9 @@ const byte dim_curve[] = {
     146, 149, 151, 154, 157, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 190,
     193, 196, 200, 203, 207, 211, 214, 218, 222, 226, 230, 234, 238, 242, 248, 255,
 };
+
+const byte rgb_backlight_curve[] = {0,16,32,48,64,80,99,112,128,144,160,176,192,208,224,240,255};
+
 
 //**********************************************************************************
 //**********************************************************************************
@@ -1588,6 +1591,7 @@ void loop()
           if (antiGhost > ANTI_GHOST_MAX) {
             antiGhost = ANTI_GHOST_MAX;
           }
+          dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
         }
         loadNumberArrayConfInt(antiGhost,currentMode-MODE_12_24);
         displayConfig();
@@ -1599,6 +1603,7 @@ void loop()
           if (antiGhost < ANTI_GHOST_MIN) {
             antiGhost = ANTI_GHOST_MIN;
           }
+          dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
         }
         loadNumberArrayConfInt(antiGhost,currentMode-MODE_12_24);
         displayConfig();
@@ -1679,18 +1684,13 @@ void loop()
 
   checkHVVoltage();
   
-  setLeds();
-  //if (nowMillis < blankSuppressedStartMillis) {
-  //  digitalWrite(tickLed,HIGH);
-  //} else {
-  //  digitalWrite(tickLed,LOW);
-  //}
+  setLeds(nowMillis);
 }
 
 // ************************************************************
 // Set the seconds tick led(s) and the back lights
 // ************************************************************
-void setLeds()
+void setLeds(long nowMillis)
 {
   // Pulse PWM generation - Only update it on a second change (not every time round the loop)
   if (displayDate.getSecs() != lastSec) {
@@ -1722,100 +1722,47 @@ void setLeds()
 
   // calculate the PWM factor, goes between minDim% and 100%
   float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_OFF;
+  float pwmFactor = (float) ledPWMVal / (float) 255.0;
 
   // Tick led output
-  analogWrite(tickLed,getTickLEDAdjusted(ledPWMVal,dimFactor));
+  analogWrite(tickLed,getLEDAdjusted(255,pwmFactor,dimFactor));
 
-  byte dimmedPWMVal = (byte)((float) ledPWMVal * dimFactor);
+  int colors[3];
   
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
       case BACKLIGHT_FIXED:
-        analogWrite(RLed, getRGBLEDValue(redCnl,1,255));
-        analogWrite(GLed, getRGBLEDValue(grnCnl,1,255));
-        analogWrite(BLed, getRGBLEDValue(bluCnl,1,255));
+        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl],1,1));
+        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl],1,1));
+        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl],1,1));
         break;
       case BACKLIGHT_PULSE:
-        analogWrite(RLed, getRGBLEDValue(redCnl,1,ledPWMVal));
-        analogWrite(GLed, getRGBLEDValue(grnCnl,1,ledPWMVal));
-        analogWrite(BLed, getRGBLEDValue(bluCnl,1,ledPWMVal));
+        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl],pwmFactor,1));
+        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl],pwmFactor,1));
+        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl],pwmFactor,1));
         break;
       case BACKLIGHT_CYCLE:
-        // slow everything down - just make a change every CYCLE_COUNT_MAX calls
-        cycleCount++;
-        if (cycleCount > cycleSpeed) {
-          cycleCount = 0;
-
-          for (int i = 0 ; i < 3 ; i++) {
-            // If one of the cycle counts for a LED has expired, get a new one
-            if (ledCycleCount[i] <= 0) {
-              ledCycleCount[i] = random(256);
-              double randomAbs = random(10);
-              ledCycleIncrement[i] = (double) randomAbs-5 / (double) 1000;
-            }
-
-            ledCycleValue[i] += ledCycleIncrement[i];
-
-            // If we run off the end of the scale, wrap around
-            if (ledCycleValue[i] > 255) {
-              ledCycleValue[i] = 255;
-              ledCycleIncrement[i] = -ledCycleIncrement[i];
-            }
-            if (ledCycleValue[i] < 0) {
-              ledCycleValue[i] = 0;
-              ledCycleIncrement[i] = -ledCycleIncrement[i];
-            }
-
-            ledCycleCount[i]--;
-          }
-          analogWrite(RLed,(int)((float) ledCycleValue[0]));
-          analogWrite(GLed,(int)((float) ledCycleValue[1]));
-          analogWrite(BLed,(int)((float) ledCycleValue[2]));
-        }
+        cycleColours(colors);
+        analogWrite(RLed, getLEDAdjusted(colors[0],1,1));
+        analogWrite(GLed, getLEDAdjusted(colors[1],1,1));
+        analogWrite(BLed, getLEDAdjusted(colors[2],1,1));
         break;
       case BACKLIGHT_FIXED_DIM:
-        analogWrite(RLed, getRGBLEDValue(redCnl,dimFactor,255));
-        analogWrite(GLed, getRGBLEDValue(grnCnl,dimFactor,255));
-        analogWrite(BLed, getRGBLEDValue(bluCnl,dimFactor,255));
+        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl],1,dimFactor));
+        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl],1,dimFactor));
+        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl],1,dimFactor));
         break;
       case BACKLIGHT_PULSE_DIM:
-        analogWrite(RLed, getRGBLEDValue(redCnl,dimFactor,ledPWMVal));
-        analogWrite(GLed, getRGBLEDValue(grnCnl,dimFactor,ledPWMVal));
-        analogWrite(BLed, getRGBLEDValue(bluCnl,dimFactor,ledPWMVal));
+        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl],pwmFactor,dimFactor));
+        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl],pwmFactor,dimFactor));
+        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl],pwmFactor,dimFactor));
         break;
       case BACKLIGHT_CYCLE_DIM:
-        // slow everything down - just make a change every CYCLE_COUNT_MAX calls
-        cycleCount++;
-        if (cycleCount > cycleSpeed) {
-          cycleCount = 0;
-
-          for (int i = 0 ; i < 3 ; i++) {
-            // If one of the cycle counts for a LED has expired, get a new one
-            if (ledCycleCount[i] <= 0) {
-              ledCycleCount[i] = random(256);
-              double randomAbs = random(10);
-              ledCycleIncrement[i] = (double) randomAbs-5 / (double) 1000;
-            }
-
-            ledCycleValue[i] += ledCycleIncrement[i];
-
-            // If we run off the end of the scale, wrap around
-            if (ledCycleValue[i] > 255) {
-              ledCycleValue[i] = 255;
-              ledCycleIncrement[i] = -ledCycleIncrement[i];
-            }
-            if (ledCycleValue[i] < 0) {
-              ledCycleValue[i] = 0;
-              ledCycleIncrement[i] = -ledCycleIncrement[i];
-            }
-
-            ledCycleCount[i]--;
-          }
-          analogWrite(RLed,(int)((float) dimFactor*ledCycleValue[0]));
-          analogWrite(GLed,(int)((float) dimFactor*ledCycleValue[1]));
-          analogWrite(BLed,(int)((float) dimFactor*ledCycleValue[2]));
-        }
+        cycleColours(colors);
+        analogWrite(RLed, getLEDAdjusted(colors[0],1,dimFactor));
+        analogWrite(GLed, getLEDAdjusted(colors[1],1,dimFactor));
+        analogWrite(BLed, getLEDAdjusted(colors[2],1,dimFactor));
         break;
     }
   } else {
@@ -1845,26 +1792,102 @@ void setLeds()
   }
 }
 
-byte getTickLEDAdjusted(float ledPWMVal, float dimFactor) {
-  byte dimmedPWMVal = (byte)(ledPWMVal * dimFactor);
+// ************************************************************
+// output a PWM LED channel, adjusting for dimming and PWM 
+// brightness:
+// rawValue: The raw brightness value between 0 - 255
+// ledPWMVal: The pwm factor between 0 - 1
+// dimFactor: The dimming value between 0 - 1
+// ************************************************************
+byte getLEDAdjusted(float rawValue, float ledPWMVal, float dimFactor) {
+  byte dimmedPWMVal = (byte)(rawValue * ledPWMVal * dimFactor);
   return dim_curve[dimmedPWMVal];
 }
 
-byte getRGBLEDValue(float rawValue, float dimValue, int pwmVal) {
-  float channelValue = rawValue * 16.0;
-  
-  if (dimValue < 1.0) {
-    channelValue = channelValue * dimValue;
+// ************************************************************
+// Change the hue for the colour cycling
+// ************************************************************
+void cycleColours(int colors[3]) {
+  cycleCount++;
+  if (cycleCount > cycleSpeed) {
+    cycleCount = 0;
+
+    if (hueCount == 0) {
+      hueCount = random(1000);
+
+      int rawIncrement = random(101) - 50;
+      hueIncrement = ((float) rawIncrement / 100.0);
+    }
+
+    hue += hueIncrement;
+    hueCount--;
+    if (hue > 360) {hue -= 360;}
+    if (hue < 0) {hue += 360;}
+
+    getRGB((int) hue, 255, 255, colors);
   }
-  
-  if (pwmVal < 255.0) {
-    float pwmFactor = pwmVal/255.0;
-    channelValue = channelValue * pwmFactor;
-  }
-  byte rawVal = (byte) channelValue;
-  return dim_curve[rawVal];
 }
 
+// ************************************************************
+// Convert HSV to RGB
+// Hue 0 - 359
+// Sat 0 - 255
+// Val 0 - 255
+// ************************************************************
+void getRGB(int hue, int sat, int val, int colors[3]) { 
+  val = dim_curve[val];
+ 
+  int r;
+  int g;
+  int b;
+  int base;
+ 
+  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
+    colors[0]=val;
+    colors[1]=val;
+    colors[2]=val;  
+  } else { 
+ 
+    base = ((255 - sat) * val)>>8;
+ 
+    switch(hue/60) {
+      case 0:
+        r = val;
+        g = (((val-base)*hue)/60)+base;
+        b = base;
+        break;
+      case 1:
+        r = (((val-base)*(60-(hue%60)))/60)+base;
+        g = val;
+        b = base;
+        break;
+      case 2:
+        r = base;
+        g = val;
+        b = (((val-base)*(hue%60))/60)+base;
+        break;
+      case 3:
+        r = base;
+        g = (((val-base)*(60-(hue%60)))/60)+base;
+        b = val;
+        break;
+      case 4:
+        r = (((val-base)*(hue%60))/60)+base;
+        g = base;
+        b = val;
+        break;
+      case 5:
+        r = val;
+        g = base;
+        b = (((val-base)*(60-(hue%60)))/60)+base;
+        break;
+    }
+ 
+    colors[0]=r;
+    colors[1]=g;
+    colors[2]=b; 
+  }   
+}
 
 //**********************************************************************************
 //**********************************************************************************
@@ -2169,7 +2192,7 @@ void outputDisplay()
         SetSN74141Chip(NumberArray[i]);
       }
 
-      if (timer == digitOffTime ) {
+      if (timer == digitOffTime) {
         digitOff();
       }
     }
@@ -2614,72 +2637,6 @@ float getRTCTemp() {
   }
 }
 
-void getRGB(int hue, int sat, int val, int colors[3]) { 
-  /* convert hue, saturation and brightness ( HSB/HSV ) to RGB
-     The dim_curve is used only on brightness/value and on saturation (inverted).
-     This looks the most natural.      
-  */
- 
-  val = dim_curve[val];
-  sat = 255-dim_curve[255-sat];
- 
-  int r;
-  int g;
-  int b;
-  int base;
- 
-  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
-    colors[0]=val;
-    colors[1]=val;
-    colors[2]=val;  
-  } else  { 
- 
-    base = ((255 - sat) * val)>>8;
- 
-    switch(hue/60) {
-  case 0:
-    r = val;
-    g = (((val-base)*hue)/60)+base;
-    b = base;
-  break;
- 
-  case 1:
-    r = (((val-base)*(60-(hue%60)))/60)+base;
-    g = val;
-    b = base;
-  break;
- 
-  case 2:
-    r = base;
-    g = val;
-    b = (((val-base)*(hue%60))/60)+base;
-  break;
- 
-  case 3:
-    r = base;
-    g = (((val-base)*(60-(hue%60)))/60)+base;
-    b = val;
-  break;
- 
-  case 4:
-    r = (((val-base)*(hue%60))/60)+base;
-    g = base;
-    b = val;
-  break;
- 
-  case 5:
-    r = val;
-    g = base;
-    b = (((val-base)*(60-(hue%60)))/60)+base;
-  break;
-    }
- 
-    colors[0]=r;
-    colors[1]=g;
-    colors[2]=b; 
-  }   
-}
-
 //**********************************************************************************
 //**********************************************************************************
 //*                           Internal Time Provider                               *
@@ -2863,6 +2820,7 @@ void readEEPROMValues() {
   if ((antiGhost < ANTI_GHOST_MIN) || (antiGhost > ANTI_GHOST_MAX)) {
     antiGhost = ANTI_GHOST_DEFAULT;
   }
+  dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
 }
 
 // ************************************************************
@@ -2975,13 +2933,13 @@ int getDimmingFromLDR() {
 // ******************************************************************
 void checkLEDPWM(byte LEDPin, int step) {
   if (step > 767) {
-    analogWrite(LEDPin,0);
+    analogWrite(LEDPin,getLEDAdjusted(0,1,1));
   } else if (step > 512) {
-    analogWrite(LEDPin,255-(step-512));
+    analogWrite(LEDPin,getLEDAdjusted(255-(step-512),1,1));
   } else if (step > 255) {
-    analogWrite(LEDPin,255);
+    analogWrite(LEDPin,getLEDAdjusted(255,1,1));
   } else if (step > 0) {
-    analogWrite(LEDPin,step);
+    analogWrite(LEDPin,getLEDAdjusted(step,1,1));
   } 
 }
 
