@@ -21,6 +21,7 @@
 #include <EEPROM.h>
 #include <DS3231.h>
 #include <Wire.h>
+#include <Time.h>
 
 //**********************************************************************************
 //**********************************************************************************
@@ -303,133 +304,6 @@
 
 //**********************************************************************************
 
-// Structure for encapsulating buffered time and date manipulation.
-// Set the sync time with a known time and date periodically, and use the internal Arduino 
-// clock to keep this updated inbetween syncs.
-// Advantages: Much faster internmediate reads. No need to hit external time providers
-// fast. For example GPS and DCF cannot immediately give dates and times. (GSP over serial
-// is too slow to read very often, DCF is just slow to sync)
-struct DateTime {
-public:
-  // Constructor
-  DateTime() : hours(0), mins(0), secs(0), years(0), months(0), days(0) { millisDate = 0; }
-  
-  // Set a synchronised time point. We match the date and time given in the hours/mins.... variables
-  // with the milliseconds timestamp given.
-  // To read an updated timestamp, we use the next function "setDeltaMillis"
-  void setSyncTime(long newMillis,byte newYears,byte newMonths,byte newDays,byte newHours,byte newMins,byte newSecs) {
-    years = newYears;
-    months = newMonths;
-    days = newDays;
-    hours = newHours;
-    mins = newMins;
-    secs = newSecs;
-    dow = dayofweek(years,months,days);
-    millisDate = newMillis;
-  }
-  
-  // Update the time with a new millis timestamp
-  void setDeltaMillis(long newMillis) { setDelta(newMillis); }
-  
-  // Find out how long it is since we last did a sync 
-  long getDeltaMillis(long newMillis) { return getDelta(newMillis); }
-  
-  // Current time - updated by "setDeltaMillis"
-  byte getHours() { return getHoursByMode(deltaHours); }
-  byte getHours24() { return deltaHours; }  // Always 24h format
-  byte getMins()  { return deltaMins; }
-  byte getSecs()  { return deltaSecs; }
-
-  // Current date / dow
-  byte getYears()  { return years; }
-  byte getMonths() { return months; }
-  byte getDays()   { return days; }
-  byte getDow()    { return dow; }
-
-  // Current sync time - updated by "setSyncTime"
-  byte getSyncHours() { return getHoursByMode(hours); }
-  byte getSyncMins()  { return mins; }
-  byte getSyncSecs()  { return secs; }
-
-  void setHourMode(boolean newMode) { hourMode = newMode; }
-  boolean getHourMode() { return hourMode; }
-  int getDayOfWeek(int year, int month, int day) { return dayofweek(year, month, day); } 
-   
-private:
-  // Synced time
-  byte hours;
-  byte mins;
-  byte secs;
-   
-  // Variable time
-  byte deltaHours;
-  byte deltaMins;
-  byte deltaSecs;
-   
-  // Date
-  byte years;
-  byte months;
-  byte days;
-  byte dow;
-  
-  // Date mode false = 24h, true = 12h
-  boolean hourMode = false;
-   
-  // Last sync timestamp
-  long millisDate;
-  
-  // Calculate the delta
-  long getDelta(long newMillis) {
-    long deltaMillis = newMillis - millisDate;
-    return deltaMillis;
-  }
-  
-  // Set the delta and recalculate
-  // We do not update the day in this case, we wait until the next read
-  // Of the time provider
-  void setDelta(long newMillis) {
-    long tmpDeltaSecs = newMillis - millisDate;
-    tmpDeltaSecs = tmpDeltaSecs/1000;
-    long tmpSecs = tmpDeltaSecs % 60;
-    long tmpMins = (tmpDeltaSecs / 60) % 60;
-    long tmpHours = (tmpDeltaSecs / 3600) % 24;
-    deltaSecs = secs + tmpSecs;
-    deltaMins = mins + tmpMins;
-    deltaHours = hours + tmpHours;
-    if (deltaSecs > 59) { deltaSecs -= 60; deltaMins++; }
-    if (deltaMins > 59) { deltaMins -= 60; deltaHours++; }
-    if (deltaHours > 23) { deltaHours -= 24; }
-  }
-  
-  // Implement 24/12 hour mode
-  byte getHoursByMode(byte hours) {
-    if (hourMode) {
-      if (hours == 0) {
-        return 12;
-      } else if (hours > 12) {
-        return hours - 12;
-      } else {
-        return hours;
-      }
-    } else {
-      return hours;
-    }
-  }
-  
-  // ******************************************************************
-  // Work out the day of week.
-  // Used in day blanking
-  // 1 <= m <= 12,  y > 1752 (in the U.K.)$
-  // Returns 1 = Sunday, 2 = Monday ... 7 = Saturday
-  // ******************************************************************
-  int dayofweek(int y, int m, int d)
-  {
-    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-    y -= m < 3;
-    return ((y + y/4 - y/100 + y/400 + t[m-1] + d) % 7) + 1;
-  }
-};
-
 // Structure for encapsulating button debounce and management
 struct Button {
 public:
@@ -705,12 +579,10 @@ DS3231 Clock;
 
 #define RTC_I2C_ADDRESS 0x68
 
-// Time initial values, overwritten on startup if a time provider is there
-DateTime displayDate;
-
 // State variables for detecting changes
 byte lastSec;
 long nowMillis = 0;
+long lastCheckMillis = 0;
 
 byte dateFormat = DATE_FORMAT_DEFAULT;
 byte dayBlanking = DAY_BLANKING_DEFAULT;
@@ -718,6 +590,7 @@ boolean blanked = false;
 byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 min, 2 press = 1 hour, 3 = 1 day
 long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
 long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
+boolean hourMode = false;
 
 boolean useRTC = false;
 
@@ -929,7 +802,7 @@ void setup()
   
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
-  displayDate.setSyncTime(nowMillis,15,10,1,12,34,56);
+  setTime(12,34,56,1,10,2016);
 
   // Recover the time from the RTC
   if (useRTC) {
@@ -953,17 +826,13 @@ void loop()
   // We don't want to get the time from the external time provider always,
   // just enough to keep the internal time provider correct
   // This keeps the outer loop fast and responsive
-  if (displayDate.getDeltaMillis(nowMillis) > READ_TIME_PROVIDER_MILLIS) {
+  if ((nowMillis-lastCheckMillis) > READ_TIME_PROVIDER_MILLIS) {
     if (useRTC) {
       // get the time from the external provider - slow but accurate
       getRTCTime(nowMillis);
-    } else {
-      // We have no RTC, just run, or wait for an I2C update
-      updateInternalTimeDelta(nowMillis);      
     }
-  } else {
-    // Get the time from the internal provider - quick and easy
-    getTimeInt(nowMillis);
+    
+    lastCheckMillis = nowMillis;
   }
 
   // Check button, we evaluate below  // Get the time from the internal provider
@@ -1055,7 +924,7 @@ void loop()
     }
 
     if (nextMode == MODE_12_24) {
-      loadNumberArrayConfBool(displayDate.getHourMode(),nextMode-MODE_12_24);
+      loadNumberArrayConfBool(hourMode,nextMode-MODE_12_24);
       displayConfig();
     }
 
@@ -1198,7 +1067,7 @@ void loop()
 
   } else {
     if (currentMode == MODE_TIME) {
-      if (displayDate.getSecs() == 0) {
+      if (second() == 0) {
         boolean nativeBlanked = checkBlanking();
         blanked = nativeBlanked && (nowMillis > blankSuppressedEndMillis);
         
@@ -1322,9 +1191,9 @@ void loop()
 
       if (currentMode == MODE_12_24) {
         if(button1.isButtonPressedAndReleased()) {
-          displayDate.setHourMode(!displayDate.getHourMode());
+          hourMode = ! hourMode;
         }
-        loadNumberArrayConfBool(displayDate.getHourMode(),currentMode-MODE_12_24);
+        loadNumberArrayConfBool(hourMode,currentMode-MODE_12_24);
         displayConfig();
       }
 
@@ -1648,7 +1517,7 @@ void loop()
   if ((currentMode != MODE_DIGIT_BURN) && (nextMode != MODE_DIGIT_BURN)) {
     // One armed bandit trigger every 10th minute
     if (acpOffset == 0) {
-      if (((displayDate.getMins() % 10) == 9) && (displayDate.getSecs() == 15)) {
+      if (((minute() % 10) == 9) && (second() == 15)) {
         // suppress ACP when fully dimmed
         if (suppressACP) {
           if (digitOffCount > minDim) {
@@ -1693,10 +1562,10 @@ void loop()
 void setLeds(long nowMillis)
 {
   // Pulse PWM generation - Only update it on a second change (not every time round the loop)
-  if (displayDate.getSecs() != lastSec) {
-    lastSec = displayDate.getSecs();
+  if (second() != lastSec) {
+    lastSec = second();
 
-    upOrDown = (displayDate.getSecs() % 2 == 0);
+    upOrDown = (second() % 2 == 0);
 
     // Reset the PWM every now and again, otherwise it drifts
     if (upOrDown) {
@@ -1899,12 +1768,17 @@ void getRGB(int hue, int sat, int val, int colors[3]) {
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayTime() {
-  NumberArray[5] = displayDate.getSecs() % 10;
-  NumberArray[4] = displayDate.getSecs() / 10;
-  NumberArray[3] = displayDate.getMins() % 10;
-  NumberArray[2] = displayDate.getMins() / 10;
-  NumberArray[1] = displayDate.getHours() % 10;
-  NumberArray[0] = displayDate.getHours() / 10;
+  NumberArray[5] = second() % 10;
+  NumberArray[4] = second() / 10;
+  NumberArray[3] = minute() % 10;
+  NumberArray[2] = minute() / 10;
+  if (hourMode) {
+    NumberArray[1] = hour() % 10;
+    NumberArray[0] = hour() / 10;
+  } else {
+    NumberArray[1] = hourFormat12() % 10;
+    NumberArray[0] = hourFormat12() / 10;
+  }
 }
 
 // ************************************************************
@@ -1925,28 +1799,28 @@ void loadNumberArray8s() {
 void loadNumberArrayDate() {
   switch(dateFormat) {
     case DATE_FORMAT_YYMMDD:
-      NumberArray[5] = displayDate.getDays() % 10;
-      NumberArray[4] = displayDate.getDays() / 10;
-      NumberArray[3] = displayDate.getMonths() % 10;
-      NumberArray[2] = displayDate.getMonths() / 10;
-      NumberArray[1] = displayDate.getYears() % 10;
-      NumberArray[0] = displayDate.getYears() / 10;
+      NumberArray[5] = day() % 10;
+      NumberArray[4] = day() / 10;
+      NumberArray[3] = month() % 10;
+      NumberArray[2] = month() / 10;
+      NumberArray[1] = (year()-2000) % 10;
+      NumberArray[0] = (year()-2000) / 10;
       break;
     case DATE_FORMAT_MMDDYY:
-      NumberArray[5] = displayDate.getYears() % 10;
-      NumberArray[4] = displayDate.getYears() / 10;
-      NumberArray[3] = displayDate.getDays() % 10;
-      NumberArray[2] = displayDate.getDays() / 10;
-      NumberArray[1] = displayDate.getMonths() % 10;
-      NumberArray[0] = displayDate.getMonths() / 10;
+      NumberArray[5] = (year()-2000) % 10;
+      NumberArray[4] = (year()-2000) / 10;
+      NumberArray[3] = day() % 10;
+      NumberArray[2] = day() / 10;
+      NumberArray[1] = month() % 10;
+      NumberArray[0] = month() / 10;
       break;
     case DATE_FORMAT_DDMMYY:
-      NumberArray[5] = displayDate.getYears() % 10;
-      NumberArray[4] = displayDate.getYears() / 10;
-      NumberArray[3] = displayDate.getMonths() % 10;
-      NumberArray[2] = displayDate.getMonths() / 10;
-      NumberArray[1] = displayDate.getDays() % 10;
-      NumberArray[0] = displayDate.getDays() / 10;
+      NumberArray[5] = (year()-2000) % 10;
+      NumberArray[4] = (year()-2000) / 10;
+      NumberArray[3] = month() % 10;
+      NumberArray[2] = month() / 10;
+      NumberArray[1] = day() % 10;
+      NumberArray[0] = day() / 10;
       break;
   }
 }
@@ -1984,24 +1858,24 @@ void loadNumberArrayLDR() {
 // Test digits
 // ************************************************************
 void loadNumberArrayTestDigits() {
-  NumberArray[5] = displayDate.getSecs() % 10;
-  NumberArray[4] = (displayDate.getSecs()+1) % 10;
-  NumberArray[3] = (displayDate.getSecs()+2) % 10;
-  NumberArray[2] = (displayDate.getSecs()+3) % 10;
-  NumberArray[1] = (displayDate.getSecs()+4) % 10;
-  NumberArray[0] = (displayDate.getSecs()+5) % 10;
+  NumberArray[5] =  second() % 10;
+  NumberArray[4] = (second()+1) % 10;
+  NumberArray[3] = (second()+2) % 10;
+  NumberArray[2] = (second()+3) % 10;
+  NumberArray[1] = (second()+4) % 10;
+  NumberArray[0] = (second()+5) % 10;
 }
 
 // ************************************************************
 // Do the Anti Cathode Poisoning
 // ************************************************************
 void loadNumberArrayACP() {
-  NumberArray[5] = (displayDate.getSecs() + acpOffset) % 10;
-  NumberArray[4] = (displayDate.getSecs() / 10 + acpOffset) % 10;
-  NumberArray[3] = (displayDate.getMins() + acpOffset) % 10;
-  NumberArray[2] = (displayDate.getMins() / 10 + acpOffset) % 10;
-  NumberArray[1] = (displayDate.getHours() + acpOffset)  % 10;
-  NumberArray[0] = (displayDate.getHours() / 10 + acpOffset) % 10;
+  NumberArray[5] = (second() + acpOffset) % 10;
+  NumberArray[4] = (second() / 10 + acpOffset) % 10;
+  NumberArray[3] = (minute() + acpOffset) % 10;
+  NumberArray[2] = (minute() / 10 + acpOffset) % 10;
+  NumberArray[1] = (hour() + acpOffset)  % 10;
+  NumberArray[0] = (hour() / 10 + acpOffset) % 10;
 }
 
 // ************************************************************
@@ -2427,52 +2301,52 @@ void allBlanked() {
 // ************************************************************
 // increment the time by 1 Sec
 // ************************************************************
-void incSecs() {
-  byte tmpSecs = displayDate.getSecs();
+void incsecond() {
+  byte tmpSecs = second();
   tmpSecs++;
   if (tmpSecs >= SECS_MAX) {
     tmpSecs = 0;
   }
-  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),tmpSecs);
-  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),tmpSecs);
+  setTime(hour(),minute(),tmpSecs,day(),month(),year());
+  setRTC();
 }
 
 // ************************************************************
 // increment the time by 1 min
 // ************************************************************
 void incMins() {
-  byte tmpMins = displayDate.getMins();
+  byte tmpMins = minute();
   tmpMins++;
   if (tmpMins >= MINS_MAX) {
     tmpMins = 0;
   }
-  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),tmpMins,0);
-  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),tmpMins,0);
+  setTime(hour(),tmpMins,0,day(),month(),year());
+  setRTC();
 }
 
 // ************************************************************
 // increment the time by 1 hour
 // ************************************************************
 void incHours() {
-  byte tmpHours = displayDate.getHours24();
+  byte tmpHours = hour();
   tmpHours++;
 
   if (tmpHours >= HOURS_MAX) {
     tmpHours = 0;
   }
-  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),tmpHours,displayDate.getMins(),displayDate.getSecs());
-  setRTC(displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),tmpHours,displayDate.getMins(),displayDate.getSecs());
+  setTime(tmpHours,minute(),second(),day(),month(),year());
+  setRTC();
 }
 
 // ************************************************************
 // increment the date by 1 day
 // ************************************************************
 void incDays() {
-  byte tmpDays = displayDate.getDays();
+  byte tmpDays = day();
   tmpDays++;
 
   int maxDays;
-  switch (displayDate.getMonths())
+  switch (month())
   {
   case 4:
   case 6:
@@ -2497,36 +2371,36 @@ void incDays() {
   if (tmpDays > maxDays) {
     tmpDays = 1;
   }
-  displayDate.setSyncTime(nowMillis,displayDate.getYears(),displayDate.getMonths(),tmpDays,displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
-  setRTC(displayDate.getYears(),displayDate.getMonths(),tmpDays,displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
+  setTime(hour(),minute(),second(),tmpDays,month(),year());
+  setRTC();
 }
 
 // ************************************************************
 // increment the month by 1 month
 // ************************************************************
 void incMonths() {
-  byte tmpMonths = displayDate.getMonths();
+  byte tmpMonths = month();
   tmpMonths++;
 
   if (tmpMonths > 12) {
     tmpMonths = 1;
   }
-  displayDate.setSyncTime(nowMillis,displayDate.getYears(),tmpMonths,displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
-  setRTC(displayDate.getYears(),tmpMonths,displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
+  setTime(hour(),minute(),second(),day(),tmpMonths,year());
+  setRTC();
 }
 
 // ************************************************************
 // increment the year by 1 year
 // ************************************************************
 void incYears() {
-  byte tmpYears = displayDate.getYears();
+  byte tmpYears = year() % 100;
   tmpYears++;
 
   if (tmpYears > 50) {
     tmpYears = 15;
   }
-  displayDate.setSyncTime(nowMillis,tmpYears,displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
-  setRTC(tmpYears,displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),displayDate.getSecs());
+  setTime(hour(),minute(),second(),day(),month(),2000+tmpYears);
+  setRTC();
 }
 
 // ************************************************************
@@ -2535,24 +2409,24 @@ void incYears() {
 boolean checkBlanking() {
   // Check day blanking, but only when we are in
   // normal time mode
-  if ((displayDate.getSecs() == 0) && (currentMode == MODE_TIME)) {
+  if ((second() == 0) && (currentMode == MODE_TIME)) {
     switch(dayBlanking) {
       case DAY_BLANKING_NEVER:
         return false;
       case DAY_BLANKING_HOURS:
         return getHoursBlanked();
       case DAY_BLANKING_WEEKEND:
-        return ((displayDate.getDow() == 1) || (displayDate.getDow() == 7));
+        return ((weekday() == 1) || (weekday() == 7));
       case DAY_BLANKING_WEEKEND_OR_HOURS:
-        return ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) || getHoursBlanked();
+        return ((weekday() == 1) || (weekday() == 7)) || getHoursBlanked();
       case DAY_BLANKING_WEEKEND_AND_HOURS:
-        return ((displayDate.getDow() == 1) || (displayDate.getDow() == 7)) && getHoursBlanked();
+        return ((weekday() == 1) || (weekday() == 7)) && getHoursBlanked();
       case DAY_BLANKING_WEEKDAY:
-        return ((displayDate.getDow() > 1) && (displayDate.getDow() < 7));
+        return ((weekday() > 1) && (weekday() < 7));
       case DAY_BLANKING_WEEKDAY_OR_HOURS:
-        return ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) || getHoursBlanked();
+        return ((weekday() > 1) && (weekday() < 7)) || getHoursBlanked();
       case DAY_BLANKING_WEEKDAY_AND_HOURS:
-        return ((displayDate.getDow() > 1) && (displayDate.getDow() < 7)) && getHoursBlanked();
+        return ((weekday() > 1) && (weekday() < 7)) && getHoursBlanked();
       case DAY_BLANKING_ALWAYS:
         return true;
     }
@@ -2565,10 +2439,10 @@ boolean checkBlanking() {
 boolean getHoursBlanked() {
   if (blankHourStart > blankHourEnd) {
     // blanking before midnight
-    return ((displayDate.getHours24() >= blankHourStart) || (displayDate.getHours24() < blankHourEnd));
+    return ((hour() >= blankHourStart) || (hour() < blankHourEnd));
   } else if (blankHourStart < blankHourEnd) {
     // dim at or after midnight
-    return ((displayDate.getHours24() >= blankHourStart) && (displayDate.getHours24() < blankHourEnd));
+    return ((hour() >= blankHourStart) && (hour() < blankHourEnd));
   } else {
     // no dimming if Start = End
     return false;
@@ -2593,36 +2467,32 @@ void getRTCTime(long currentMillis) {
       bool twentyFourHourClock;
       bool century = false;
   
-      byte years=Clock.getYear();
+      byte years=Clock.getYear() + 2000;
       byte months=Clock.getMonth(century);
       byte days=Clock.getDate();
       byte hours=Clock.getHour(twentyFourHourClock,PM);
       byte mins=Clock.getMinute();
       byte secs=Clock.getSecond();
-      displayDate.setSyncTime(currentMillis,years,months,days,hours,mins,secs);
+      setTime(hours,mins,secs,days,months,years);
     }
-  } else {
-    // just say that we were updated
-    displayDate.setSyncTime(currentMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours24(),displayDate.getMins(),0);
   }
 }
 
 // ************************************************************
-// Set the date/time in the RTC
+// Set the date/time in the RTC from the internal time
 // Always hold the time in 24 format, we convert to 12 in the 
 // display.
 // ************************************************************
-void setRTC(byte newYear,byte newMonth,byte newDay,byte newHour,byte newMin,byte newSec) {
+void setRTC() {
   if (useRTC) {
     Clock.setClockMode(false); // false = 24h
-    Clock.setYear(newYear);
-    Clock.setMonth(newMonth);
-    Clock.setDate(newDay);
-    int dow = displayDate.getDayOfWeek(2000 + newYear,newMonth,newDay);
-    Clock.setDoW(dow);
-    Clock.setHour(newHour);
-    Clock.setMinute(newMin);
-    Clock.setSecond(newSec);
+    Clock.setYear(year()%100);
+    Clock.setMonth(month());
+    Clock.setDate(day());
+    Clock.setDoW(weekday());
+    Clock.setHour(hour());
+    Clock.setMinute(minute());
+    Clock.setSecond(second());
   }
 }
 
@@ -2643,22 +2513,6 @@ float getRTCTemp() {
 //**********************************************************************************
 //**********************************************************************************
 
-// ************************************************************
-// Get the time from the internal time provider
-// The crystal oscillator is good enough for driving the clock
-// most of the time, and we use the internal time provider
-// for most of the calls. We periodically align the internal
-// provider to the external one, which has better long term
-// stability.
-// ************************************************************
-void getTimeInt(long currentMillis) {
-  displayDate.setDeltaMillis(currentMillis);
-}
-
-void updateInternalTimeDelta(long currentMillis) {
-  displayDate.setSyncTime(currentMillis,displayDate.getYears(),displayDate.getMonths(),displayDate.getDays(),displayDate.getHours(),displayDate.getMins(),displayDate.getSecs());
-}
-
 //**********************************************************************************
 //**********************************************************************************
 //*                               EEPROM interface                                 *
@@ -2669,7 +2523,7 @@ void updateInternalTimeDelta(long currentMillis) {
 // Save current values back to EEPROM
 // ************************************************************
 void saveEEPROMValues() {
-  EEPROM.write(EE_12_24,displayDate.getHourMode());
+  EEPROM.write(EE_12_24,hourMode);
   EEPROM.write(EE_FADE_STEPS,fadeSteps);
   EEPROM.write(EE_DATE_FORMAT, dateFormat);
   EEPROM.write(EE_DAY_BLANKING, dayBlanking);
@@ -2703,7 +2557,7 @@ void saveEEPROMValues() {
 // read EEPROM values
 // ************************************************************
 void readEEPROMValues() {
-  displayDate.setHourMode(EEPROM.read(EE_12_24));
+  hourMode = EEPROM.read(EE_12_24);
 
   fadeSteps = EEPROM.read(EE_FADE_STEPS);
   if ((fadeSteps < FADE_STEPS_MIN) || (fadeSteps > FADE_STEPS_MAX)) {
@@ -2827,7 +2681,7 @@ void readEEPROMValues() {
 // Reset EEPROM values back to what they once were
 // ************************************************************
 void factoryReset() {
-  displayDate.setHourMode(false);
+  hourMode = false;
   blankLeading = false;
   scrollback = true;
   fadeSteps = FADE_STEPS_DEFAULT;
@@ -3123,12 +2977,11 @@ void receiveEvent(int bytes) {
     int newMins = Wire.read();
     int newSecs = Wire.read();
   
-    displayDate.setSyncTime(nowMillis,newYears,newMonths,newDays,newHours,newMins,newSecs);
+    setTime(newHours,newMins,newSecs,newDays,newMonths,newYears);
   } else if (operation == I2C_SET_OPTION_12_24) {
     byte readByte1224 = Wire.read();
-    boolean newHourMode = (readByte1224 == 1);
-    displayDate.setHourMode(newHourMode);
-    EEPROM.write(EE_12_24,displayDate.getHourMode());
+    hourMode = (readByte1224 == 1);
+    EEPROM.write(EE_12_24,true);
   } else if (operation == I2C_SET_OPTION_BLANK_LEAD) {
     byte readByteBlank = Wire.read();
     blankLeading = (readByteBlank == 1);
@@ -3183,7 +3036,7 @@ void receiveEvent(int bytes) {
 void requestEvent() {
   byte configArray[16];
   int idx = 0;
-  configArray[idx++] = encodeBooleanForI2C(displayDate.getHourMode());
+  configArray[idx++] = encodeBooleanForI2C(true);
   configArray[idx++] = encodeBooleanForI2C(blankLeading); 
   configArray[idx++] = encodeBooleanForI2C(scrollback);
   configArray[idx++] = encodeBooleanForI2C(suppressACP);
