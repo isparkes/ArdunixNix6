@@ -610,9 +610,17 @@ byte grnCnl = COLOUR_GRN_CNL_DEFAULT;
 byte bluCnl = COLOUR_BLU_CNL_DEFAULT;
 byte cycleCount = 0;
 byte cycleSpeed = CYCLE_SPEED_DEFAULT;
+
+int colors[3];
+  
+// Strateg2
 float hueIncrement = 0.0;
 int hueCount = 0;
 float hue = 0.0;
+
+// Strategy 3
+int changeSteps=0;
+byte currentColour=0;
 
 // ********************** Input switch management **********************
 Button button1(inputPin1,false);
@@ -1596,8 +1604,6 @@ void setLeds(long nowMillis)
   // Tick led output
   analogWrite(tickLed,getLEDAdjusted(255,pwmFactor,dimFactor));
 
-  int colors[3];
-  
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
     switch (backlightMode) {
@@ -1612,7 +1618,7 @@ void setLeds(long nowMillis)
         analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl],pwmFactor,1));
         break;
       case BACKLIGHT_CYCLE:
-        cycleColours(colors);
+        cycleColours3(colors);
         analogWrite(RLed, getLEDAdjusted(colors[0],1,1));
         analogWrite(GLed, getLEDAdjusted(colors[1],1,1));
         analogWrite(BLed, getLEDAdjusted(colors[2],1,1));
@@ -1628,7 +1634,7 @@ void setLeds(long nowMillis)
         analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl],pwmFactor,dimFactor));
         break;
       case BACKLIGHT_CYCLE_DIM:
-        cycleColours(colors);
+        cycleColours3(colors);
         analogWrite(RLed, getLEDAdjusted(colors[0],1,dimFactor));
         analogWrite(GLed, getLEDAdjusted(colors[1],1,dimFactor));
         analogWrite(BLed, getLEDAdjusted(colors[2],1,dimFactor));
@@ -1673,90 +1679,140 @@ byte getLEDAdjusted(float rawValue, float ledPWMVal, float dimFactor) {
   return dim_curve[dimmedPWMVal];
 }
 
+//// ************************************************************
+//// Colour cycling: strategy 2 : use random changing hue
+//// ************************************************************
+//void cycleColours2(int colors[3]) {
+//  cycleCount++;
+//  if (cycleCount > cycleSpeed) {
+//    cycleCount = 0;
+//
+//    if (hueCount == 0) {
+//      hueCount = random(1000);
+//
+//      int rawIncrement = random(201) - 100;
+//      hueIncrement = ((float) rawIncrement / 100.0);
+//    }
+//
+//    hue += hueIncrement;
+//    hueCount--;
+//    if (hue > 360) {hue -= 360;}
+//    if (hue < 0) {hue += 360;}
+//
+//    getRGB((int) hue, 128, 255, colors);
+//  }
+//}
+
 // ************************************************************
-// Change the hue for the colour cycling
+// Colour cycling 3: one colour dominates
 // ************************************************************
-void cycleColours(int colors[3]) {
+void cycleColours3(int colors[3]) {
   cycleCount++;
   if (cycleCount > cycleSpeed) {
     cycleCount = 0;
 
-    if (hueCount == 0) {
-      hueCount = random(1000);
-
-      int rawIncrement = random(101) - 50;
-      hueIncrement = ((float) rawIncrement / 100.0);
+    if (changeSteps == 0) {
+      changeSteps = random(256);
+      currentColour = random(3);
+//      Serial.println();
+//      Serial.print("Change Steps:");
+//      Serial.print(changeSteps);
+//      Serial.print("Colour:");
+//      Serial.print(currentColour);
+//      Serial.println();
     }
 
-    hue += hueIncrement;
-    hueCount--;
-    if (hue > 360) {hue -= 360;}
-    if (hue < 0) {hue += 360;}
+    changeSteps--;
 
-    getRGB((int) hue, 255, 255, colors);
+    switch(currentColour) {
+      case 0:
+        if(colors[0] < 255) {colors[0]++;} else {if ((colors[1]+colors[2]) == 0) {changeSteps = 0;}}
+        if (colors[1] > colors[2]) {
+          if(colors[1] > 0) {colors[1]--;}
+        } else {
+          if(colors[2] > 0) {colors[2]--;}
+        }
+        break;
+      case 1:
+        if(colors[1] < 255) {colors[1]++;} else {if ((colors[0]+colors[2]) == 0) {changeSteps = 0;}}
+        if (colors[0] > colors[2]) {
+          if(colors[0] > 0) {colors[0]--;}
+        } else {
+          if(colors[2] > 0) {colors[2]--;}
+        }
+        break;
+      case 2:
+        if(colors[2] < 255) {colors[2]++;} else {if ((colors[0]+colors[1]) == 0) {changeSteps = 0;}}
+        if (colors[0] > colors[1]) {
+          if(colors[0] > 0) {colors[0]--;}
+        } else {
+          if(colors[1] > 0) {colors[1]--;}
+        }
+        break;
+    }
   }
 }
 
-// ************************************************************
-// Convert HSV to RGB
-// Hue 0 - 359
-// Sat 0 - 255
-// Val 0 - 255
-// ************************************************************
-void getRGB(int hue, int sat, int val, int colors[3]) { 
-  val = dim_curve[val];
- 
-  int r;
-  int g;
-  int b;
-  int base;
- 
-  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
-    colors[0]=val;
-    colors[1]=val;
-    colors[2]=val;  
-  } else { 
- 
-    base = ((255 - sat) * val)>>8;
- 
-    switch(hue/60) {
-      case 0:
-        r = val;
-        g = (((val-base)*hue)/60)+base;
-        b = base;
-        break;
-      case 1:
-        r = (((val-base)*(60-(hue%60)))/60)+base;
-        g = val;
-        b = base;
-        break;
-      case 2:
-        r = base;
-        g = val;
-        b = (((val-base)*(hue%60))/60)+base;
-        break;
-      case 3:
-        r = base;
-        g = (((val-base)*(60-(hue%60)))/60)+base;
-        b = val;
-        break;
-      case 4:
-        r = (((val-base)*(hue%60))/60)+base;
-        g = base;
-        b = val;
-        break;
-      case 5:
-        r = val;
-        g = base;
-        b = (((val-base)*(60-(hue%60)))/60)+base;
-        break;
-    }
- 
-    colors[0]=r;
-    colors[1]=g;
-    colors[2]=b; 
-  }   
-}
+//// ************************************************************
+//// Convert HSV to RGB
+//// Hue 0 - 359
+//// Sat 0 - 255
+//// Val 0 - 255
+//// ************************************************************
+//void getRGB(int hue, int sat, int val, int colors[3]) { 
+//  val = dim_curve[val];
+// 
+//  int r;
+//  int g;
+//  int b;
+//  int base;
+// 
+//  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
+//    colors[0]=val;
+//    colors[1]=val;
+//    colors[2]=val;  
+//  } else { 
+// 
+//    base = ((255 - sat) * val)>>8;
+// 
+//    switch(hue/60) {
+//      case 0:
+//        r = val;
+//        g = (((val-base)*hue)/60)+base;
+//        b = base;
+//        break;
+//      case 1:
+//        r = (((val-base)*(60-(hue%60)))/60)+base;
+//        g = val;
+//        b = base;
+//        break;
+//      case 2:
+//        r = base;
+//        g = val;
+//        b = (((val-base)*(hue%60))/60)+base;
+//        break;
+//      case 3:
+//        r = base;
+//        g = (((val-base)*(60-(hue%60)))/60)+base;
+//        b = val;
+//        break;
+//      case 4:
+//        r = (((val-base)*(hue%60))/60)+base;
+//        g = base;
+//        b = val;
+//        break;
+//      case 5:
+//        r = val;
+//        g = base;
+//        b = (((val-base)*(60-(hue%60)))/60)+base;
+//        break;
+//    }
+// 
+//    colors[0]=r;
+//    colors[1]=g;
+//    colors[2]=b; 
+//  }   
+//}
 
 //**********************************************************************************
 //**********************************************************************************
@@ -1773,11 +1829,11 @@ void loadNumberArrayTime() {
   NumberArray[3] = minute() % 10;
   NumberArray[2] = minute() / 10;
   if (hourMode) {
-    NumberArray[1] = hour() % 10;
-    NumberArray[0] = hour() / 10;
-  } else {
     NumberArray[1] = hourFormat12() % 10;
     NumberArray[0] = hourFormat12() / 10;
+  } else {
+    NumberArray[1] = hour() % 10;
+    NumberArray[0] = hour() / 10;
   }
 }
 
