@@ -3092,7 +3092,7 @@ void receiveEvent(int bytes) {
 void requestEvent() {
   byte configArray[16];
   int idx = 0;
-  configArray[idx++] = encodeBooleanForI2C(true);
+  configArray[idx++] = encodeBooleanForI2C(hourMode );
   configArray[idx++] = encodeBooleanForI2C(blankLeading); 
   configArray[idx++] = encodeBooleanForI2C(scrollback);
   configArray[idx++] = encodeBooleanForI2C(suppressACP);
