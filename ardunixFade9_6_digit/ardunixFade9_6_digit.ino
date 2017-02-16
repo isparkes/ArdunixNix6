@@ -12,7 +12,6 @@
 //*  - Automatic dimming, using a Light Dependent Resistor                         *
 //*  - RGB back light management                                                   *
 //*                                                                                *
-//*  isparkes@protonmail.ch                                                        *
 //*  nixie@protonmail.ch                                                           *
 //*                                                                                *
 //**********************************************************************************
@@ -59,9 +58,11 @@
 #define EE_MIN_DIM_LO       29     // The min dim value
 #define EE_MIN_DIM_HI       30     // The min dim value
 #define EE_ANTI_GHOST       31     // The value we use for anti-ghosting
+#define EE_NEED_SETUP       32     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
+
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 45
+#define SOFTWARE_VERSION 46
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -148,13 +149,17 @@
 
 // Basic settings
 #define MODE_12_24                      6  // Mode "00" 0 = 24, 1 = 12
+#define HOUR_MODE_DEFAULT               false
 #define MODE_LEAD_BLANK                 7  // Mode "01" 1 = blanked
+#define LEAD_BLANK_DEFAULT              false
 #define MODE_SCROLLBACK                 8  // Mode "02" 1 = use scrollback
+#define SCROLLBACK_DEFAULT              false
 #define MODE_DATE_FORMAT                9  // Mode "03"
 #define MODE_DAY_BLANKING               10 // Mode "04"
 #define MODE_HR_BLNK_START              11 // Mode "05" - skipped if not using hour blanking
 #define MODE_HR_BLNK_END                12 // Mode "06" - skipped if not using hour blanking
 #define MODE_SUPPRESS_ACP               13 // Mode "07" 1 = suppress ACP when fully dimmed
+#define SUPPRESS_ACP_DEFAULT            true
 
 // Display tricks
 #define MODE_FADE_STEPS_UP              14 // Mode "08"
@@ -188,9 +193,9 @@
 #define MODE_VERSION                    32 // Mode "26"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  32
+#define MODE_TUBE_TEST                  33
 
-#define MODE_MAX                        31
+#define MODE_MAX                        33
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
@@ -201,7 +206,9 @@
 #define TEMP_MODE_TEMP                  1 // Display the temperature for 5 S
 #define TEMP_MODE_LDR                   2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
 #define TEMP_MODE_VERSION               3 // Display the version for 5S
-#define TEMP_MODE_MAX                   3
+#define TEMP_IP_ADDR12                  4 // IP xxx.yyy.zzz.aaa: xxx.yyy
+#define TEMP_IP_ADDR34                  5 // IP xxx.yyy.zzz.aaa: zzz.aaa
+#define TEMP_MODE_MAX                   5
 
 #define DATE_FORMAT_MIN                 0
 #define DATE_FORMAT_YYMMDD              0
@@ -260,6 +267,7 @@
 #define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
 #define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
 #define I2C_SET_OPTION_CYCLE_SPEED    0x10
+#define I2C_SHOW_IP_ADDR              0x11
 
 
 //**********************************************************************************
@@ -316,7 +324,7 @@ public:
   // sort of preview here, then confirm by releasing. We track
   // 3 lengths of button press: momentarily, 1S and 2S.
   // ************************************************************
-  void checkButton(long nowMillis) {
+  void checkButton(unsigned long nowMillis) {
     checkButtonInternal(nowMillis);
   }
   
@@ -415,7 +423,7 @@ private:
   boolean activeLow;
   
   int  button1PressedCount = 0;
-  long button1PressStartMillis = 0;
+  unsigned long button1PressStartMillis = 0;
   const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
   boolean buttonWasReleased = false;
   boolean buttonPress8S = false;
@@ -427,7 +435,7 @@ private:
   boolean buttonPressRelease1S = false;
   boolean buttonPressRelease = false;
   
-  void checkButtonInternal(long nowMillis) {
+  void checkButtonInternal(unsigned long nowMillis) {
     if (digitalRead(inputPin) == 0) {
       buttonWasReleased = false;
 
@@ -530,6 +538,7 @@ byte NumberArray[6]    = {0,0,0,0,0,0};
 byte currNumberArray[6]= {0,0,0,0,0,0};
 byte displayType[6]    = {FADE,FADE,FADE,FADE,FADE,FADE};
 byte fadeState[6]      = {0,0,0,0,0,0};
+byte ourIP[4]          = {0,0,0,0}; // set by the WiFi module
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
@@ -552,7 +561,7 @@ boolean blankLeading = false;
 const int DIM_VALUE = DIGIT_DISPLAY_COUNT/5;
 int minDim = MIN_DIM_DEFAULT;
 
-long secsDisplayEnd;      // time for the end of the MMSS display
+unsigned long secsDisplayEnd;      // time for the end of the MMSS display
 int  tempDisplayMode;
 
 int acpOffset = 0;        // Used to provide one arm bandit scolling
@@ -581,15 +590,15 @@ DS3231 Clock;
 
 // State variables for detecting changes
 byte lastSec;
-long nowMillis = 0;
-long lastCheckMillis = 0;
+unsigned long nowMillis = 0;
+unsigned long lastCheckMillis = 0;
 
 byte dateFormat = DATE_FORMAT_DEFAULT;
 byte dayBlanking = DAY_BLANKING_DEFAULT;
 boolean blanked = false;
 byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 min, 2 press = 1 hour, 3 = 1 day
-long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
-long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
+unsigned long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
+unsigned long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
 boolean hourMode = false;
 
 boolean useRTC = false;
@@ -718,7 +727,7 @@ void setup()
   TCCR2A = (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
   TCCR2B = (1 << CS22);
 
-  // we don't need the HV yet
+  // we don't need the HV yet, so turn it off
   TCCR1A = tccrOff;
 
   /* enable global interrupts */
@@ -733,29 +742,32 @@ void setup()
 
   // Set up the PRNG with something so that it looks random  
   randomSeed(analogRead(LDRPin));
-  
-  // Detect factory reset: button pressed on start
-  if (button1.isButtonPressedNow()) {
+
+  // Detect factory reset: button pressed on start or uninitialised EEPROM
+  if (button1.isButtonPressedNow() || (EEPROM.read(EE_NEED_SETUP))) {
     // do this before the flashing, because this way we can set up the EEPROM to
     // autocalibrate on first start (press factory reset and then power off before
     // flashing ends)
     EEPROM.write(EE_HVG_NEED_CALIB,true);
-    
-    // Flash 10 x to signal that we have accepted the factory reset
-    for (int i = 0 ; i < 10 ; i++ ) {
+
+    // Flash some ramdom c0lours to signal that we have accepted the factory reset
+    for (int i = 0 ; i < 60 ; i++ ) {
       digitalWrite(tickLed, HIGH);
       if (random(3) == 0) {digitalWrite(RLed, HIGH);}
       if (random(3) == 0) {digitalWrite(GLed, HIGH);}
       if (random(3) == 0) {digitalWrite(BLed, HIGH);}
-      delay(100);
+      delay(20);
       digitalWrite(tickLed, LOW);
       digitalWrite(RLed, LOW);
       digitalWrite(GLed, LOW);
       digitalWrite(BLed, LOW);
-      delay(100);
-
-      factoryReset();
+      delay(20);
     }
+
+    factoryReset();
+
+    // mark that we have done the EEPROM setup
+    EEPROM.write(EE_NEED_SETUP,false);
   }
 
   // Start the RTC communication
@@ -810,11 +822,11 @@ void setup()
   
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
-  setTime(12,34,56,1,10,2016);
+  setTime(12,34,56,1,3,2017);
 
   // Recover the time from the RTC
   if (useRTC) {
-    getRTCTime(nowMillis);
+    getRTCTime();
   }
 
   // Show the version for 1 s
@@ -837,9 +849,9 @@ void loop()
   if ((nowMillis-lastCheckMillis) > READ_TIME_PROVIDER_MILLIS) {
     if (useRTC) {
       // get the time from the external provider - slow but accurate
-      getRTCTime(nowMillis);
+      getRTCTime();
     }
-    
+
     lastCheckMillis = nowMillis;
   }
 
@@ -901,188 +913,194 @@ void loop()
     // turn off blanking
     blanked = false;
 
-    if (nextMode == MODE_TIME) {
-      loadNumberArrayTime();
-      allFade();
-    }
-
-    if (nextMode == MODE_HOURS_SET) {
-      loadNumberArrayTime();
-      highlight0and1();
-    }
-
-    if (nextMode == MODE_MINS_SET) {
-      loadNumberArrayTime();
-      highlight2and3();
-    }
-
-    if (nextMode == MODE_DAYS_SET) {
-      loadNumberArrayDate();
-      highlightDaysDateFormat();
-    }
-
-    if (nextMode == MODE_MONTHS_SET) {
-      loadNumberArrayDate();
-      highlightMonthsDateFormat();
-    }
-
-    if (nextMode == MODE_YEARS_SET) {
-      loadNumberArrayDate();
-      highlightYearsDateFormat();
-    }
-
-    if (nextMode == MODE_12_24) {
-      loadNumberArrayConfBool(hourMode,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_LEAD_BLANK) {
-      loadNumberArrayConfBool(blankLeading,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_SCROLLBACK) {
-      loadNumberArrayConfBool(scrollback,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DATE_FORMAT) {
-      loadNumberArrayConfInt(dateFormat,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_DAY_BLANKING) {
-      loadNumberArrayConfInt(dayBlanking,nextMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if (nextMode == MODE_HR_BLNK_START) {
-      if (dayBlanking < DAY_BLANKING_HOURS) {
-        // Skip past the start and end hour if the blanking mode says it is not relevant
-        nextMode++;
-        currentMode++;
-        nextMode++;
-        currentMode++;
+    switch (nextMode) {
+      case MODE_TIME: {
+        loadNumberArrayTime();
+        allFade();
+        break;
       }
-
-      loadNumberArrayConfInt(blankHourStart,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_HR_BLNK_END) {
-      loadNumberArrayConfInt(blankHourEnd,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_SUPPRESS_ACP) {
-      loadNumberArrayConfBool(suppressACP,nextMode-MODE_12_24);
-      displayConfig();
-    }
-    
-    if ((nextMode == MODE_FADE_STEPS_UP) || (nextMode == MODE_FADE_STEPS_DOWN)) {
-      loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if ((nextMode == MODE_DISPLAY_SCROLL_STEPS_UP) || (nextMode == MODE_DISPLAY_SCROLL_STEPS_DOWN)) {
-      loadNumberArrayConfInt(scrollSteps,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_BACKLIGHT_MODE) {
-      loadNumberArrayConfInt(backlightMode,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_RED_CNL) {
-      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+      case MODE_HOURS_SET: {
+        loadNumberArrayTime();
+        highlight0and1();
+        break;
       }
-      loadNumberArrayConfInt(redCnl,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_GRN_CNL) {
-      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+      case MODE_MINS_SET: {
+        loadNumberArrayTime();
+        highlight2and3();
+        break;
       }
-      loadNumberArrayConfInt(grnCnl,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_BLU_CNL) {
-      if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+      case MODE_DAYS_SET: {
+        loadNumberArrayDate();
+        highlightDaysDateFormat();
+        break;
       }
-      loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_CYCLE_SPEED) {
-      if ((backlightMode != BACKLIGHT_CYCLE) && (backlightMode != BACKLIGHT_CYCLE_DIM))  {
-        // Skip if we are in cycle mode
-        nextMode++;
-        currentMode++;
+      case MODE_MONTHS_SET: {
+        loadNumberArrayDate();
+        highlightMonthsDateFormat();
+        break;
       }
-      loadNumberArrayConfInt(cycleSpeed,nextMode-MODE_12_24);
-      displayConfig();
-    }
+      case MODE_YEARS_SET: {
+        loadNumberArrayDate();
+        highlightYearsDateFormat();
+        break;
+      }
+      case MODE_12_24: {
+        loadNumberArrayConfBool(hourMode,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_LEAD_BLANK: {
+        loadNumberArrayConfBool(blankLeading,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_SCROLLBACK: {
+        loadNumberArrayConfBool(scrollback,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_DATE_FORMAT: {
+        loadNumberArrayConfInt(dateFormat,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_DAY_BLANKING: {
+        loadNumberArrayConfInt(dayBlanking,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_HR_BLNK_START: {
+        if (dayBlanking < DAY_BLANKING_HOURS) {
+          // Skip past the start and end hour if the blanking mode says it is not relevant
+          nextMode++;
+          currentMode++;
+          nextMode++;
+          currentMode++;
+        }
 
-    if ((nextMode == MODE_TARGET_HV_UP) || (nextMode == MODE_TARGET_HV_DOWN)) {
-      loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
-      displayConfig();
+        loadNumberArrayConfInt(blankHourStart,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_HR_BLNK_END: {
+        loadNumberArrayConfInt(blankHourEnd,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_SUPPRESS_ACP: {
+        loadNumberArrayConfBool(suppressACP,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_FADE_STEPS_UP:
+      case MODE_FADE_STEPS_DOWN: {
+        loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_DISPLAY_SCROLL_STEPS_UP:
+      case MODE_DISPLAY_SCROLL_STEPS_DOWN: {
+        loadNumberArrayConfInt(scrollSteps,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_BACKLIGHT_MODE: {
+        loadNumberArrayConfInt(backlightMode,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_RED_CNL: {
+        if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+        loadNumberArrayConfInt(redCnl,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_GRN_CNL: {
+        if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+        loadNumberArrayConfInt(grnCnl,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_BLU_CNL: {
+        if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+        loadNumberArrayConfInt(bluCnl,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_CYCLE_SPEED: {
+        if ((backlightMode != BACKLIGHT_CYCLE) && (backlightMode != BACKLIGHT_CYCLE_DIM))  {
+          // Skip if we are in cycle mode
+          nextMode++;
+          currentMode++;
+        }
+        loadNumberArrayConfInt(cycleSpeed,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_TARGET_HV_UP:
+      case MODE_TARGET_HV_DOWN: {
+        loadNumberArrayConfInt(hvTargetVoltage,nextMode-MODE_12_24);
+        displayConfig();
+      }
+      case MODE_PULSE_UP:
+      case MODE_PULSE_DOWN: {
+        loadNumberArrayConfInt(pwmOn,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_MIN_DIM_UP:
+      case MODE_MIN_DIM_DOWN: {
+        loadNumberArrayConfInt(minDim,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_ANTI_GHOST_UP:
+      case MODE_ANTI_GHOST_DOWN: {
+        loadNumberArrayConfInt(antiGhost,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_TEMP: {
+        loadNumberArrayTemp(nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_VERSION: {
+        loadNumberArrayConfInt(SOFTWARE_VERSION,nextMode-MODE_12_24);
+        displayConfig();
+        break;
+      }
+      case MODE_TUBE_TEST: {
+        loadNumberArrayTestDigits();
+        allNormal();
+        break;
+      }
+      case MODE_DIGIT_BURN: {
+        // Nothing
+      }
     }
-
-    if ((nextMode == MODE_PULSE_UP) || (nextMode == MODE_PULSE_DOWN)) {
-      loadNumberArrayConfInt(pwmOn,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if ((nextMode == MODE_MIN_DIM_UP) || (nextMode == MODE_MIN_DIM_DOWN)) {
-      loadNumberArrayConfInt(minDim,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if ((nextMode == MODE_ANTI_GHOST_UP) || (nextMode == MODE_ANTI_GHOST_DOWN)) {
-      loadNumberArrayConfInt(antiGhost,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_TEMP) {
-      loadNumberArrayTemp(nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_VERSION) {
-      loadNumberArrayConfInt(SOFTWARE_VERSION,nextMode-MODE_12_24);
-      displayConfig();
-    }
-
-    if (nextMode == MODE_TUBE_TEST) {
-      loadNumberArrayTestDigits();
-      allNormal();
-    }
-
-    if (nextMode == MODE_DIGIT_BURN) {
-      // Nothing
-    }
-
   } else {
     if (currentMode == MODE_TIME) {
       if (second() == 0) {
         boolean nativeBlanked = checkBlanking();
         blanked = nativeBlanked && (nowMillis > blankSuppressedEndMillis);
-        
+
         if (nowMillis > blankSuppressedEndMillis) {
           blankSuppressedEndMillis = 0;
         }
-        
+
         if (nowMillis > blankSuppressedStartMillis) {
           blankSuppressedStartMillis = 0;
           blankSuppressStep = 0;
@@ -1115,7 +1133,11 @@ void loop()
             tempDisplayMode++;
           } else {
             tempDisplayMode = TEMP_MODE_MIN;
+
+            // reset the value so that we don't do anything weird on millis() rollover
+            secsDisplayEnd = 0;
           }
+
           if (tempDisplayMode > TEMP_MODE_MAX) {
             tempDisplayMode = TEMP_MODE_MIN;
           }
@@ -1131,7 +1153,12 @@ void loop()
         }
 
         if (tempDisplayMode == TEMP_MODE_TEMP) {
-          loadNumberArrayTemp(MODE_TEMP);
+          if (useRTC) {
+            loadNumberArrayTemp(MODE_TEMP);
+          } else {
+            // we can't show the temperature if we don't have the RTC, just skip
+            tempDisplayMode++;
+          }
         }
 
         if (tempDisplayMode == TEMP_MODE_LDR) {
@@ -1141,7 +1168,26 @@ void loop()
         if (tempDisplayMode == TEMP_MODE_VERSION) {
           loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
         }
-        
+
+        if (tempDisplayMode == TEMP_IP_ADDR12) {
+          if (useRTC) {
+            // we can't show the IP address if we have the RTC, just skip
+            tempDisplayMode++;
+            tempDisplayMode++;
+          } else {
+            loadNumberArrayIP(ourIP[0],ourIP[1]);
+          }
+        }
+
+        if (tempDisplayMode == TEMP_IP_ADDR34) {
+          if (useRTC) {
+            // we can't show the IP address if we have the RTC, just skip
+            tempDisplayMode++;
+          } else {
+            loadNumberArrayIP(ourIP[2],ourIP[3]);
+          }
+        }
+
         allFade();
 
       } else {
@@ -1253,7 +1299,7 @@ void loop()
         loadNumberArrayConfInt(blankHourStart,currentMode-MODE_12_24);
         displayConfig();
       }
-      
+
       if (currentMode == MODE_HR_BLNK_END) {
         if(button1.isButtonPressedAndReleased()) {
           blankHourEnd++;
@@ -1264,7 +1310,7 @@ void loop()
         loadNumberArrayConfInt(blankHourEnd,currentMode-MODE_12_24);
         displayConfig();
       }
-      
+
       if (currentMode == MODE_SUPPRESS_ACP) {
         if(button1.isButtonPressedAndReleased()) {
           suppressACP = !suppressACP;
@@ -1567,7 +1613,7 @@ void loop()
 // ************************************************************
 // Set the seconds tick led(s) and the back lights
 // ************************************************************
-void setLeds(long nowMillis)
+void setLeds(unsigned long nowMillis)
 {
   // Pulse PWM generation - Only update it on a second change (not every time round the loop)
   if (second() != lastSec) {
@@ -1726,27 +1772,30 @@ void cycleColours3(int colors[3]) {
 
     switch(currentColour) {
       case 0:
-        if(colors[0] < 255) {colors[0]++;} else {if ((colors[1]+colors[2]) == 0) {changeSteps = 0;}}
-        if (colors[1] > colors[2]) {
+        if(colors[0] < 255) {
+          colors[0]++;
           if(colors[1] > 0) {colors[1]--;}
-        } else {
           if(colors[2] > 0) {colors[2]--;}
+        } else {
+          changeSteps = 0;
         }
         break;
       case 1:
-        if(colors[1] < 255) {colors[1]++;} else {if ((colors[0]+colors[2]) == 0) {changeSteps = 0;}}
-        if (colors[0] > colors[2]) {
+        if(colors[1] < 255) {
+          colors[1]++;
           if(colors[0] > 0) {colors[0]--;}
-        } else {
           if(colors[2] > 0) {colors[2]--;}
+        } else {
+          changeSteps = 0;
         }
         break;
       case 2:
-        if(colors[2] < 255) {colors[2]++;} else {if ((colors[0]+colors[1]) == 0) {changeSteps = 0;}}
-        if (colors[0] > colors[1]) {
+        if(colors[2] < 255) {
+          colors[2]++;
           if(colors[0] > 0) {colors[0]--;}
-        } else {
           if(colors[1] > 0) {colors[1]--;}
+        } else {
+          changeSteps = 0;
         }
         break;
     }
@@ -1958,6 +2007,18 @@ void loadNumberArrayConfBool(boolean confValue, int confNum) {
   NumberArray[2] = 0;
   NumberArray[1] = 0;
   NumberArray[0] = 0;
+}
+
+// ************************************************************
+// Show an integer configuration value
+// ************************************************************
+void loadNumberArrayIP(byte byte1, byte byte2) {
+  NumberArray[5] = (byte2) % 10;
+  NumberArray[4] = (byte2 / 10) % 10;
+  NumberArray[3] = (byte2 / 100) % 10;
+  NumberArray[2] = (byte1) % 10;
+  NumberArray[1] = (byte1 / 10) % 10;
+  NumberArray[0] = (byte1 / 100) % 10;
 }
 
 // ************************************************************
@@ -2514,7 +2575,7 @@ boolean getHoursBlanked() {
 // ************************************************************
 // Get the time from the RTC
 // ************************************************************
-void getRTCTime(long currentMillis) {
+void getRTCTime() {
 
   if (useRTC) {
     Wire.beginTransmission(RTC_I2C_ADDRESS);
@@ -2522,7 +2583,7 @@ void getRTCTime(long currentMillis) {
       bool PM;
       bool twentyFourHourClock;
       bool century = false;
-  
+
       byte years=Clock.getYear() + 2000;
       byte months=Clock.getMonth(century);
       byte days=Clock.getDate();
@@ -2737,9 +2798,9 @@ void readEEPROMValues() {
 // Reset EEPROM values back to what they once were
 // ************************************************************
 void factoryReset() {
-  hourMode = false;
-  blankLeading = false;
-  scrollback = true;
+  hourMode = HOUR_MODE_DEFAULT;
+  blankLeading = LEAD_BLANK_DEFAULT;
+  scrollback = SCROLLBACK_DEFAULT;
   fadeSteps = FADE_STEPS_DEFAULT;
   dateFormat = DATE_FORMAT_DEFAULT;
   dayBlanking = DAY_BLANKING_DEFAULT;
@@ -2754,7 +2815,7 @@ void factoryReset() {
   grnCnl = COLOUR_GRN_CNL_DEFAULT;
   bluCnl = COLOUR_BLU_CNL_DEFAULT;
   hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
-  suppressACP = false;
+  suppressACP = SUPPRESS_ACP_DEFAULT;
   blankHourStart = 0;
   blankHourEnd = 7;
   cycleSpeed = CYCLE_SPEED_DEFAULT;  
@@ -3083,6 +3144,11 @@ void receiveEvent(int bytes) {
   } else if (operation == I2C_SET_OPTION_CYCLE_SPEED) {
     cycleSpeed = Wire.read();
     EEPROM.write(EE_CYCLE_SPEED,cycleSpeed);
+  } else if (operation == I2C_SHOW_IP_ADDR) {
+    ourIP[0] = Wire.read();
+    ourIP[1] = Wire.read();
+    ourIP[2] = Wire.read();
+    ourIP[3] = Wire.read();
   }
 }
 
