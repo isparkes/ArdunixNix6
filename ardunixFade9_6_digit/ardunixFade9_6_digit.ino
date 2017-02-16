@@ -752,16 +752,7 @@ void setup()
 
     // Flash some ramdom c0lours to signal that we have accepted the factory reset
     for (int i = 0 ; i < 60 ; i++ ) {
-      digitalWrite(tickLed, HIGH);
-      if (random(3) == 0) {digitalWrite(RLed, HIGH);}
-      if (random(3) == 0) {digitalWrite(GLed, HIGH);}
-      if (random(3) == 0) {digitalWrite(BLed, HIGH);}
-      delay(20);
-      digitalWrite(tickLed, LOW);
-      digitalWrite(RLed, LOW);
-      digitalWrite(GLed, LOW);
-      digitalWrite(BLed, LOW);
-      delay(20);
+      randomRGBFlash(20);
     }
 
     factoryReset();
@@ -770,24 +761,40 @@ void setup()
     EEPROM.write(EE_NEED_SETUP,false);
   }
 
-  // Start the RTC communication
-  Wire.begin();
+  // Clear down any spurious button action
+  button1.reset();
 
-  // Set up the time provider
-  // first try to find the RTC, if not available, go into slave mode
-  Wire.beginTransmission(RTC_I2C_ADDRESS);
-  if(Wire.endTransmission() == 0) {
-    // Make sure the clock keeps running even on battery
-    Clock.enableOscillator(true,true,0);
+  // Test if the button is pressed for factory reset
+  for (int i = 0 ; i < 20 ; i++ ) {
+    button1.checkButton(nowMillis);
+  }
 
-    // show that we are using the RTC
-    useRTC = true;
-  } else {
-    // Wait for I2C in slave mode
-    Wire.end();
-    Wire.begin(I2C_SLAVE_ADDR);
-    Wire.onReceive(receiveEvent);
-    Wire.onRequest(requestEvent);
+  boolean doTestPattern = false;
+
+  if (button1.isButtonPressedNow()) {
+    doTestPattern = true;
+  }
+
+   if (doTestPattern == false) {
+    // Start the RTC communication
+    Wire.begin();
+
+    // Set up the time provider
+    // first try to find the RTC, if not available, go into slave mode
+    Wire.beginTransmission(RTC_I2C_ADDRESS);
+    if(Wire.endTransmission() == 0) {
+      // Make sure the clock keeps running even on battery
+      Clock.enableOscillator(true,true,0);
+
+      // show that we are using the RTC
+      useRTC = true;
+    } else {
+      // Wait for I2C in slave mode
+      Wire.end();
+      Wire.begin(I2C_SLAVE_ADDR);
+      Wire.onReceive(receiveEvent);
+      Wire.onRequest(requestEvent);
+    }
   }
 
   // Read EEPROM values
@@ -796,10 +803,31 @@ void setup()
   // set our PWM profile
   setPWMOnTime(pwmOn);
   setPWMTopTime(pwmTop);
-  
+
   // HV GOOOO!!!!
   TCCR1A = tccrOn;
-  
+
+  if (doTestPattern) {
+    // Set the target voltage
+    rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+
+    allBright();
+
+    int secCount = 0;
+    lastCheckMillis = millis();
+    while (true) {
+      nowMillis = millis();
+      if (nowMillis - lastCheckMillis > 1000) {
+        lastCheckMillis = nowMillis;
+        secCount++;
+        secCount = secCount % 10;
+      }
+      loadNumberArraySameValue(secCount);
+      outputDisplay();
+      checkHVVoltage();
+    }
+  }
+
   // Set up the HVG if we need to
   if(EEPROM.read(EE_HVG_NEED_CALIB)) {
     calibrateHVG();
@@ -813,13 +841,13 @@ void setup()
     // Mark that we don't need to do this next time
     EEPROM.write(EE_HVG_NEED_CALIB,false);
   }
-  
+
   // and return it to target voltage so we can regulate the PWM on time
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
 
   // Clear down any spurious button action
   button1.reset();
-  
+
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
   setTime(12,34,56,1,3,2017);
@@ -832,6 +860,19 @@ void setup()
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
   secsDisplayEnd = millis() + 1500;
+}
+
+void randomRGBFlash(int delayVal) {
+  digitalWrite(tickLed, HIGH);
+  if (random(3) == 0) {digitalWrite(RLed, HIGH);}
+  if (random(3) == 0) {digitalWrite(GLed, HIGH);}
+  if (random(3) == 0) {digitalWrite(BLed, HIGH);}
+  delay(delayVal);
+  digitalWrite(tickLed, LOW);
+  digitalWrite(RLed, LOW);
+  digitalWrite(GLed, LOW);
+  digitalWrite(BLed, LOW);
+  delay(delayVal);
 }
 
 //**********************************************************************************
@@ -1096,11 +1137,11 @@ void loop()
       if (second() == 0) {
         boolean nativeBlanked = checkBlanking();
         blanked = nativeBlanked && (nowMillis > blankSuppressedEndMillis);
-
+        
         if (nowMillis > blankSuppressedEndMillis) {
           blankSuppressedEndMillis = 0;
         }
-
+        
         if (nowMillis > blankSuppressedStartMillis) {
           blankSuppressedStartMillis = 0;
           blankSuppressStep = 0;
@@ -1137,7 +1178,7 @@ void loop()
             // reset the value so that we don't do anything weird on millis() rollover
             secsDisplayEnd = 0;
           }
-
+          
           if (tempDisplayMode > TEMP_MODE_MAX) {
             tempDisplayMode = TEMP_MODE_MIN;
           }
@@ -1168,7 +1209,7 @@ void loop()
         if (tempDisplayMode == TEMP_MODE_VERSION) {
           loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
         }
-
+        
         if (tempDisplayMode == TEMP_IP_ADDR12) {
           if (useRTC) {
             // we can't show the IP address if we have the RTC, just skip
@@ -1178,7 +1219,7 @@ void loop()
             loadNumberArrayIP(ourIP[0],ourIP[1]);
           }
         }
-
+        
         if (tempDisplayMode == TEMP_IP_ADDR34) {
           if (useRTC) {
             // we can't show the IP address if we have the RTC, just skip
@@ -1187,7 +1228,7 @@ void loop()
             loadNumberArrayIP(ourIP[2],ourIP[3]);
           }
         }
-
+        
         allFade();
 
       } else {
@@ -1299,7 +1340,7 @@ void loop()
         loadNumberArrayConfInt(blankHourStart,currentMode-MODE_12_24);
         displayConfig();
       }
-
+      
       if (currentMode == MODE_HR_BLNK_END) {
         if(button1.isButtonPressedAndReleased()) {
           blankHourEnd++;
@@ -1310,7 +1351,7 @@ void loop()
         loadNumberArrayConfInt(blankHourEnd,currentMode-MODE_12_24);
         displayConfig();
       }
-
+      
       if (currentMode == MODE_SUPPRESS_ACP) {
         if(button1.isButtonPressedAndReleased()) {
           suppressACP = !suppressACP;
@@ -1889,13 +1930,13 @@ void loadNumberArrayTime() {
 // ************************************************************
 // Break the time into displayable digits
 // ************************************************************
-void loadNumberArray8s() {
-  NumberArray[5] = 8;
-  NumberArray[4] = 8;
-  NumberArray[3] = 8;
-  NumberArray[2] = 8;
-  NumberArray[1] = 8;
-  NumberArray[0] = 8;
+void loadNumberArraySameValue(byte val) {
+  NumberArray[5] = val;
+  NumberArray[4] = val;
+  NumberArray[3] = val;
+  NumberArray[2] = val;
+  NumberArray[1] = val;
+  NumberArray[0] = val;
 }
 
 // ************************************************************
@@ -2583,7 +2624,7 @@ void getRTCTime() {
       bool PM;
       bool twentyFourHourClock;
       bool century = false;
-
+  
       byte years=Clock.getYear() + 2000;
       byte months=Clock.getMonth(century);
       byte days=Clock.getDate();
@@ -2942,7 +2983,7 @@ void calibrateHVG() {
   setPWMOnTime(PWM_PULSE_DEFAULT);
   // Calibrate HVGen at full
   for (int i = 0 ; i < 768 ; i++ ) {
-    loadNumberArray8s();
+    loadNumberArraySameValue(8);
     allBright();
     outputDisplay();
     checkHVVoltage();
@@ -2996,7 +3037,7 @@ void calibrateHVG() {
 
   // Calibrate HVGen at full
   for (int i = 0 ; i < 768 ; i++ ) {
-    loadNumberArray8s();
+    loadNumberArraySameValue(8);
     allBright();
     outputDisplay();
     checkHVVoltage();
