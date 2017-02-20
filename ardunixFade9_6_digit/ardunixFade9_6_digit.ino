@@ -1213,8 +1213,7 @@ void loop()
         if (tempDisplayMode == TEMP_IP_ADDR12) {
           if (useRTC) {
             // we can't show the IP address if we have the RTC, just skip
-            tempDisplayMode++;
-            tempDisplayMode++;
+            tempDisplayMode = TEMP_MODE_MIN;
           } else {
             loadNumberArrayIP(ourIP[0],ourIP[1]);
           }
@@ -1223,7 +1222,7 @@ void loop()
         if (tempDisplayMode == TEMP_IP_ADDR34) {
           if (useRTC) {
             // we can't show the IP address if we have the RTC, just skip
-            tempDisplayMode++;
+            tempDisplayMode = TEMP_MODE_MIN;
           } else {
             loadNumberArrayIP(ourIP[2],ourIP[3]);
           }
