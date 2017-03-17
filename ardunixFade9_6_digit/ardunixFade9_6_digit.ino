@@ -1,3 +1,6 @@
+#include <Time.h>
+#include <TimeLib.h>
+
 //**********************************************************************************
 //**********************************************************************************
 //* Main code for an Arduino based Nixie clock. Features:                          *
@@ -110,6 +113,11 @@
 #define SCROLL_STEPS_MIN     1
 #define SCROLL_STEPS_MAX     40
 
+// Side scroll duration (ms)
+#define SIDE_SCROLL_DUR     500
+#define SIDE_SCROLL_HOLD    3000
+#define DATE_MODE_TOTAL     SIDE_SCROLL_DUR * 4 + SIDE_SCROLL_HOLD
+
 // The number of dispay impessions we need to fade by default
 // 100 is about 1 second
 #define FADE_STEPS_DEFAULT 50
@@ -131,8 +139,8 @@
 
 #define COLOUR_CNL_MAX                  15
 #define COLOUR_RED_CNL_DEFAULT          15
-#define COLOUR_GRN_CNL_DEFAULT          0
-#define COLOUR_BLU_CNL_DEFAULT          0
+#define COLOUR_GRN_CNL_DEFAULT          13
+#define COLOUR_BLU_CNL_DEFAULT          15
 #define COLOUR_CNL_MIN                  0
 
 // Clock modes - normal running is MODE_TIME, other modes accessed by a middle length ( 1S < press < 2S ) button press
@@ -208,7 +216,7 @@
 #define DATE_FORMAT_MMDDYY              1
 #define DATE_FORMAT_DDMMYY              2
 #define DATE_FORMAT_MAX                 2
-#define DATE_FORMAT_DEFAULT             2
+#define DATE_FORMAT_DEFAULT             DATE_FORMAT_MMDDYY
 
 #define DAY_BLANKING_MIN                0
 #define DAY_BLANKING_NEVER              0  // Don't blank ever (default)
@@ -221,7 +229,7 @@
 #define DAY_BLANKING_WEEKEND_AND_HOURS  7  // Blank between start and end hour during the weekend
 #define DAY_BLANKING_WEEKDAY_AND_HOURS  8  // Blank between start and end hour during week days
 #define DAY_BLANKING_MAX                8
-#define DAY_BLANKING_DEFAULT            0
+#define DAY_BLANKING_DEFAULT            DAY_BLANKING_NEVER
 
 #define BACKLIGHT_MIN                   0
 #define BACKLIGHT_FIXED                 0   // Just define a colour and stick to it
@@ -231,7 +239,7 @@
 #define BACKLIGHT_PULSE_DIM             4   // pulse the defined colour, dims with bulb dimming
 #define BACKLIGHT_CYCLE_DIM             5   // cycle through random colours, dims with bulb dimming
 #define BACKLIGHT_MAX                   5
-#define BACKLIGHT_DEFAULT               0
+#define BACKLIGHT_DEFAULT               BACKLIGHT_FIXED_DIM
 
 #define CYCLE_SPEED_MIN                 4
 #define CYCLE_SPEED_MAX                 64
@@ -304,6 +312,201 @@
 
 //**********************************************************************************
 
+/**
+ * A class that displays a message by scrolling it into and out of the display
+ *
+ * This class is abstract. A subclass must implement loadRegularValues() and
+ * loadMessageValues(). See TimeDateScroller for an example.
+ */
+extern byte NumberArray[];
+extern byte displayType[];
+
+struct Transition {
+  /**
+   * Default the effect and hold duration.
+   */
+  Transition() : Transition(500, 500, 3000) {
+  }
+
+  Transition(int effectDuration, int holdDuration) : Transition(effectDuration, effectDuration, holdDuration) {
+  }
+
+  Transition(int effectInDuration, int effectOutDuration, int holdDuration) {
+    this->effectInDuration = effectInDuration;
+    this->effectOutDuration = effectOutDuration;
+    this->holdDuration = holdDuration;
+    this->started = 0;
+    this->end = 0;
+  }
+
+  void start(unsigned long now) {
+    if (end < now) {
+      this->started = now;
+      this->end = getEnd();
+    }
+    // else we are already running!
+  }
+
+  boolean scrollMsg(unsigned long now, void (*loadRegularValues)(), void (*loadMessageValues)())
+  {
+    if (now < end) {
+      allNormal();
+
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        // Scroll -1 -> -6
+        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
+      } else if (msCount < effectInDuration * 2) {
+        loadMessageValues();
+        // Scroll 5 -> 0
+        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadMessageValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadMessageValues();
+        // Scroll 1 -> 6
+        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        // Scroll 0 -> -5
+        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration - 5);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  boolean scrambleMsg(unsigned long now, void (*loadRegularValues)(), void (*loadMessageValues)())
+  {
+    if (now < end) {
+      allNormal();
+
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        scramble(msCount, 5 - (msCount % effectInDuration) * 6 / effectInDuration, 6);
+      } else if (msCount < effectInDuration * 2) {
+        loadMessageValues();
+        scramble(msCount, 0, 5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadMessageValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadMessageValues();
+        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  boolean scrollInScrambleOut(unsigned long now, void (*loadRegularValues)(), void (*loadMessageValues)())
+  {
+    if (now < end) {
+      allNormal();
+
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
+      } else if (msCount < effectInDuration * 2) {
+        loadMessageValues();
+        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadMessageValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadMessageValues();
+        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  static void loadTime() {
+	loadNumberArrayTime();
+  }
+
+  static void loadDate() {
+	loadNumberArrayDate();
+  }
+
+  /**
+   * +ve scroll right
+   * -ve scroll left
+   */
+  static int scroll(char count) {
+    byte copy[6] = {0, 0, 0, 0, 0, 0};
+    memcpy(copy, NumberArray, sizeof(copy));
+    char offset = 0;
+    char slope = 1;
+    if (count < 0) {
+      count = -count;
+      offset = 5;
+      slope = -1;
+    }
+    for (char i=0; i<6; i++) {
+      if (i < count) {
+    	  displayType[offset + i * slope] = BLANKED;
+      }
+      if (i >= count) {
+    	  NumberArray[offset + i * slope] = copy[offset + (i-count) * slope];
+      }
+    }
+
+    return count;
+  }
+
+  static unsigned long hash(unsigned long x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+  }
+
+  // In these functions we want something that changes every 50ms,
+  // hence msCount/100. Plus it needs to be different for different
+  // indices, hence +i. Plus it needs to be 'random', hence hash function
+  static int scramble(int msCount, byte start, byte end) {
+    for (int i=start; i < end; i++) {
+      NumberArray[i] = hash(msCount / 50 + i) % 10;
+    }
+
+    return start;
+  }
+
+protected:
+  /**** Don't let Joe Public see this stuff ****/
+
+  int effectInDuration; // How long an effect should take in ms
+  int effectOutDuration; // How long an effect should take in ms
+  int holdDuration;   // How long the message should be displayed for in ms
+  unsigned long started;       // When we were started (timestamp)
+  unsigned long end;           // When the whole thing will end (timestamp)
+
+  /**
+   * The end time has to match what displayMessage() wants,
+   * so let sub-classes override it.
+   */
+  unsigned long getEnd() {
+    return started + effectInDuration * 2 + holdDuration + effectOutDuration * 2;
+  }
+};
+
+Transition transition(500, 1000, 3000);
+
 // Structure for encapsulating button debounce and management
 struct Button {
 public:
@@ -316,17 +519,17 @@ public:
   // sort of preview here, then confirm by releasing. We track
   // 3 lengths of button press: momentarily, 1S and 2S.
   // ************************************************************
-  void checkButton(long nowMillis) {
+  void checkButton(unsigned long nowMillis) {
     checkButtonInternal(nowMillis);
   }
-  
+
   // ************************************************************
   // Reset everything
   // ************************************************************
   void reset() {
     resetInternal();
   }
-  
+
   // ************************************************************
   // Check if button is pressed right now (just debounce)
   // ************************************************************
@@ -413,9 +616,9 @@ public:
 private:
   byte inputPin;
   boolean activeLow;
-  
+
   int  button1PressedCount = 0;
-  long button1PressStartMillis = 0;
+  unsigned long button1PressStartMillis = 0;
   const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
   boolean buttonWasReleased = false;
   boolean buttonPress8S = false;
@@ -426,8 +629,8 @@ private:
   boolean buttonPressRelease2S = false;
   boolean buttonPressRelease1S = false;
   boolean buttonPressRelease = false;
-  
-  void checkButtonInternal(long nowMillis) {
+
+  void checkButtonInternal(unsigned long nowMillis) {
     if (digitalRead(inputPin) == 0) {
       buttonWasReleased = false;
 
@@ -491,7 +694,7 @@ private:
       button1PressedCount = 0;
     }
   }
-  
+
   void resetInternal() {
     buttonPressRelease8S = false;
     buttonPressRelease2S = false;
@@ -536,7 +739,7 @@ byte fadeState[6]      = {0,0,0,0,0,0};
 int fadeSteps = FADE_STEPS_DEFAULT;
 int digitOffCount = DIGIT_DISPLAY_OFF;
 int scrollSteps = SCROLL_STEPS_DEFAULT;
-boolean scrollback = true;
+boolean scrollback = false;
 byte antiGhost = ANTI_GHOST_DEFAULT;
 int dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
 float fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
@@ -546,24 +749,30 @@ int blinkCounter = 0;
 boolean blinkState = true;
 
 // leading digit blanking
-boolean blankLeading = false;
+boolean blankLeading = true;
 
 // Dimming value
 const int DIM_VALUE = DIGIT_DISPLAY_COUNT/5;
 int minDim = MIN_DIM_DEFAULT;
 
-long secsDisplayEnd;      // time for the end of the MMSS display
+unsigned long secsDisplayEnd;      // time for the end of the MMSS display
 int  tempDisplayMode;
 
 int acpOffset = 0;        // Used to provide one arm bandit scolling
 int acpTick = 0;          // The number of counts before we scroll
-boolean suppressACP = false;
+
+unsigned long dateDisplayEnd = 0;
+
+boolean suppressACP = true;
 
 byte currentMode = MODE_TIME;   // Initial cold start mode
 byte nextMode = currentMode;
 int loopCounter = 0;
 byte blankHourStart = 0;
 byte blankHourEnd = 0;
+
+byte hourDimMin = 7;
+byte hourDimMax = 22;
 
 // ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
@@ -581,15 +790,15 @@ DS3231 Clock;
 
 // State variables for detecting changes
 byte lastSec;
-long nowMillis = 0;
-long lastCheckMillis = 0;
+unsigned long nowMillis = 0;
+unsigned long lastCheckMillis = 0;
 
 byte dateFormat = DATE_FORMAT_DEFAULT;
 byte dayBlanking = DAY_BLANKING_DEFAULT;
 boolean blanked = false;
 byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 min, 2 press = 1 hour, 3 = 1 day
-long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
-long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
+unsigned long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
+unsigned long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
 boolean hourMode = false;
 
 boolean useRTC = false;
@@ -612,7 +821,7 @@ byte cycleCount = 0;
 byte cycleSpeed = CYCLE_SPEED_DEFAULT;
 
 int colors[3];
-  
+
 // Strateg2
 float hueIncrement = 0.0;
 int hueCount = 0;
@@ -634,7 +843,7 @@ byte digitBurnDigit = 0;
 byte digitBurnValue = 0;
 
 // ************************************************************
-// LED brightness correction: The perceived brightness is not linear 
+// LED brightness correction: The perceived brightness is not linear
 // ************************************************************
 const byte dim_curve[] = {
     0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
@@ -657,7 +866,6 @@ const byte dim_curve[] = {
 
 const byte rgb_backlight_curve[] = {0,16,32,48,64,80,99,112,128,144,160,176,192,208,224,240,255};
 
-
 //**********************************************************************************
 //**********************************************************************************
 //*                                    Setup                                       *
@@ -665,6 +873,8 @@ const byte rgb_backlight_curve[] = {0,16,32,48,64,80,99,112,128,144,160,176,192,
 //**********************************************************************************
 void setup()
 {
+//  Serial.begin(115200);
+
   pinMode(ledPin_0_a, OUTPUT);
   pinMode(ledPin_0_b, OUTPUT);
   pinMode(ledPin_0_c, OUTPUT);
@@ -731,16 +941,16 @@ void setup()
     button1.checkButton(nowMillis);
   }
 
-  // Set up the PRNG with something so that it looks random  
+  // Set up the PRNG with something so that it looks random
   randomSeed(analogRead(LDRPin));
-  
+
   // Detect factory reset: button pressed on start
   if (button1.isButtonPressedNow()) {
     // do this before the flashing, because this way we can set up the EEPROM to
     // autocalibrate on first start (press factory reset and then power off before
     // flashing ends)
     EEPROM.write(EE_HVG_NEED_CALIB,true);
-    
+
     // Flash 10 x to signal that we have accepted the factory reset
     for (int i = 0 ; i < 10 ; i++ ) {
       digitalWrite(tickLed, HIGH);
@@ -784,10 +994,10 @@ void setup()
   // set our PWM profile
   setPWMOnTime(pwmOn);
   setPWMTopTime(pwmTop);
-  
+
   // HV GOOOO!!!!
   TCCR1A = tccrOn;
-  
+
   // Set up the HVG if we need to
   if(EEPROM.read(EE_HVG_NEED_CALIB)) {
     calibrateHVG();
@@ -801,13 +1011,13 @@ void setup()
     // Mark that we don't need to do this next time
     EEPROM.write(EE_HVG_NEED_CALIB,false);
   }
-  
+
   // and return it to target voltage so we can regulate the PWM on time
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
 
   // Clear down any spurious button action
   button1.reset();
-  
+
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
   setTime(12,34,56,1,10,2016);
@@ -830,7 +1040,7 @@ void setup()
 void loop()
 {
   nowMillis = millis();
-  
+
   // We don't want to get the time from the external time provider always,
   // just enough to keep the internal time provider correct
   // This keeps the outer loop fast and responsive
@@ -839,7 +1049,7 @@ void loop()
       // get the time from the external provider - slow but accurate
       getRTCTime(nowMillis);
     }
-    
+
     lastCheckMillis = nowMillis;
   }
 
@@ -955,7 +1165,7 @@ void loop()
       loadNumberArrayConfInt(dayBlanking,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if (nextMode == MODE_HR_BLNK_START) {
       if (dayBlanking < DAY_BLANKING_HOURS) {
         // Skip past the start and end hour if the blanking mode says it is not relevant
@@ -978,7 +1188,7 @@ void loop()
       loadNumberArrayConfBool(suppressACP,nextMode-MODE_12_24);
       displayConfig();
     }
-    
+
     if ((nextMode == MODE_FADE_STEPS_UP) || (nextMode == MODE_FADE_STEPS_DOWN)) {
       loadNumberArrayConfInt(fadeSteps,nextMode-MODE_12_24);
       displayConfig();
@@ -1078,11 +1288,11 @@ void loop()
       if (second() == 0) {
         boolean nativeBlanked = checkBlanking();
         blanked = nativeBlanked && (nowMillis > blankSuppressedEndMillis);
-        
+
         if (nowMillis > blankSuppressedEndMillis) {
           blankSuppressedEndMillis = 0;
         }
-        
+
         if (nowMillis > blankSuppressedStartMillis) {
           blankSuppressedStartMillis = 0;
           blankSuppressStep = 0;
@@ -1125,6 +1335,7 @@ void loop()
       }
 
       if (nowMillis < secsDisplayEnd) {
+        // We are displaying a temporary thing
         blanked = false;
         if (tempDisplayMode == TEMP_MODE_DATE) {
           loadNumberArrayDate();
@@ -1141,19 +1352,32 @@ void loop()
         if (tempDisplayMode == TEMP_MODE_VERSION) {
           loadNumberArrayConfInt(SOFTWARE_VERSION,currentMode-MODE_12_24);
         }
-        
+
         allFade();
 
       } else {
+        // We are in regular display mode
         if (acpOffset > 0) {
+          // Display AntiCathodePoisoning
           loadNumberArrayACP();
           allBright();
         } else {
-          loadNumberArrayTime();
-          allFade();
+          // Display time (with scrolling date)
 
-          // Apply leading blanking
-          applyBlanking();
+          if (second() == 50) {
+            transition.start(nowMillis);
+          }
+
+          boolean msgDisplaying = transition.scrollInScrambleOut(nowMillis, Transition::loadTime, Transition::loadDate);
+
+          if (!msgDisplaying) {
+            loadNumberArrayTime();
+
+            allFade();
+
+            // Apply leading blanking
+            applyBlanking();
+          }
         }
       }
     } else {
@@ -1253,7 +1477,7 @@ void loop()
         loadNumberArrayConfInt(blankHourStart,currentMode-MODE_12_24);
         displayConfig();
       }
-      
+
       if (currentMode == MODE_HR_BLNK_END) {
         if(button1.isButtonPressedAndReleased()) {
           blankHourEnd++;
@@ -1264,7 +1488,7 @@ void loop()
         loadNumberArrayConfInt(blankHourEnd,currentMode-MODE_12_24);
         displayConfig();
       }
-      
+
       if (currentMode == MODE_SUPPRESS_ACP) {
         if(button1.isButtonPressedAndReleased()) {
           suppressACP = !suppressACP;
@@ -1560,14 +1784,14 @@ void loop()
   loopCounter++;
 
   checkHVVoltage();
-  
+
   setLeds(nowMillis);
 }
 
 // ************************************************************
 // Set the seconds tick led(s) and the back lights
 // ************************************************************
-void setLeds(long nowMillis)
+void setLeds(unsigned long nowMillis)
 {
   // Pulse PWM generation - Only update it on a second change (not every time round the loop)
   if (second() != lastSec) {
@@ -1602,7 +1826,22 @@ void setLeds(long nowMillis)
   float pwmFactor = (float) ledPWMVal / (float) 255.0;
 
   // Tick led output
-  analogWrite(tickLed,getLEDAdjusted(255,pwmFactor,dimFactor));
+  byte blink = getLEDAdjusted(255,pwmFactor,dimFactor);
+
+  if (dimFactor < 0.5) {
+    if (upOrDown) {
+      blink = 0;
+    } else {
+      blink = getLEDAdjusted(255,1.0,dimFactor);
+    }
+  }
+
+//  Serial.print(blink);
+//  Serial.print(" ");
+//  Serial.print(dimFactor);
+//  Serial.print(" ");
+//  Serial.println(pwmFactor);
+  analogWrite(tickLed,blink);
 
   // RGB Backlight PWM led output
   if (currentMode == MODE_TIME) {
@@ -1668,7 +1907,7 @@ void setLeds(long nowMillis)
 }
 
 // ************************************************************
-// output a PWM LED channel, adjusting for dimming and PWM 
+// output a PWM LED channel, adjusting for dimming and PWM
 // brightness:
 // rawValue: The raw brightness value between 0 - 255
 // ledPWMVal: The pwm factor between 0 - 1
@@ -1759,22 +1998,22 @@ void cycleColours3(int colors[3]) {
 //// Sat 0 - 255
 //// Val 0 - 255
 //// ************************************************************
-//void getRGB(int hue, int sat, int val, int colors[3]) { 
+//void getRGB(int hue, int sat, int val, int colors[3]) {
 //  val = dim_curve[val];
-// 
+//
 //  int r;
 //  int g;
 //  int b;
 //  int base;
-// 
+//
 //  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
 //    colors[0]=val;
 //    colors[1]=val;
-//    colors[2]=val;  
-//  } else { 
-// 
+//    colors[2]=val;
+//  } else {
+//
 //    base = ((255 - sat) * val)>>8;
-// 
+//
 //    switch(hue/60) {
 //      case 0:
 //        r = val;
@@ -1807,11 +2046,11 @@ void cycleColours3(int colors[3]) {
 //        b = (((val-base)*(60-(hue%60)))/60)+base;
 //        break;
 //    }
-// 
+//
 //    colors[0]=r;
 //    colors[1]=g;
-//    colors[2]=b; 
-//  }   
+//    colors[2]=b;
+//  }
 //}
 
 //**********************************************************************************
@@ -1973,11 +2212,11 @@ void SetSN74141Chip(int num1)
   // Mask all digit bits to 0
   byte portb = PORTB;
   portb = portb & B11001010;
-  
+
   // Set the bits we need
   switch( decodedDigit )
   {
-    case 0:                             break; // a=0;b=0;c=0;d=0 
+    case 0:                             break; // a=0;b=0;c=0;d=0
     case 1:  portb = portb | B00100000; break; // a=1;b=0;c=0;d=0
     case 2:  portb = portb | B00000100; break; // a=0;b=1;c=0;d=0
     case 3:  portb = portb | B00100100; break; // a=1;b=1;c=0;d=0
@@ -1987,7 +2226,7 @@ void SetSN74141Chip(int num1)
     case 7:  portb = portb | B00100101; break; // a=1;b=1;c=1;d=0
     case 8:  portb = portb | B00010000; break; // a=0;b=0;c=0;d=1
     case 9:  portb = portb | B00110000; break; // a=1;b=0;c=0;d=1
-    default: portb = portb | B00110101; break; // a=1;b=1;c=1;d=1 
+    default: portb = portb | B00110101; break; // a=1;b=1;c=1;d=1
   }
   PORTB = portb;
 }
@@ -2068,8 +2307,6 @@ void outputDisplay()
       tmpDispType = SCROLL;
     }
 
-    // manage fading, each impression we show 1 fade step less of the old
-    // digit and 1 fade step more of the new
     // manage fading, each impression we show 1 fade step less of the old
     // digit and 1 fade step more of the new
     if (tmpDispType == SCROLL) {
@@ -2160,7 +2397,7 @@ void digitOn(int digit, int value) {
 void digitOff() {
   TCCR1A = tccrOff;
   //digitalWrite(anodePins[digit], LOW);
-  
+
   // turn all digits off - equivalent to digitalWrite(ledPin_a_n,LOW); (n=1,2,3,4,5,6) but much faster
   PORTC = PORTC & B11110011;
   PORTD = PORTD & B11101000;
@@ -2514,7 +2751,7 @@ boolean getHoursBlanked() {
 // ************************************************************
 // Get the time from the RTC
 // ************************************************************
-void getRTCTime(long currentMillis) {
+void getRTCTime(unsigned long currentMillis) {
 
   if (useRTC) {
     Wire.beginTransmission(RTC_I2C_ADDRESS);
@@ -2522,7 +2759,7 @@ void getRTCTime(long currentMillis) {
       bool PM;
       bool twentyFourHourClock;
       bool century = false;
-  
+
       byte years=Clock.getYear() + 2000;
       byte months=Clock.getMonth(century);
       byte days=Clock.getDate();
@@ -2536,7 +2773,7 @@ void getRTCTime(long currentMillis) {
 
 // ************************************************************
 // Set the date/time in the RTC from the internal time
-// Always hold the time in 24 format, we convert to 12 in the 
+// Always hold the time in 24 format, we convert to 12 in the
 // display.
 // ************************************************************
 void setRTC() {
@@ -2686,16 +2923,16 @@ void readEEPROMValues() {
   hvTargetVoltage = EEPROM.read(EE_HV_VOLTAGE);
   if ((hvTargetVoltage < HVGEN_TARGET_VOLTAGE_MIN) || (hvTargetVoltage > HVGEN_TARGET_VOLTAGE_MAX)) {
     hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
-  } 
+  }
 
   pwmOn = EEPROM.read(EE_PULSE_HI)*256 + EEPROM.read(EE_PULSE_LO);
   if ((pwmOn < PWM_PULSE_MIN) || (pwmOn > PWM_PULSE_MAX)) {
     pwmOn = PWM_PULSE_DEFAULT;
-    
+
     // Hmmm, need calibration
     EEPROM.write(EE_HVG_NEED_CALIB,true);
   }
-  
+
   pwmTop = EEPROM.read(EE_PWM_TOP_HI)*256 + EEPROM.read(EE_PWM_TOP_LO);
   if ((pwmTop < PWM_TOP_MIN) || (pwmTop > PWM_TOP_MAX)) {
     pwmTop = PWM_TOP_DEFAULT;
@@ -2703,7 +2940,7 @@ void readEEPROMValues() {
     // Hmmm, need calibration
     EEPROM.write(EE_HVG_NEED_CALIB,true);
   }
-  
+
   suppressACP = EEPROM.read(EE_SUPPRESS_ACP);
 
   blankHourStart = EEPROM.read(EE_HOUR_BLANK_START);
@@ -2715,17 +2952,17 @@ void readEEPROMValues() {
   if ((blankHourEnd < 0) || (blankHourEnd > HOURS_MAX)) {
     blankHourEnd = 7;
   }
-  
+
   cycleSpeed = EEPROM.read(EE_CYCLE_SPEED);
   if ((cycleSpeed < CYCLE_SPEED_MIN) || (cycleSpeed > CYCLE_SPEED_MAX)) {
     cycleSpeed = CYCLE_SPEED_DEFAULT;
   }
-  
+
   minDim = EEPROM.read(EE_MIN_DIM_HI)*256 + EEPROM.read(EE_MIN_DIM_LO);
   if ((minDim < MIN_DIM_MIN) || (minDim > MIN_DIM_MAX)) {
     minDim = MIN_DIM_DEFAULT;
   }
-  
+
   antiGhost = EEPROM.read(EE_ANTI_GHOST);
   if ((antiGhost < ANTI_GHOST_MIN) || (antiGhost > ANTI_GHOST_MAX)) {
     antiGhost = ANTI_GHOST_DEFAULT;
@@ -2738,8 +2975,8 @@ void readEEPROMValues() {
 // ************************************************************
 void factoryReset() {
   hourMode = false;
-  blankLeading = false;
-  scrollback = true;
+  blankLeading = true;
+  scrollback = false;
   fadeSteps = FADE_STEPS_DEFAULT;
   dateFormat = DATE_FORMAT_DEFAULT;
   dayBlanking = DAY_BLANKING_DEFAULT;
@@ -2754,10 +2991,10 @@ void factoryReset() {
   grnCnl = COLOUR_GRN_CNL_DEFAULT;
   bluCnl = COLOUR_BLU_CNL_DEFAULT;
   hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
-  suppressACP = false;
+  suppressACP = true;
   blankHourStart = 0;
   blankHourEnd = 7;
-  cycleSpeed = CYCLE_SPEED_DEFAULT;  
+  cycleSpeed = CYCLE_SPEED_DEFAULT;
   pwmOn = PWM_PULSE_DEFAULT;
   pwmTop = PWM_TOP_DEFAULT;
   minDim = MIN_DIM_DEFAULT;
@@ -2817,6 +3054,10 @@ int getRawHVADCThreshold(double targetVoltage) {
 // maximum value, we have to clamp it as the final step
 // ******************************************************************
 int getDimmingFromLDR() {
+  if (hour() >= hourDimMin && hour() < hourDimMax) {
+    return DIGIT_DISPLAY_OFF;
+  }
+
   int rawSensorVal = 1023-analogRead(LDRPin);
   double sensorDiff = rawSensorVal - sensorLDRSmoothed;
   sensorLDRSmoothed += (sensorDiff/sensorSmoothCountLDR);
@@ -2850,7 +3091,7 @@ void checkLEDPWM(byte LEDPin, int step) {
     analogWrite(LEDPin,getLEDAdjusted(255,1,1));
   } else if (step > 0) {
     analogWrite(LEDPin,getLEDAdjusted(step,1,1));
-  } 
+  }
 }
 
 // ******************************************************************
@@ -2860,7 +3101,7 @@ void checkLEDPWM(byte LEDPin, int step) {
 // Consumption.
 //
 // Every combination of tubes and external power supply is different
-// and we need to pick the right PWM total duration ("top") and 
+// and we need to pick the right PWM total duration ("top") and
 // PWM on time ("on") to match the power supply and tubes.
 // Once we pick the "on" time, it is not adjusted during run time.
 // PWM top is adjusted during run.
@@ -2929,7 +3170,7 @@ void calibrateHVG() {
 
   int aveOnValue = (bottomOnValue+topOnValue)/2;
   setPWMOnTime(aveOnValue);
-  
+
   // *************** fourth pass - adjust the frequency *************
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage + 5);
 
@@ -2947,14 +3188,14 @@ void calibrateHVG() {
  * Set the PWM top time. Bounds check it so that it stays
  * between the defined minimum and maximum, and that it
  * does not go under the PWM On time (plus a safety margin).
- * 
+ *
  * Set both the internal "pwmTop" value and the register.
  */
 void setPWMTopTime(int newTopTime) {
   if (newTopTime < PWM_TOP_MIN) {
     newTopTime = PWM_TOP_MIN;
   }
-  
+
   if (newTopTime > PWM_TOP_MAX) {
     newTopTime = PWM_TOP_MAX;
   }
@@ -2971,14 +3212,14 @@ void setPWMTopTime(int newTopTime) {
  * Set the new PWM on time. Bounds check it to make sure
  * that is stays between pulse min and max, and that it
  * does not get bigger than PWM top, less the safety margin.
- * 
+ *
  * Set both the internal "pwmOn" value and the register.
  */
 void setPWMOnTime(int newOnTime) {
   if (newOnTime < PWM_PULSE_MIN) {
     newOnTime = PWM_PULSE_MIN;
   }
-  
+
   if (newOnTime > PWM_PULSE_MAX) {
     newOnTime = PWM_PULSE_MAX;
   }
@@ -3000,7 +3241,7 @@ void decPWMOnTime() {
 }
 
 /**
- * Get the HV sensor reading. Smooth it using a simple 
+ * Get the HV sensor reading. Smooth it using a simple
  * moving average calculation.
  */
 int getSmoothedHVSensorReading() {
@@ -3032,7 +3273,7 @@ void receiveEvent(int bytes) {
     int newHours = Wire.read();
     int newMins = Wire.read();
     int newSecs = Wire.read();
-  
+
     setTime(newHours,newMins,newSecs,newDays,newMonths,newYears);
   } else if (operation == I2C_SET_OPTION_12_24) {
     byte readByte1224 = Wire.read();
@@ -3093,7 +3334,7 @@ void requestEvent() {
   byte configArray[16];
   int idx = 0;
   configArray[idx++] = encodeBooleanForI2C(hourMode );
-  configArray[idx++] = encodeBooleanForI2C(blankLeading); 
+  configArray[idx++] = encodeBooleanForI2C(blankLeading);
   configArray[idx++] = encodeBooleanForI2C(scrollback);
   configArray[idx++] = encodeBooleanForI2C(suppressACP);
   configArray[idx++] = dateFormat;
@@ -3108,7 +3349,7 @@ void requestEvent() {
   configArray[idx++] = bluCnl;
   configArray[idx++] = cycleSpeed;
   configArray[idx++] = 27;
- 
+
   Wire.write(configArray,16);
 }
 
@@ -3121,4 +3362,3 @@ byte encodeBooleanForI2C(boolean valueToProcess) {
     return byteToSend;
   }
 }
-
