@@ -312,6 +312,201 @@
 
 //**********************************************************************************
 
+/**
+ * A class that displays a message by scrolling it into and out of the display
+ *
+ * This class is abstract. A subclass must implement loadRegularValues() and
+ * loadMessageValues(). See TimeDateScroller for an example.
+ */
+extern byte NumberArray[];
+extern byte displayType[];
+
+struct Transition {
+  /**
+   * Default the effect and hold duration.
+   */
+  Transition() : Transition(500, 500, 3000) {
+  }
+
+  Transition(int effectDuration, int holdDuration) : Transition(effectDuration, effectDuration, holdDuration) {
+  }
+
+  Transition(int effectInDuration, int effectOutDuration, int holdDuration) {
+    this->effectInDuration = effectInDuration;
+    this->effectOutDuration = effectOutDuration;
+    this->holdDuration = holdDuration;
+    this->started = 0;
+    this->end = 0;
+  }
+
+  void start(unsigned long now) {
+    if (end < now) {
+      this->started = now;
+      this->end = getEnd();
+    }
+    // else we are already running!
+  }
+
+  boolean scrollMsg(unsigned long now, void (*loadRegularValues)(), void (*loadMessageValues)())
+  {
+    if (now < end) {
+      allNormal();
+
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        // Scroll -1 -> -6
+        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
+      } else if (msCount < effectInDuration * 2) {
+        loadMessageValues();
+        // Scroll 5 -> 0
+        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadMessageValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadMessageValues();
+        // Scroll 1 -> 6
+        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        // Scroll 0 -> -5
+        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration - 5);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  boolean scrambleMsg(unsigned long now, void (*loadRegularValues)(), void (*loadMessageValues)())
+  {
+    if (now < end) {
+      allNormal();
+
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        scramble(msCount, 5 - (msCount % effectInDuration) * 6 / effectInDuration, 6);
+      } else if (msCount < effectInDuration * 2) {
+        loadMessageValues();
+        scramble(msCount, 0, 5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadMessageValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadMessageValues();
+        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  boolean scrollInScrambleOut(unsigned long now, void (*loadRegularValues)(), void (*loadMessageValues)())
+  {
+    if (now < end) {
+      allNormal();
+
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
+      } else if (msCount < effectInDuration * 2) {
+        loadMessageValues();
+        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadMessageValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadMessageValues();
+        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  static void loadTime() {
+	loadNumberArrayTime();
+  }
+
+  static void loadDate() {
+	loadNumberArrayDate();
+  }
+
+  /**
+   * +ve scroll right
+   * -ve scroll left
+   */
+  static int scroll(char count) {
+    byte copy[6] = {0, 0, 0, 0, 0, 0};
+    memcpy(copy, NumberArray, sizeof(copy));
+    char offset = 0;
+    char slope = 1;
+    if (count < 0) {
+      count = -count;
+      offset = 5;
+      slope = -1;
+    }
+    for (char i=0; i<6; i++) {
+      if (i < count) {
+    	  displayType[offset + i * slope] = BLANKED;
+      }
+      if (i >= count) {
+    	  NumberArray[offset + i * slope] = copy[offset + (i-count) * slope];
+      }
+    }
+
+    return count;
+  }
+
+  static unsigned long hash(unsigned long x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+  }
+
+  // In these functions we want something that changes every 50ms,
+  // hence msCount/100. Plus it needs to be different for different
+  // indices, hence +i. Plus it needs to be 'random', hence hash function
+  static int scramble(int msCount, byte start, byte end) {
+    for (int i=start; i < end; i++) {
+      NumberArray[i] = hash(msCount / 50 + i) % 10;
+    }
+
+    return start;
+  }
+
+protected:
+  /**** Don't let Joe Public see this stuff ****/
+
+  int effectInDuration; // How long an effect should take in ms
+  int effectOutDuration; // How long an effect should take in ms
+  int holdDuration;   // How long the message should be displayed for in ms
+  unsigned long started;       // When we were started (timestamp)
+  unsigned long end;           // When the whole thing will end (timestamp)
+
+  /**
+   * The end time has to match what displayMessage() wants,
+   * so let sub-classes override it.
+   */
+  unsigned long getEnd() {
+    return started + effectInDuration * 2 + holdDuration + effectOutDuration * 2;
+  }
+};
+
+Transition transition(500, 1000, 3000);
+
 // Structure for encapsulating button debounce and management
 struct Button {
   public:
@@ -1405,11 +1600,20 @@ void processCurrentMode() {
             allBright();
           } else {
             // Normal time loaded here!!!
-            loadNumberArrayTime();
-            allFade();
+              if (second() == 50) {
+                transition.start(nowMillis);
+              }
 
-            // Apply leading blanking
-            applyBlanking();
+              boolean msgDisplaying = transition.scrollInScrambleOut(nowMillis, Transition::loadTime, Transition::loadDate);
+
+              if (!msgDisplaying) {
+                loadNumberArrayTime();
+
+                allFade();
+
+                // Apply leading blanking
+                applyBlanking();
+              }
           }
         }
         break;
@@ -3087,7 +3291,6 @@ void calibrateHVG() {
    Set the PWM top time. Bounds check it so that it stays
    between the defined minimum and maximum, and that it
    does not go under the PWM On time (plus a safety margin).
-
    Set both the internal "pwmTop" value and the register.
 */
 void setPWMTopTime(int newTopTime) {
@@ -3111,7 +3314,6 @@ void setPWMTopTime(int newTopTime) {
    Set the new PWM on time. Bounds check it to make sure
    that is stays between pulse min and max, and that it
    does not get bigger than PWM top, less the safety margin.
-
    Set both the internal "pwmOn" value and the register.
 */
 void setPWMOnTime(int newOnTime) {
@@ -3266,4 +3468,3 @@ byte encodeBooleanForI2C(boolean valueToProcess) {
     return byteToSend;
   }
 }
-
