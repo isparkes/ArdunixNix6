@@ -18,7 +18,7 @@
 #include <EEPROM.h>
 #include <time.h>
   
-#define SOFTWARE_VERSION "1.0.3"
+#define SOFTWARE_VERSION "1.0.4"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
@@ -35,10 +35,10 @@ boolean blueLedState = true;
 
 // used for flashing the blue LED
 int blinkTime;
-long lastMillis = 0;
+unsigned long lastMillis = 0;
 
 // Timer for how often we send the I2C data
-long lastI2CUpdateTime = -60000;
+long lastI2CUpdateTime = 0;
 
 String timeServerURL = "";
 
@@ -63,6 +63,7 @@ ADC_MODE(ADC_VCC);
 #define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
 #define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
 #define I2C_SET_OPTION_CYCLE_SPEED    0x10
+#define I2C_SHOW_IP_ADDR              0x11
 
 // Clock config
 byte configHourMode;
@@ -118,6 +119,7 @@ void setup()
     Serial.println("WiFi not connected, start softAP");
 #endif
     WiFi.mode(WIFI_AP_STA);
+    
     // You can add the password parameter if you want the AP to be password protected
     if (strlen(ap_password) > 0) {
       WiFi.softAP(ap_ssid, ap_password);
@@ -139,7 +141,7 @@ void setup()
 #ifdef DEBUG
   Serial.println("I2C master started");
 #endif
-
+  
   /* Set page handler functions */
   server.on("/",            rootPageHandler);
   server.on("/wlan_config", wlanPageHandler);
@@ -165,8 +167,15 @@ void loop()
   server.handleClient();
 
   if (WiFi.status() == WL_CONNECTED) {
+    if (lastMillis > millis()) {
+      // rollover
+      lastI2CUpdateTime = 0;
+    }
+    
     // See if it is time to update the Clock
-    if ((millis() - lastI2CUpdateTime) > 60000) {
+    if (((millis() - lastI2CUpdateTime) > 60000) || 
+         (lastI2CUpdateTime==0)
+       ) {
 
       // Try to recover the current time
       String timeStr = getTimeFromTimeZoneServer();
@@ -181,6 +190,9 @@ void loop()
         // connected, but time server not found, flash middle speed
         blinkTime = 500;
       }
+
+      // Allow the IP to be displayed on the clock
+      sendIPAddressToI2C(WiFi.localIP());
 
       lastI2CUpdateTime = millis();
     }
@@ -1156,8 +1168,8 @@ int getIntValue(String data, char separator, int index) {
 // ----------------------------------------------------------------------------------------------------
 
 /**
-   Send the time to the I2C slave. If the transmission went OK, return true, otherwise false.
-*/
+ * Send the time to the I2C slave. If the transmission went OK, return true, otherwise false.
+ */
 boolean sendTimeToI2C(String timeString) {
 
   int year = getIntValue(timeString, ',', 0);
@@ -1168,6 +1180,12 @@ boolean sendTimeToI2C(String timeString) {
   byte sec = getIntValue(timeString, ',', 5);
 
   byte yearAdjusted = (year - 2000);
+
+#ifdef DEBUG
+  Serial.println("Sending time to I2C");
+  Serial.println(timeString);
+#endif
+
   Wire.beginTransmission(I2C_SLAVE_ADDR);
   Wire.write(I2C_TIME_UPDATE); // Command
   Wire.write(yearAdjusted);
@@ -1303,6 +1321,31 @@ boolean getClockOptionsFromI2C() {
     Serial.println(receivedByte);
 #endif
   }
+  int error = Wire.endTransmission();
+  return (error == 0);
+}
+
+boolean sendIPAddressToI2C(IPAddress ip) {
+  
+#ifdef DEBUG
+  Serial.println("Sending IP Address to I2C");
+  Serial.print(ip[0]);
+  Serial.print(".");
+  Serial.print(ip[1]);
+  Serial.print(".");
+  Serial.print(ip[2]);
+  Serial.print(".");
+  Serial.print(ip[3]);
+  Serial.println("");
+#endif
+
+  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.write(I2C_SHOW_IP_ADDR); // Command
+  Wire.write(ip[0]);
+  Wire.write(ip[1]);
+  Wire.write(ip[2]);
+  Wire.write(ip[3]);
+  
   int error = Wire.endTransmission();
   return (error == 0);
 }
