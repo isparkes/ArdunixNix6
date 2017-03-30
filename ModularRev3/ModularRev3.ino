@@ -626,7 +626,7 @@ boolean blankLEDs = false;
 boolean hourMode = false;
 
 // PIR
-int pirTimeout = PIR_TIMEOUT_DEFAULT;
+unsigned long pirTimeout = PIR_TIMEOUT_DEFAULT;
 unsigned long pirLastSeen = 0;
 
 boolean useRTC = false;
@@ -993,7 +993,7 @@ void loop()
   if (nextMode != currentMode) {
     setNextMode();
   } else {
-    processCurrentMode();
+    processCurrentMode(nowMillis);
   }
 
   // get the LDR ambient light reading
@@ -1168,7 +1168,7 @@ boolean checkPIR(unsigned long nowMillis) {
       pirLastSeen = nowMillis;
       return false;
     } else {
-      if (nowMillis > (pirLastSeen + pirTimeout * 1000)) {
+      if (nowMillis > (pirLastSeen + (pirTimeout * 1000))) {
         dpArray[4] = false;
         return true;
       } else {
@@ -1387,7 +1387,7 @@ void setNextMode() {
 // ************************************************************
 // If we are not previewing the next mode, we are dealing with the current mode
 // ************************************************************
-void processCurrentMode() {
+void processCurrentMode(unsigned long nowMillis) {
   switch (currentMode) {
     case MODE_TIME: {
         boolean pirBlanked = checkPIR(nowMillis);
