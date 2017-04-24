@@ -1,15 +1,16 @@
 //**********************************************************************************
 //* Main code for an Arduino based Nixie clock. Features:                          *
+//*  - WiFi Clock interface for the WiFiModule  OR                                 *
 //*  - Real Time Clock interface for DS3231                                        *
-//*  - WiFi Clock interface for the WiFiModule                                     *
 //*  - Digit fading with configurable fade length                                  *
 //*  - Digit scrollback with configurable scroll speed                             *
 //*  - Configuration stored in EEPROM                                              *
 //*  - Low hardware component count (as much as possible done in code)             *
 //*  - Single button operation with software debounce                              *
-//*  - Single 74141 for digit display (other versions use 2 or even 6!)            *
+//*  - Single K155ID1 for digit display (other versions use 2 or even 6!)          *
 //*  - Automatic dimming, using a Light Dependent Resistor                         *
-//*  - RGB back light management                                                   *
+//*  - RGB back light management using individually addressable WS2812B            *
+//*  - PIR sensor to turn off display when no one is around                        *
 //*                                                                                *
 //*  nixie@protonmail.ch                                                           *
 //*                                                                                *
@@ -19,7 +20,7 @@
 #include <EEPROM.h>
 #include <DS3231.h>
 #include <Wire.h>
-#include <Time.h>
+#include <TimeLib.h>
 #include <Adafruit_NeoPixel.h>
 
 //**********************************************************************************
@@ -59,12 +60,13 @@
 #define EE_MIN_DIM_HI       30     // The min dim value
 #define EE_ANTI_GHOST       31     // The value we use for anti-ghosting
 #define EE_NEED_SETUP       32     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup
-#define EE_PIR_BLANKING     33     // PIR blanking mode
-#define EE_PIR_TIMEOUT_LO   34     // The PIR timeout time in S, low byte
-#define EE_PIR_TIMEOUT_HI   35     // The PIR timeout time in S, high byte
+#define EE_PIR_TIMEOUT_LO   33     // The PIR timeout time in S, low byte
+#define EE_PIR_TIMEOUT_HI   34     // The PIR timeout time in S, high byte
+#define EE_USE_LDR          35     // Use the LDR or not
+#define EE_BLANK_MODE       36     // Set what we do when we are in blanking
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 100
+#define SOFTWARE_VERSION 2
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -169,35 +171,45 @@
 #define MODE_DISPLAY_SCROLL_STEPS_UP    16 // Mode "10"
 #define MODE_DISPLAY_SCROLL_STEPS_DOWN  17 // Mode "11"
 
+// PIR
+#define MODE_PIR_TIMEOUT_UP             18 // Mode "12"
+#define MODE_PIR_TIMEOUT_DOWN           19 // Mode "13"
+
+// blanking mode
+#define MODE_BLANK_MODE                 20 // Mode "14"
+
+// blanking mode
+#define MODE_USE_LDR                    21 // Mode "15"
+
 // Back light
-#define MODE_BACKLIGHT_MODE             18 // Mode "12"
-#define MODE_RED_CNL                    19 // Mode "13"
-#define MODE_GRN_CNL                    20 // Mode "14"
-#define MODE_BLU_CNL                    21 // Mode "15"
-#define MODE_CYCLE_SPEED                22 // Mode "16" - speed the colour cycle cyles at
+#define MODE_BACKLIGHT_MODE             22 // Mode "15"
+#define MODE_RED_CNL                    23 // Mode "16"
+#define MODE_GRN_CNL                    24 // Mode "17"
+#define MODE_BLU_CNL                    25 // Mode "18"
+#define MODE_CYCLE_SPEED                26 // Mode "19" - speed the colour cycle cyles at
 
 // HV generation
-#define MODE_TARGET_HV_UP               23 // Mode "17"
-#define MODE_TARGET_HV_DOWN             24 // Mode "18"
-#define MODE_PULSE_UP                   25 // Mode "19"
-#define MODE_PULSE_DOWN                 26 // Mode "20"
+#define MODE_TARGET_HV_UP               27 // Mode "20"
+#define MODE_TARGET_HV_DOWN             28 // Mode "21"
+#define MODE_PULSE_UP                   29 // Mode "22"
+#define MODE_PULSE_DOWN                 30 // Mode "23"
 
-#define MODE_MIN_DIM_UP                 27 // Mode "21"
-#define MODE_MIN_DIM_DOWN               28 // Mode "22"
+#define MODE_MIN_DIM_UP                 31 // Mode "24"
+#define MODE_MIN_DIM_DOWN               32 // Mode "25"
 
-#define MODE_ANTI_GHOST_UP              29 // Mode "23"
-#define MODE_ANTI_GHOST_DOWN            30 // Mode "24"
+#define MODE_ANTI_GHOST_UP              33 // Mode "26"
+#define MODE_ANTI_GHOST_DOWN            34 // Mode "27"
 
 // Temperature
-#define MODE_TEMP                       31 // Mode "25"
+#define MODE_TEMP                       35 // Mode "28"
 
 // Software Version
-#define MODE_VERSION                    32 // Mode "26"
+#define MODE_VERSION                    36 // Mode "29"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  33
+#define MODE_TUBE_TEST                  37
 
-#define MODE_MAX                        33
+#define MODE_MAX                        37
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
@@ -234,7 +246,7 @@
 #define DAY_BLANKING_DEFAULT            0
 
 #define BLANK_MODE_MIN                  0
-#define BLANK_MODE_NONE                 0   // don't use PIR blanking at all
+#define BLANK_MODE_NONE                 0   // don't use blanking at all. Hmmmmm.
 #define BLANK_MODE_TUBES                1   // Use PIR blanking for tubes only
 #define BLANK_MODE_LEDS                 2   // Use PIR blanking for LEDs only
 #define BLANK_MODE_BOTH                 3   // Use PIR blanking for tubes and LEDs
@@ -248,8 +260,9 @@
 #define BACKLIGHT_FIXED_DIM             3   // A defined colour, but dims with bulb dimming
 #define BACKLIGHT_PULSE_DIM             4   // pulse the defined colour, dims with bulb dimming
 #define BACKLIGHT_CYCLE_DIM             5   // cycle through random colours, dims with bulb dimming
-#define BACKLIGHT_MAX                   5
-#define BACKLIGHT_DEFAULT               0
+#define BACKLIGHT_COLOUR_TIME           6   // use "ColourTime" - different colours for each digit value
+#define BACKLIGHT_MAX                   6
+#define BACKLIGHT_DEFAULT               4
 
 #define CYCLE_SPEED_MIN                 4
 #define CYCLE_SPEED_MAX                 64
@@ -259,28 +272,36 @@
 #define ANTI_GHOST_MAX                  50
 #define ANTI_GHOST_DEFAULT              0
 
-#define PIR_TIMEOUT_DEFAULT             300  // 5 minutes in seconds
+#define PIR_TIMEOUT_MIN                 60    // 1 minute in seconds
+#define PIR_TIMEOUT_MAX                 3600  // 1 hour in seconds
+#define PIR_TIMEOUT_DEFAULT             300   // 5 minutes in seconds
+
+#define USE_LDR_DEFAULT                 true
 
 // I2C Interface definition
-#define I2C_SLAVE_ADDR                0x68
-#define I2C_TIME_UPDATE               0x00
-#define I2C_GET_OPTIONS               0x01
-#define I2C_SET_OPTION_12_24          0x02
-#define I2C_SET_OPTION_BLANK_LEAD     0x03
-#define I2C_SET_OPTION_SCROLLBACK     0x04
-#define I2C_SET_OPTION_SUPPRESS_ACP   0x05
-#define I2C_SET_OPTION_DATE_FORMAT    0x06
-#define I2C_SET_OPTION_DAY_BLANKING   0x07
-#define I2C_SET_OPTION_BLANK_START    0x08
-#define I2C_SET_OPTION_BLANK_END      0x09
-#define I2C_SET_OPTION_FADE_STEPS     0x0a
-#define I2C_SET_OPTION_SCROLL_STEPS   0x0b
-#define I2C_SET_OPTION_BACKLIGHT_MODE 0x0c
-#define I2C_SET_OPTION_RED_CHANNEL    0x0d
-#define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
-#define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
-#define I2C_SET_OPTION_CYCLE_SPEED    0x10
-#define I2C_SHOW_IP_ADDR              0x11
+#define I2C_SLAVE_ADDR                  0x68
+#define I2C_TIME_UPDATE                 0x00
+#define I2C_GET_OPTIONS                 0x01
+#define I2C_SET_OPTION_12_24            0x02
+#define I2C_SET_OPTION_BLANK_LEAD       0x03
+#define I2C_SET_OPTION_SCROLLBACK       0x04
+#define I2C_SET_OPTION_SUPPRESS_ACP     0x05
+#define I2C_SET_OPTION_DATE_FORMAT      0x06
+#define I2C_SET_OPTION_DAY_BLANKING     0x07
+#define I2C_SET_OPTION_BLANK_START      0x08
+#define I2C_SET_OPTION_BLANK_END        0x09
+#define I2C_SET_OPTION_FADE_STEPS       0x0a
+#define I2C_SET_OPTION_SCROLL_STEPS     0x0b
+#define I2C_SET_OPTION_BACKLIGHT_MODE   0x0c
+#define I2C_SET_OPTION_RED_CHANNEL      0x0d
+#define I2C_SET_OPTION_GREEN_CHANNEL    0x0e
+#define I2C_SET_OPTION_BLUE_CHANNEL     0x0f
+#define I2C_SET_OPTION_CYCLE_SPEED      0x10
+#define I2C_SHOW_IP_ADDR                0x11
+#define I2C_SET_OPTION_PIR_TIMEOUT      0x12
+#define I2C_SET_OPTION_BLANK_MODE       0x13
+#define I2C_SET_OPTION_USE_LDR          0x14
+#define I2C_SET_DISPLAY_VALUE           0x15
 
 
 //**********************************************************************************
@@ -319,7 +340,7 @@
 #define tickLed     11    // package pin 17 // PB3
 
 // Decimal point - PWM capable
-#define DP        5       // package pin 11 // PD5
+#define DP          5     // package pin 11 // PD5
 
 // PWM capable output for backlight - Neo Pixel chain
 #define LED_DOUT    6     // package pin 12 // PD6
@@ -553,11 +574,13 @@ int rawHVADCThreshold;
 double sensorHVSmoothed = 0;
 
 // ************************ Display management ************************
-byte NumberArray[6]     = {0, 0, 0, 0, 0, 0};
-byte currNumberArray[6] = {0, 0, 0, 0, 0, 0};
+byte numberArray[6]     = {0, 0, 0, 0, 0, 0};
+byte currnumberArray[6] = {0, 0, 0, 0, 0, 0};
 byte displayType[6]     = {FADE, FADE, FADE, FADE, FADE, FADE};
 byte fadeState[6]       = {0, 0, 0, 0, 0, 0};
 byte ourIP[4]           = {0, 0, 0, 0}; // set by the WiFi module
+
+// Decimal point indicators
 boolean dpArray[6]         = {false, false, false, false, false, false};
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
@@ -601,6 +624,7 @@ double sensorLDRSmoothed = 0;
 double sensorFactor = (double)(DIGIT_DISPLAY_OFF) / (double)(dimBright - dimDark);
 int sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
 int sensorSmoothCountHV = SENSOR_SMOOTH_READINGS_DEFAULT / 8;
+boolean useLDR = true;
 
 // ************************ Clock variables ************************
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
@@ -701,6 +725,11 @@ const byte dim_curve[] = {
 
 const byte rgb_backlight_curve[] = {0, 16, 32, 48, 64, 80, 99, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255};
 
+// Used to define "colourTime" colours
+//                             0    1    2    3    4    5    6    7    8    9
+const byte colourTimeR[] = { 255, 255,   0,   0,   0, 255, 255,   0,  15, 127};
+const byte colourTimeG[] = {   0, 255, 255, 255,   0,   0,  64, 255,  31, 127};
+const byte colourTimeB[] = {   0,   0,   0, 255, 255, 255,   0,  31, 255, 127};
 
 //**********************************************************************************
 //**********************************************************************************
@@ -768,16 +797,16 @@ void setup()
   // Set up the LED output
   leds.begin();
   
+  // Set up the PRNG with something so that it looks random
+  randomSeed(analogRead(LDRPin));
+
   // Test if the button is pressed for factory reset
   for (int i = 0 ; i < 20 ; i++ ) {
     button1.checkButton(nowMillis);
   }
 
-  // Set up the PRNG with something so that it looks random
-  randomSeed(analogRead(LDRPin));
-
-  // Detect factory reset: button pressed on start or uninitialised EEPROM
-  if (button1.isButtonPressedNow() || (EEPROM.read(EE_NEED_SETUP))) {
+  // User requested factory reset
+  if (button1.isButtonPressedNow()) {
     // do this before the flashing, because this way we can set up the EEPROM to
     // autocalibrate on first start (press factory reset and then power off before
     // flashing ends)
@@ -788,47 +817,20 @@ void setup()
       randomRGBFlash(20);
     }
 
-    factoryReset();
-
     // mark that we have done the EEPROM setup
-    EEPROM.write(EE_NEED_SETUP, false);
+    EEPROM.write(EE_NEED_SETUP, true);
+  }
+  
+  // If the button is held down while we are flashing, then do the test pattern
+  boolean doTestPattern = false;
+
+  // Detect factory reset: button pressed on start or uninitialised EEPROM
+  if (EEPROM.read(EE_NEED_SETUP)) {
+    doTestPattern = true;
   }
 
   // Clear down any spurious button action
   button1.reset();
-
-  // Test if the button is pressed for factory reset
-  for (int i = 0 ; i < 20 ; i++ ) {
-    button1.checkButton(nowMillis);
-  }
-
-  boolean doTestPattern = false;
-
-  if (button1.isButtonPressedNow()) {
-    doTestPattern = true;
-  }
-
-  if (doTestPattern == false) {
-    // Start the RTC communication
-    Wire.begin();
-
-    // Set up the time provider
-    // first try to find the RTC, if not available, go into slave mode
-    Wire.beginTransmission(RTC_I2C_ADDRESS);
-    if (Wire.endTransmission() == 0) {
-      // Make sure the clock keeps running even on battery
-      Clock.enableOscillator(true, true, 0);
-
-      // show that we are using the RTC
-      useRTC = true;
-    } else {
-      // Wait for I2C in slave mode
-      Wire.end();
-      Wire.begin(I2C_SLAVE_ADDR);
-      Wire.onReceive(receiveEvent);
-      Wire.onRequest(requestEvent);
-    }
-  }
 
   // Read EEPROM values
   readEEPROMValues();
@@ -841,14 +843,31 @@ void setup()
   TCCR1A = tccrOn;
 
   if (doTestPattern) {
+    boolean oldUseLDR = useLDR;
+    byte oldBacklightMode = backlightMode;
+    
+    // reset the EEPROM values
+    factoryReset();
+    
+    // turn off LDR
+    useLDR = false;
+
+    // turn off Scrollback
+    scrollback = false;
+    
     // Set the target voltage
     rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
 
+    // All the digits on full
     allBright();
 
     int secCount = 0;
     lastCheckMillis = millis();
-    while (true) {
+    
+    boolean inLoop = true;
+    backlightMode = BACKLIGHT_COLOUR_TIME;
+    
+    while (inLoop) {
       nowMillis = millis();
       if (nowMillis - lastCheckMillis > 1000) {
         lastCheckMillis = nowMillis;
@@ -858,11 +877,43 @@ void setup()
       loadNumberArraySameValue(secCount);
       outputDisplay();
       checkHVVoltage();
+      setLeds(nowMillis);
+      button1.checkButton(nowMillis);
+      if (button1.isButtonPressedNow() && (secCount == 0)) {
+        inLoop = false;
+      }
     }
+    
+    useLDR = oldUseLDR;
+    backlightMode = oldBacklightMode;
+  } 
+  
+  // Start the RTC communication
+  Wire.begin();
+
+  // Set up the time provider
+  // first try to find the RTC, if not available, go into slave mode
+  Wire.beginTransmission(RTC_I2C_ADDRESS);
+  if (Wire.endTransmission() == 0) {
+    // Make sure the clock keeps running even on battery
+    Clock.enableOscillator(true, true, 0);
+
+    // show that we are using the RTC
+    useRTC = true;
+  } else {
+    // Wait for I2C in slave mode
+    Wire.end();
+    Wire.begin(I2C_SLAVE_ADDR);
+    Wire.onReceive(receiveEvent);
+    Wire.onRequest(requestEvent);
   }
 
   // Set up the HVG if we need to
   if (EEPROM.read(EE_HVG_NEED_CALIB)) {
+    // Turn off the back lights
+    setAllLEDs(0,0,0);
+    
+    // Do the calibration
     calibrateHVG();
 
     // Save the PWM values
@@ -896,8 +947,14 @@ void setup()
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
   secsDisplayEnd = millis() + 1500;
+  
+  // mark that we have done the EEPROM setup
+  EEPROM.write(EE_NEED_SETUP, false);
 }
 
+//**********************************************************************************
+//*                         Flash some RGB colours                                 *
+//**********************************************************************************
 void randomRGBFlash(int delayVal) {
   digitalWrite(tickLed, HIGH);
   if (random(3) == 0) {
@@ -1125,6 +1182,14 @@ void setLeds(unsigned long nowMillis)
                       getLEDAdjusted(colors[1], 1, dimFactor),
                       getLEDAdjusted(colors[2], 1, dimFactor));
           break;
+        case BACKLIGHT_COLOUR_TIME:
+            for (int i = 0 ; i < 6 ; i++) {
+              ledR[5-i] = colourTimeR[numberArray[i]];
+              ledG[5-i] = colourTimeG[numberArray[i]];
+              ledB[5-i] = colourTimeB[numberArray[i]];
+            }
+            outputLEDBuffer();
+          break;
       }
     } else {
       // Settings modes
@@ -1163,21 +1228,17 @@ boolean checkPIR(unsigned long nowMillis) {
 
   dpArray[5] = pirvalue;
   
-  if (blankMode > BLANK_MODE_NONE) {
-    if (pirvalue) {
-      pirLastSeen = nowMillis;
-      return false;
-    } else {
-      if (nowMillis > (pirLastSeen + (pirTimeout * 1000))) {
-        dpArray[4] = false;
-        return true;
-      } else {
-        dpArray[4] = true;
-        return false;
-      }
-    }
-  } else {
+  if (pirvalue) {
+    pirLastSeen = nowMillis;
     return false;
+  } else {
+    if (nowMillis > (pirLastSeen + (pirTimeout * 1000))) {
+      dpArray[4] = false;
+      return true;
+    } else {
+      dpArray[4] = true;
+      return false;
+    }
   }
 }
 
@@ -1190,7 +1251,13 @@ void setAllLEDs(byte red, byte green, byte blue) {
     ledG[i] = green;
     ledB[i] = blue;
   }
+  outputLEDBuffer();
+}
 
+// ************************************************************
+// Put the led buffers out
+// ************************************************************
+void outputLEDBuffer() {
   for (int i = 0 ; i < 6 ; i++) {
     leds.setPixelColor(i, leds.Color(ledR[i], ledG[i], ledB[i]));
   }
@@ -1295,6 +1362,22 @@ void setNextMode() {
         displayConfig();
         break;
       }
+    case MODE_PIR_TIMEOUT_UP:
+    case MODE_PIR_TIMEOUT_DOWN: {
+        loadNumberArrayConfInt(pirTimeout, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_BLANK_MODE: {
+        loadNumberArrayConfInt(blankMode, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_USE_LDR: {
+        loadNumberArrayConfBool(useLDR, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
     case MODE_BACKLIGHT_MODE: {
         loadNumberArrayConfInt(backlightMode, nextMode - MODE_12_24);
         displayConfig();
@@ -1385,7 +1468,7 @@ void setNextMode() {
 }
 
 // ************************************************************
-// If we are not previewing the next mode, we are dealing with the current mode
+// Deal with the current mode
 // ************************************************************
 void processCurrentMode(unsigned long nowMillis) {
   switch (currentMode) {
@@ -1396,6 +1479,12 @@ void processCurrentMode(unsigned long nowMillis) {
 
         if (blanked) {
           switch(blankMode) {
+            case BLANK_MODE_NONE:
+            {
+              blankTubes = false;
+              blankLEDs = false;
+              break;
+            }
             case BLANK_MODE_TUBES:
             {
               blankTubes = true;
@@ -1488,7 +1577,7 @@ void processCurrentMode(unsigned long nowMillis) {
           }
 
           if (tempDisplayMode == TEMP_MODE_VERSION) {
-            loadNumberArrayConfInt(SOFTWARE_VERSION, currentMode - MODE_12_24);
+            loadNumberArrayConfInt(SOFTWARE_VERSION, 1);
           }
 
           if (tempDisplayMode == TEMP_IP_ADDR12) {
@@ -1513,7 +1602,7 @@ void processCurrentMode(unsigned long nowMillis) {
             if (useRTC) {
               tempDisplayMode = TEMP_MODE_MIN;
             } else {
-              loadNumberArrayConfInt(lastImpressionsPerSec, currentMode - MODE_12_24);
+              loadNumberArrayConfInt(lastImpressionsPerSec, 5);
             }
           }
           
@@ -1693,6 +1782,47 @@ void processCurrentMode(unsigned long nowMillis) {
           }
         }
         loadNumberArrayConfInt(scrollSteps, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_PIR_TIMEOUT_DOWN: {
+        if (button1.isButtonPressedAndReleased()) {
+          pirTimeout-=10;
+          if (pirTimeout < PIR_TIMEOUT_MIN) {
+            pirTimeout = PIR_TIMEOUT_MAX;
+          }
+        }
+        loadNumberArrayConfInt(pirTimeout, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_PIR_TIMEOUT_UP: {
+        if (button1.isButtonPressedAndReleased()) {
+          pirTimeout+=10;
+          if (pirTimeout > PIR_TIMEOUT_MAX) {
+            pirTimeout = PIR_TIMEOUT_MIN;
+          }
+        }
+        loadNumberArrayConfInt(pirTimeout, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_BLANK_MODE: {
+        if (button1.isButtonPressedAndReleased()) {
+          blankMode++;
+          if (blankMode > BLANK_MODE_MAX) {
+            blankMode = BLANK_MODE_MIN;
+          }
+        }
+        loadNumberArrayConfInt(blankMode, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_USE_LDR: {
+        if (button1.isButtonPressedAndReleased()) {
+          useLDR = !useLDR;
+        }
+        loadNumberArrayConfBool(useLDR, currentMode - MODE_12_24);
         displayConfig();
         break;
       }
@@ -1977,16 +2107,16 @@ void cycleColours3(int colors[3]) {
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArrayTime() {
-  NumberArray[5] = second() % 10;
-  NumberArray[4] = second() / 10;
-  NumberArray[3] = minute() % 10;
-  NumberArray[2] = minute() / 10;
+  numberArray[5] = second() % 10;
+  numberArray[4] = second() / 10;
+  numberArray[3] = minute() % 10;
+  numberArray[2] = minute() / 10;
   if (hourMode) {
-    NumberArray[1] = hourFormat12() % 10;
-    NumberArray[0] = hourFormat12() / 10;
+    numberArray[1] = hourFormat12() % 10;
+    numberArray[0] = hourFormat12() / 10;
   } else {
-    NumberArray[1] = hour() % 10;
-    NumberArray[0] = hour() / 10;
+    numberArray[1] = hour() % 10;
+    numberArray[0] = hour() / 10;
   }
 }
 
@@ -1994,12 +2124,12 @@ void loadNumberArrayTime() {
 // Break the time into displayable digits
 // ************************************************************
 void loadNumberArraySameValue(byte val) {
-  NumberArray[5] = val;
-  NumberArray[4] = val;
-  NumberArray[3] = val;
-  NumberArray[2] = val;
-  NumberArray[1] = val;
-  NumberArray[0] = val;
+  numberArray[5] = val;
+  numberArray[4] = val;
+  numberArray[3] = val;
+  numberArray[2] = val;
+  numberArray[1] = val;
+  numberArray[0] = val;
 }
 
 // ************************************************************
@@ -2008,28 +2138,28 @@ void loadNumberArraySameValue(byte val) {
 void loadNumberArrayDate() {
   switch (dateFormat) {
     case DATE_FORMAT_YYMMDD:
-      NumberArray[5] = day() % 10;
-      NumberArray[4] = day() / 10;
-      NumberArray[3] = month() % 10;
-      NumberArray[2] = month() / 10;
-      NumberArray[1] = (year() - 2000) % 10;
-      NumberArray[0] = (year() - 2000) / 10;
+      numberArray[5] = day() % 10;
+      numberArray[4] = day() / 10;
+      numberArray[3] = month() % 10;
+      numberArray[2] = month() / 10;
+      numberArray[1] = (year() - 2000) % 10;
+      numberArray[0] = (year() - 2000) / 10;
       break;
     case DATE_FORMAT_MMDDYY:
-      NumberArray[5] = (year() - 2000) % 10;
-      NumberArray[4] = (year() - 2000) / 10;
-      NumberArray[3] = day() % 10;
-      NumberArray[2] = day() / 10;
-      NumberArray[1] = month() % 10;
-      NumberArray[0] = month() / 10;
+      numberArray[5] = (year() - 2000) % 10;
+      numberArray[4] = (year() - 2000) / 10;
+      numberArray[3] = day() % 10;
+      numberArray[2] = day() / 10;
+      numberArray[1] = month() % 10;
+      numberArray[0] = month() / 10;
       break;
     case DATE_FORMAT_DDMMYY:
-      NumberArray[5] = (year() - 2000) % 10;
-      NumberArray[4] = (year() - 2000) / 10;
-      NumberArray[3] = month() % 10;
-      NumberArray[2] = month() / 10;
-      NumberArray[1] = day() % 10;
-      NumberArray[0] = day() / 10;
+      numberArray[5] = (year() - 2000) % 10;
+      numberArray[4] = (year() - 2000) / 10;
+      numberArray[3] = month() % 10;
+      numberArray[2] = month() / 10;
+      numberArray[1] = day() % 10;
+      numberArray[0] = day() / 10;
       break;
   }
 }
@@ -2038,66 +2168,66 @@ void loadNumberArrayDate() {
 // Break the temperature into displayable digits
 // ************************************************************
 void loadNumberArrayTemp(int confNum) {
-  NumberArray[5] = (confNum) % 10;
-  NumberArray[4] = (confNum / 10) % 10;
+  numberArray[5] = (confNum) % 10;
+  numberArray[4] = (confNum / 10) % 10;
   float temp = getRTCTemp();
   int wholeDegrees = int(temp);
   temp = (temp - float(wholeDegrees)) * 100.0;
   int fractDegrees = int(temp);
 
-  NumberArray[3] = fractDegrees % 10;
-  NumberArray[2] =  fractDegrees / 10;
-  NumberArray[1] =  wholeDegrees % 10;
-  NumberArray[0] = wholeDegrees / 10;
+  numberArray[3] = fractDegrees % 10;
+  numberArray[2] =  fractDegrees / 10;
+  numberArray[1] =  wholeDegrees % 10;
+  numberArray[0] = wholeDegrees / 10;
 }
 
 // ************************************************************
 // Break the LDR reading into displayable digits
 // ************************************************************
 void loadNumberArrayLDR() {
-  NumberArray[5] = 0;
-  NumberArray[4] = 0;
+  numberArray[5] = 0;
+  numberArray[4] = 0;
 
-  NumberArray[3] = (digitOffCount / 1) % 10;
-  NumberArray[2] = (digitOffCount / 10) % 10;
-  NumberArray[1] = (digitOffCount / 100) % 10;
-  NumberArray[0] = (digitOffCount / 1000) % 10;
+  numberArray[3] = (digitOffCount / 1) % 10;
+  numberArray[2] = (digitOffCount / 10) % 10;
+  numberArray[1] = (digitOffCount / 100) % 10;
+  numberArray[0] = (digitOffCount / 1000) % 10;
 }
 
 // ************************************************************
 // Test digits
 // ************************************************************
 void loadNumberArrayTestDigits() {
-  NumberArray[5] =  second() % 10;
-  NumberArray[4] = (second() + 1) % 10;
-  NumberArray[3] = (second() + 2) % 10;
-  NumberArray[2] = (second() + 3) % 10;
-  NumberArray[1] = (second() + 4) % 10;
-  NumberArray[0] = (second() + 5) % 10;
+  numberArray[5] =  second() % 10;
+  numberArray[4] = (second() + 1) % 10;
+  numberArray[3] = (second() + 2) % 10;
+  numberArray[2] = (second() + 3) % 10;
+  numberArray[1] = (second() + 4) % 10;
+  numberArray[0] = (second() + 5) % 10;
 }
 
 // ************************************************************
 // Do the Anti Cathode Poisoning
 // ************************************************************
 void loadNumberArrayACP() {
-  NumberArray[5] = (second() + acpOffset) % 10;
-  NumberArray[4] = (second() / 10 + acpOffset) % 10;
-  NumberArray[3] = (minute() + acpOffset) % 10;
-  NumberArray[2] = (minute() / 10 + acpOffset) % 10;
-  NumberArray[1] = (hour() + acpOffset)  % 10;
-  NumberArray[0] = (hour() / 10 + acpOffset) % 10;
+  numberArray[5] = (second() + acpOffset) % 10;
+  numberArray[4] = (second() / 10 + acpOffset) % 10;
+  numberArray[3] = (minute() + acpOffset) % 10;
+  numberArray[2] = (minute() / 10 + acpOffset) % 10;
+  numberArray[1] = (hour() + acpOffset)  % 10;
+  numberArray[0] = (hour() / 10 + acpOffset) % 10;
 }
 
 // ************************************************************
 // Show an integer configuration value
 // ************************************************************
 void loadNumberArrayConfInt(int confValue, int confNum) {
-  NumberArray[5] = (confNum) % 10;
-  NumberArray[4] = (confNum / 10) % 10;
-  NumberArray[3] = (confValue / 1) % 10;
-  NumberArray[2] = (confValue / 10) % 10;
-  NumberArray[1] = (confValue / 100) % 10;
-  NumberArray[0] = (confValue / 1000) % 10;
+  numberArray[5] = (confNum) % 10;
+  numberArray[4] = (confNum / 10) % 10;
+  numberArray[3] = (confValue / 1) % 10;
+  numberArray[2] = (confValue / 10) % 10;
+  numberArray[1] = (confValue / 100) % 10;
+  numberArray[0] = (confValue / 1000) % 10;
 }
 
 // ************************************************************
@@ -2110,24 +2240,24 @@ void loadNumberArrayConfBool(boolean confValue, int confNum) {
   } else {
     boolInt = 0;
   }
-  NumberArray[5] = (confNum) % 10;
-  NumberArray[4] = (confNum / 10) % 10;
-  NumberArray[3] = boolInt;
-  NumberArray[2] = 0;
-  NumberArray[1] = 0;
-  NumberArray[0] = 0;
+  numberArray[5] = (confNum) % 10;
+  numberArray[4] = (confNum / 10) % 10;
+  numberArray[3] = boolInt;
+  numberArray[2] = 0;
+  numberArray[1] = 0;
+  numberArray[0] = 0;
 }
 
 // ************************************************************
 // Show an integer configuration value
 // ************************************************************
 void loadNumberArrayIP(byte byte1, byte byte2) {
-  NumberArray[5] = (byte2) % 10;
-  NumberArray[4] = (byte2 / 10) % 10;
-  NumberArray[3] = (byte2 / 100) % 10;
-  NumberArray[2] = (byte1) % 10;
-  NumberArray[1] = (byte1 / 10) % 10;
-  NumberArray[0] = (byte1 / 100) % 10;
+  numberArray[5] = (byte2) % 10;
+  numberArray[4] = (byte2 / 10) % 10;
+  numberArray[3] = (byte2 / 100) % 10;
+  numberArray[2] = (byte1) % 10;
+  numberArray[1] = (byte1 / 10) % 10;
+  numberArray[0] = (byte1 / 100) % 10;
 }
 
 // ************************************************************
@@ -2166,6 +2296,7 @@ void SetSN74141Chip(int num1)
 // Do a single complete display, including any fading and
 // dimming requested. Performs the display loop
 // DIGIT_DISPLAY_COUNT times for each digit, with no delays.
+// This is the heart of the display processing!
 // ************************************************************
 void outputDisplay()
 {
@@ -2235,8 +2366,8 @@ void outputDisplay()
     }
 
     // Do scrollback when we are going to 0
-    if ((NumberArray[i] != currNumberArray[i]) &&
-        (NumberArray[i] == 0) &&
+    if ((numberArray[i] != currnumberArray[i]) &&
+        (numberArray[i] == 0) &&
         scrollback) {
       tmpDispType = SCROLL;
     }
@@ -2247,7 +2378,7 @@ void outputDisplay()
     // digit and 1 fade step more of the new
     if (tmpDispType == SCROLL) {
       digitSwitchTime = DIGIT_DISPLAY_OFF;
-      if (NumberArray[i] != currNumberArray[i]) {
+      if (numberArray[i] != currnumberArray[i]) {
         if (fadeState[i] == 0) {
           // Start the fade
           fadeState[i] = scrollSteps;
@@ -2256,14 +2387,14 @@ void outputDisplay()
         if (fadeState[i] == 1) {
           // finish the fade
           fadeState[i] = 0;
-          currNumberArray[i] = currNumberArray[i] - 1;
+          currnumberArray[i] = currnumberArray[i] - 1;
         } else if (fadeState[i] > 1) {
           // Continue the scroll countdown
           fadeState[i] = fadeState[i] - 1;
         }
       }
     } else if (tmpDispType == FADE) {
-      if (NumberArray[i] != currNumberArray[i]) {
+      if (numberArray[i] != currnumberArray[i]) {
         if (fadeState[i] == 0) {
           // Start the fade
           fadeState[i] = fadeSteps;
@@ -2274,7 +2405,7 @@ void outputDisplay()
       if (fadeState[i] == 1) {
         // finish the fade
         fadeState[i] = 0;
-        currNumberArray[i] = NumberArray[i];
+        currnumberArray[i] = numberArray[i];
         digitSwitchTime = DIGIT_DISPLAY_COUNT;
       } else if (fadeState[i] > 1) {
         // Continue the fade
@@ -2283,16 +2414,16 @@ void outputDisplay()
       }
     } else {
       digitSwitchTime = DIGIT_DISPLAY_COUNT;
-      currNumberArray[i] = NumberArray[i];
+      currnumberArray[i] = numberArray[i];
     }
 
     for (int timer = 0 ; timer < dispCount ; timer++) {
       if (timer == digitOnTime) {
-        digitOn(i, currNumberArray[i]);
+        digitOn(i, currnumberArray[i]);
       }
 
       if  (timer == digitSwitchTime) {
-        SetSN74141Chip(NumberArray[i]);
+        SetSN74141Chip(numberArray[i]);
       }
 
       if (timer == digitOffTime) {
@@ -2349,7 +2480,7 @@ void applyBlanking() {
   }
 
   // We only want to blank the hours tens digit
-  if (NumberArray[0] == 0) {
+  if (numberArray[0] == 0) {
     if (displayType[0] != BLANKED) {
       displayType[0] = BLANKED;
     }
@@ -2634,7 +2765,7 @@ void incYears() {
 
 // ************************************************************
 // Check the blanking
-// returns true if we are in blanking (or PIR blanking)
+// returns true if we are in scheduled blanking
 // ************************************************************
 boolean checkBlanking() {  
   // Check day blanking, but only when we are in
@@ -2678,6 +2809,73 @@ boolean getHoursBlanked() {
   } else {
     // no dimming if Start = End
     return false;
+  }
+}
+
+// ******************************************************************
+// Routine to set the LEDs
+// LEDPin 
+// brightens and dims a PWM capable LED
+// - 0 to 255 ramp up
+// - 256 to 511 plateau
+// - 512 to 767 ramp down
+// ******************************************************************
+void checkLEDPWM(byte LEDPin, int step) {
+  
+  if (step > 767) {
+    if (LEDPin == tickLed) {
+      analogWrite(LEDPin, getLEDAdjusted(0, 1, 1));
+    } else {
+      setAllLEDs(0,0,0);
+    }
+  } else if (step > 512) {
+    if (LEDPin == tickLed) {
+      analogWrite(LEDPin, getLEDAdjusted(255 - (step - 512), 1, 1));
+    } else {
+      switch (LEDPin) {
+        case 0:
+          setAllLEDs(getLEDAdjusted(255 - (step - 512),1,1),0,0);
+          break;
+        case 1:
+          setAllLEDs(0,getLEDAdjusted(255 - (step - 512),1,1),0);
+          break;
+        case 2:
+          setAllLEDs(0,0,getLEDAdjusted(255 - (step - 512),1,1));
+          break;
+      }
+    }
+  } else if (step > 255) {
+    if (LEDPin == tickLed) {
+      analogWrite(LEDPin, getLEDAdjusted(255, 1, 1));
+    } else {
+      switch (LEDPin) {
+        case 0:
+          setAllLEDs(getLEDAdjusted(255,1,1),0,0);
+          break;
+        case 1:
+          setAllLEDs(0,getLEDAdjusted(255,1,1),0);
+          break;
+        case 2:
+          setAllLEDs(0,0,getLEDAdjusted(255,1,1));
+          break;
+      }
+    }
+  } else if (step > 0) {
+    if (LEDPin == tickLed) {
+      analogWrite(LEDPin, getLEDAdjusted(step, 1, 1));
+    } else {
+      switch (LEDPin) {
+        case 0:
+          setAllLEDs(getLEDAdjusted(step,1,1),0,0);
+          break;
+        case 1:
+          setAllLEDs(0,getLEDAdjusted(step,1,1),0);
+          break;
+        case 2:
+          setAllLEDs(0,0,getLEDAdjusted(step,1,1));
+          break;
+      }
+    }
   }
 }
 
@@ -2741,12 +2939,6 @@ float getRTCTemp() {
 
 //**********************************************************************************
 //**********************************************************************************
-//*                           Internal Time Provider                               *
-//**********************************************************************************
-//**********************************************************************************
-
-//**********************************************************************************
-//**********************************************************************************
 //*                               EEPROM interface                                 *
 //**********************************************************************************
 //**********************************************************************************
@@ -2783,6 +2975,11 @@ void saveEEPROMValues() {
   EEPROM.write(EE_MIN_DIM_LO, minDim % 256);
   EEPROM.write(EE_MIN_DIM_HI, minDim / 256);
   EEPROM.write(EE_ANTI_GHOST, antiGhost);
+  
+  EEPROM.write(EE_PIR_TIMEOUT_LO, pirTimeout % 256);
+  EEPROM.write(EE_PIR_TIMEOUT_HI, pirTimeout / 256);
+  EEPROM.write(EE_USE_LDR, useLDR);
+  EEPROM.write(EE_BLANK_MODE, blankMode);
 }
 
 // ************************************************************
@@ -2907,6 +3104,18 @@ void readEEPROMValues() {
     antiGhost = ANTI_GHOST_DEFAULT;
   }
   dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
+  
+  pirTimeout = EEPROM.read(EE_PIR_TIMEOUT_HI) * 256 + EEPROM.read(EE_PIR_TIMEOUT_LO);
+  if ((pirTimeout < PIR_TIMEOUT_MIN) || (pirTimeout > PIR_TIMEOUT_MAX)) {
+    pirTimeout = PIR_TIMEOUT_DEFAULT;
+  }
+
+  blankMode= EEPROM.read(EE_BLANK_MODE);
+  if ((blankMode < BLANK_MODE_MIN) || (blankMode > BLANK_MODE_MAX)) {
+    blankMode = BLANK_MODE_DEFAULT;
+  }
+
+  useLDR = EEPROM.read(EE_USE_LDR);
 }
 
 // ************************************************************
@@ -2938,6 +3147,8 @@ void factoryReset() {
   pwmTop = PWM_TOP_DEFAULT;
   minDim = MIN_DIM_DEFAULT;
   antiGhost = ANTI_GHOST_DEFAULT;
+  useLDR = USE_LDR_DEFAULT;
+  blankMode = BLANK_MODE_DEFAULT;
 
   saveEEPROMValues();
 }
@@ -2973,110 +3184,17 @@ int getRawHVADCThreshold(double targetVoltage) {
   return rawReading;
 }
 
-//**********************************************************************************
-//**********************************************************************************
-//*                          Light Dependent Resistor                              *
-//**********************************************************************************
-//**********************************************************************************
-
-// ******************************************************************
-// Check the ambient light through the LDR (Light Dependent Resistor)
-// Smooths the reading over several reads.
-//
-// The LDR in bright light gives reading of around 50, the reading in
-// total darkness is around 900.
-//
-// The return value is the dimming count we are using. 999 is full
-// brightness, 100 is very dim.
-//
-// Because the floating point calculation may return more than the
-// maximum value, we have to clamp it as the final step
-// ******************************************************************
-int getDimmingFromLDR() {
-  int rawSensorVal = 1023 - analogRead(LDRPin);
-  double sensorDiff = rawSensorVal - sensorLDRSmoothed;
-  sensorLDRSmoothed += (sensorDiff / sensorSmoothCountLDR);
-
-  double sensorSmoothedResult = sensorLDRSmoothed - dimDark;
-  if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
-  if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
-  sensorSmoothedResult = (sensorSmoothedResult - dimDark) * sensorFactor;
-
-  int returnValue = sensorSmoothedResult;
-
-  if (returnValue < minDim) returnValue = minDim;
-  if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
-
-  return returnValue;
+/**
+   Get the HV sensor reading. Smooth it using a simple
+   moving average calculation.
+*/
+int getSmoothedHVSensorReading() {
+  int rawSensorVal = analogRead(sensorPin);
+  double sensorDiff = rawSensorVal - sensorHVSmoothed;
+  sensorHVSmoothed += (sensorDiff / sensorSmoothCountHV);
+  int sensorHVSmoothedInt = (int) sensorHVSmoothed;
+  return sensorHVSmoothedInt;
 }
-
-// ******************************************************************
-// Routine to set the LEDs
-// LEDPin 
-// brightens and dims a PWM capable LED
-// - 0 to 255 ramp up
-// - 256 to 511 plateau
-// - 512 to 767 ramp down
-// ******************************************************************
-void checkLEDPWM(byte LEDPin, int step) {
-  
-  if (step > 767) {
-    if (LEDPin == tickLed) {
-      analogWrite(LEDPin, getLEDAdjusted(0, 1, 1));
-    } else {
-      setAllLEDs(0,0,0);
-    }
-  } else if (step > 512) {
-    if (LEDPin == tickLed) {
-      analogWrite(LEDPin, getLEDAdjusted(255 - (step - 512), 1, 1));
-    } else {
-      switch (LEDPin) {
-        case 0:
-          setAllLEDs(getLEDAdjusted(255 - (step - 512),1,1),0,0);
-          break;
-        case 1:
-          setAllLEDs(0,getLEDAdjusted(255 - (step - 512),1,1),0);
-          break;
-        case 2:
-          setAllLEDs(0,0,getLEDAdjusted(255 - (step - 512),1,1));
-          break;
-      }
-    }
-  } else if (step > 255) {
-    if (LEDPin == tickLed) {
-      analogWrite(LEDPin, getLEDAdjusted(255, 1, 1));
-    } else {
-      switch (LEDPin) {
-        case 0:
-          setAllLEDs(getLEDAdjusted(255,1,1),0,0);
-          break;
-        case 1:
-          setAllLEDs(0,getLEDAdjusted(255,1,1),0);
-          break;
-        case 2:
-          setAllLEDs(0,0,getLEDAdjusted(255,1,1));
-          break;
-      }
-    }
-  } else if (step > 0) {
-    if (LEDPin == tickLed) {
-      analogWrite(LEDPin, getLEDAdjusted(step, 1, 1));
-    } else {
-      switch (LEDPin) {
-        case 0:
-          setAllLEDs(getLEDAdjusted(step,1,1),0,0);
-          break;
-        case 1:
-          setAllLEDs(0,getLEDAdjusted(step,1,1),0);
-          break;
-        case 2:
-          setAllLEDs(0,0,getLEDAdjusted(step,1,1));
-          break;
-      }
-    }
-  }
-}
-
 
 // ******************************************************************
 // Calibrate the HV generator
@@ -3099,7 +3217,7 @@ void checkLEDPWM(byte LEDPin, int step) {
 // until we notice a drop in voltage.
 // ******************************************************************
 void calibrateHVG() {
-
+  
   // *************** first pass - get approximate frequency *************
   rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage + 5);
 
@@ -3225,16 +3343,44 @@ void decPWMOnTime() {
   setPWMOnTime(pwmOn - 1);
 }
 
-/**
-   Get the HV sensor reading. Smooth it using a simple
-   moving average calculation.
-*/
-int getSmoothedHVSensorReading() {
-  int rawSensorVal = analogRead(sensorPin);
-  double sensorDiff = rawSensorVal - sensorHVSmoothed;
-  sensorHVSmoothed += (sensorDiff / sensorSmoothCountHV);
-  int sensorHVSmoothedInt = (int) sensorHVSmoothed;
-  return sensorHVSmoothedInt;
+//**********************************************************************************
+//**********************************************************************************
+//*                          Light Dependent Resistor                              *
+//**********************************************************************************
+//**********************************************************************************
+
+// ******************************************************************
+// Check the ambient light through the LDR (Light Dependent Resistor)
+// Smooths the reading over several reads.
+//
+// The LDR in bright light gives reading of around 50, the reading in
+// total darkness is around 900.
+//
+// The return value is the dimming count we are using. 999 is full
+// brightness, 100 is very dim.
+//
+// Because the floating point calculation may return more than the
+// maximum value, we have to clamp it as the final step
+// ******************************************************************
+int getDimmingFromLDR() {
+  if (useLDR) {
+    int rawSensorVal = 1023 - analogRead(LDRPin);
+    double sensorDiff = rawSensorVal - sensorLDRSmoothed;
+    sensorLDRSmoothed += (sensorDiff / sensorSmoothCountLDR);
+
+    double sensorSmoothedResult = sensorLDRSmoothed - dimDark;
+    if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
+    if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
+    sensorSmoothedResult = (sensorSmoothedResult - dimDark) * sensorFactor;
+
+    int returnValue = sensorSmoothedResult;
+
+    if (returnValue < minDim) returnValue = minDim;
+    if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
+    return returnValue;
+  } else {
+    return DIGIT_DISPLAY_OFF;  
+  }
 }
 
 //**********************************************************************************
@@ -3314,6 +3460,24 @@ void receiveEvent(int bytes) {
     ourIP[1] = Wire.read();
     ourIP[2] = Wire.read();
     ourIP[3] = Wire.read();
+  } else if (operation == I2C_SET_OPTION_PIR_TIMEOUT) {
+    byte pirTimeoutHi = Wire.read();
+    byte pirTimeoutLo = Wire.read();
+    pirTimeout = pirTimeoutHi*256 + pirTimeoutLo;
+    EEPROM.write(EE_PIR_TIMEOUT_HI, pirTimeoutHi);
+    EEPROM.write(EE_PIR_TIMEOUT_LO, pirTimeoutLo);
+  } else if (operation == I2C_SET_OPTION_USE_LDR) {
+    byte readByteUL = Wire.read();
+    useLDR = (readByteUL == 1);
+    EEPROM.write(EE_USE_LDR, useLDR);
+  } else if (operation == I2C_SET_OPTION_BLANK_MODE) {
+    blankMode = Wire.read();
+    EEPROM.write(EE_BLANK_MODE, blankMode);
+  } else if (operation == I2C_SET_DISPLAY_VALUE) {
+    byte value1 = Wire.read(); // 0-99 digits 1 and 2
+    byte value2 = Wire.read(); // 0-99 digits 3 and 4
+    byte value3 = Wire.read(); // 0-99 digits 5 and 6
+    byte displayLength = Wire.read(); // Display for up to 255 seconds, 0 = "off"
   }
 }
 
@@ -3321,7 +3485,7 @@ void receiveEvent(int bytes) {
    send information to the master
 */
 void requestEvent() {
-  byte configArray[16];
+  byte configArray[19];
   int idx = 0;
   configArray[idx++] = encodeBooleanForI2C(hourMode );
   configArray[idx++] = encodeBooleanForI2C(blankLeading);
@@ -3337,10 +3501,13 @@ void requestEvent() {
   configArray[idx++] = redCnl;
   configArray[idx++] = grnCnl;
   configArray[idx++] = bluCnl;
-  configArray[idx++] = cycleSpeed;
-  configArray[idx++] = 27;
+  configArray[idx++] = pirTimeout / 256;
+  configArray[idx++] = pirTimeout % 256;
+  configArray[idx++] = encodeBooleanForI2C(useLDR);
+  configArray[idx++] = blankMode;
+  configArray[idx++] = 37;
 
-  Wire.write(configArray, 16);
+  Wire.write(configArray, 19);
 }
 
 byte encodeBooleanForI2C(boolean valueToProcess) {
