@@ -1,5 +1,4 @@
 //**********************************************************************************
-//**********************************************************************************
 //* Main code for an Arduino based Nixie clock. Features:                          *
 //*  - Real Time Clock interface for DS3231                                        *
 //*  - WiFi Clock interface for the WiFiModule                                     *
@@ -20,7 +19,7 @@
 #include <EEPROM.h>
 #include <DS3231.h>
 #include <Wire.h>
-#include <Time.h>
+#include <TimeLib.h>
 
 //**********************************************************************************
 //**********************************************************************************
@@ -62,7 +61,7 @@
 
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 46
+#define SOFTWARE_VERSION 47
 
 // how often we make reference to the external time provider
 #define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
@@ -208,7 +207,8 @@
 #define TEMP_MODE_VERSION               3 // Display the version for 5S
 #define TEMP_IP_ADDR12                  4 // IP xxx.yyy.zzz.aaa: xxx.yyy
 #define TEMP_IP_ADDR34                  5 // IP xxx.yyy.zzz.aaa: zzz.aaa
-#define TEMP_MODE_MAX                   5
+#define TEMP_IMPR                       6 // number of impressions per second
+#define TEMP_MODE_MAX                   6
 
 #define DATE_FORMAT_MIN                 0
 #define DATE_FORMAT_YYMMDD              0
@@ -523,8 +523,8 @@ int pwmOn = PWM_PULSE_DEFAULT;
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
-byte decodeDigit[16] = {2, 3, 7, 6, 4, 5, 1, 0, 9, 8, 10, 10, 10, 10, 10, 10};
-//byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
+//byte decodeDigit[16] = {2, 3, 7, 6, 4, 5, 1, 0, 9, 8, 10, 10, 10, 10, 10, 10};
+byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
 
 // Driver pins for the anodes
 byte anodePins[6] = {ledPin_a_1, ledPin_a_2, ledPin_a_3, ledPin_a_4, ledPin_a_5, ledPin_a_6};
@@ -626,13 +626,16 @@ byte cycleSpeed = CYCLE_SPEED_DEFAULT;
 int colors[3];
 
 // Strateg2
-float hueIncrement = 0.0;
-int hueCount = 0;
-float hue = 0.0;
+//float hueIncrement = 0.0;
+//int hueCount = 0;
+//float hue = 0.0;
 
 // Strategy 3
 int changeSteps = 0;
 byte currentColour = 0;
+
+int impressionsPerSec = 0;
+int lastImpressionsPerSec = 0;
 
 // ********************** Input switch management **********************
 Button button1(inputPin1, false);
@@ -1016,6 +1019,8 @@ void loop()
 // ************************************************************
 void setLeds(unsigned long nowMillis)
 {
+  impressionsPerSec++;
+  
   // Pulse PWM generation - Only update it on a second change (not every time round the loop)
   if (second() != lastSec) {
     lastSec = second();
@@ -1026,6 +1031,8 @@ void setLeds(unsigned long nowMillis)
     if (upOrDown) {
       ledPWMVal = 0;
     }
+    lastImpressionsPerSec = impressionsPerSec;
+    impressionsPerSec = 0;
   }
 
   // calculate the PWM value
@@ -1382,7 +1389,7 @@ void processCurrentMode() {
           if (tempDisplayMode == TEMP_IP_ADDR12) {
             if (useRTC) {
               // we can't show the IP address if we have the RTC, just skip
-              tempDisplayMode = TEMP_MODE_MIN;
+              tempDisplayMode++;
             } else {
               loadNumberArrayIP(ourIP[0], ourIP[1]);
             }
@@ -1391,12 +1398,20 @@ void processCurrentMode() {
           if (tempDisplayMode == TEMP_IP_ADDR34) {
             if (useRTC) {
               // we can't show the IP address if we have the RTC, just skip
-              tempDisplayMode = TEMP_MODE_MIN;
+              tempDisplayMode++;
             } else {
               loadNumberArrayIP(ourIP[2], ourIP[3]);
             }
           }
 
+          if (tempDisplayMode == TEMP_IMPR) {
+            if (useRTC) {
+              tempDisplayMode = TEMP_MODE_MIN;
+            } else {
+              loadNumberArrayConfInt(lastImpressionsPerSec, currentMode - MODE_12_24);
+            }
+          }
+          
           allFade();
 
         } else {
@@ -1787,30 +1802,6 @@ byte getLEDAdjusted(float rawValue, float ledPWMVal, float dimFactor) {
   return dim_curve[dimmedPWMVal];
 }
 
-//// ************************************************************
-//// Colour cycling: strategy 2 : use random changing hue
-//// ************************************************************
-//void cycleColours2(int colors[3]) {
-//  cycleCount++;
-//  if (cycleCount > cycleSpeed) {
-//    cycleCount = 0;
-//
-//    if (hueCount == 0) {
-//      hueCount = random(1000);
-//
-//      int rawIncrement = random(201) - 100;
-//      hueIncrement = ((float) rawIncrement / 100.0);
-//    }
-//
-//    hue += hueIncrement;
-//    hueCount--;
-//    if (hue > 360) {hue -= 360;}
-//    if (hue < 0) {hue += 360;}
-//
-//    getRGB((int) hue, 128, 255, colors);
-//  }
-//}
-
 // ************************************************************
 // Colour cycling 3: one colour dominates
 // ************************************************************
@@ -1822,12 +1813,6 @@ void cycleColours3(int colors[3]) {
     if (changeSteps == 0) {
       changeSteps = random(256);
       currentColour = random(3);
-      //      Serial.println();
-      //      Serial.print("Change Steps:");
-      //      Serial.print(changeSteps);
-      //      Serial.print("Colour:");
-      //      Serial.print(currentColour);
-      //      Serial.println();
     }
 
     changeSteps--;
@@ -1875,67 +1860,6 @@ void cycleColours3(int colors[3]) {
     }
   }
 }
-
-//// ************************************************************
-//// Convert HSV to RGB
-//// Hue 0 - 359
-//// Sat 0 - 255
-//// Val 0 - 255
-//// ************************************************************
-//void getRGB(int hue, int sat, int val, int colors[3]) {
-//  val = dim_curve[val];
-//
-//  int r;
-//  int g;
-//  int b;
-//  int base;
-//
-//  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
-//    colors[0]=val;
-//    colors[1]=val;
-//    colors[2]=val;
-//  } else {
-//
-//    base = ((255 - sat) * val)>>8;
-//
-//    switch(hue/60) {
-//      case 0:
-//        r = val;
-//        g = (((val-base)*hue)/60)+base;
-//        b = base;
-//        break;
-//      case 1:
-//        r = (((val-base)*(60-(hue%60)))/60)+base;
-//        g = val;
-//        b = base;
-//        break;
-//      case 2:
-//        r = base;
-//        g = val;
-//        b = (((val-base)*(hue%60))/60)+base;
-//        break;
-//      case 3:
-//        r = base;
-//        g = (((val-base)*(60-(hue%60)))/60)+base;
-//        b = val;
-//        break;
-//      case 4:
-//        r = (((val-base)*(hue%60))/60)+base;
-//        g = base;
-//        b = val;
-//        break;
-//      case 5:
-//        r = val;
-//        g = base;
-//        b = (((val-base)*(60-(hue%60)))/60)+base;
-//        break;
-//    }
-//
-//    colors[0]=r;
-//    colors[1]=g;
-//    colors[2]=b;
-//  }
-//}
 
 //**********************************************************************************
 //**********************************************************************************
