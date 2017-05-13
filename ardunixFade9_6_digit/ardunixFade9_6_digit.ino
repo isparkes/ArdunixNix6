@@ -586,6 +586,7 @@ double sensorLDRSmoothed = 0;
 double sensorFactor = (double)(DIGIT_DISPLAY_OFF) / (double)(dimBright - dimDark);
 int sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
 int sensorSmoothCountHV = SENSOR_SMOOTH_READINGS_DEFAULT / 8;
+boolean useLDR = true;
 
 // ************************ Clock variables ************************
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
@@ -751,8 +752,13 @@ void setup()
   // Set up the PRNG with something so that it looks random
   randomSeed(analogRead(LDRPin));
 
-  // Detect factory reset: button pressed on start or uninitialised EEPROM
-  if (button1.isButtonPressedNow() || (EEPROM.read(EE_NEED_SETUP))) {
+  // Test if the button is pressed for factory reset
+  for (int i = 0 ; i < 20 ; i++ ) {
+    button1.checkButton(nowMillis);
+  }
+
+  // User requested factory reset
+  if (button1.isButtonPressedNow()) {
     // do this before the flashing, because this way we can set up the EEPROM to
     // autocalibrate on first start (press factory reset and then power off before
     // flashing ends)
@@ -763,10 +769,16 @@ void setup()
       randomRGBFlash(20);
     }
 
-    factoryReset();
-
     // mark that we have done the EEPROM setup
-    EEPROM.write(EE_NEED_SETUP, false);
+    EEPROM.write(EE_NEED_SETUP, true);
+  }
+  
+  // If the button is held down while we are flashing, then do the test pattern
+  boolean doTestPattern = false;
+
+  // Detect factory reset: button pressed on start or uninitialised EEPROM
+  if (EEPROM.read(EE_NEED_SETUP)) {
+    doTestPattern = true;
   }
 
   // Clear down any spurious button action
@@ -777,32 +789,8 @@ void setup()
     button1.checkButton(nowMillis);
   }
 
-  boolean doTestPattern = false;
-
   if (button1.isButtonPressedNow()) {
     doTestPattern = true;
-  }
-
-  if (doTestPattern == false) {
-    // Start the RTC communication
-    Wire.begin();
-
-    // Set up the time provider
-    // first try to find the RTC, if not available, go into slave mode
-    Wire.beginTransmission(RTC_I2C_ADDRESS);
-    if (Wire.endTransmission() == 0) {
-      // Make sure the clock keeps running even on battery
-      Clock.enableOscillator(true, true, 0);
-
-      // show that we are using the RTC
-      useRTC = true;
-    } else {
-      // Wait for I2C in slave mode
-      Wire.end();
-      Wire.begin(I2C_SLAVE_ADDR);
-      Wire.onReceive(receiveEvent);
-      Wire.onRequest(requestEvent);
-    }
   }
 
   // Read EEPROM values
@@ -812,18 +800,33 @@ void setup()
   setPWMOnTime(pwmOn);
   setPWMTopTime(pwmTop);
 
+  // Set the target voltage
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+
   // HV GOOOO!!!!
   TCCR1A = tccrOn;
 
   if (doTestPattern) {
-    // Set the target voltage
-    rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+    boolean oldUseLDR = useLDR;
+    
+    // reset the EEPROM values
+    factoryReset();
+    
+    // turn off LDR
+    useLDR = false;
 
+    // turn off Scrollback
+    scrollback = false;
+    
+    // All the digits on full
     allBright();
 
     int secCount = 0;
     lastCheckMillis = millis();
-    while (true) {
+    
+    boolean inLoop = true;
+    
+    while (inLoop) {
       nowMillis = millis();
       if (nowMillis - lastCheckMillis > 1000) {
         lastCheckMillis = nowMillis;
@@ -833,9 +836,19 @@ void setup()
       loadNumberArraySameValue(secCount);
       outputDisplay();
       checkHVVoltage();
+      setLedsTestPattern(nowMillis);
+      button1.checkButton(nowMillis);
+      if (button1.isButtonPressedNow() && (secCount == 8)) {
+        inLoop = false;
+      }
     }
+    
+    useLDR = oldUseLDR;
   }
 
+  // reset the LEDs
+  setLedsTestPattern(0);
+      
   // Set up the HVG if we need to
   if (EEPROM.read(EE_HVG_NEED_CALIB)) {
     calibrateHVG();
@@ -860,6 +873,26 @@ void setup()
   nowMillis = millis();
   setTime(12, 34, 56, 1, 3, 2017);
 
+  // Start the RTC communication
+  Wire.begin();
+
+  // Set up the time provider
+  // first try to find the RTC, if not available, go into slave mode
+  Wire.beginTransmission(RTC_I2C_ADDRESS);
+  if (Wire.endTransmission() == 0) {
+    // Make sure the clock keeps running even on battery
+    Clock.enableOscillator(true, true, 0);
+
+    // show that we are using the RTC
+    useRTC = true;
+  } else {
+    // Wait for I2C in slave mode
+    Wire.end();
+    Wire.begin(I2C_SLAVE_ADDR);
+    Wire.onReceive(receiveEvent);
+    Wire.onRequest(requestEvent);
+  }
+
   // Recover the time from the RTC
   if (useRTC) {
     getRTCTime();
@@ -868,8 +901,14 @@ void setup()
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
   secsDisplayEnd = millis() + 1500;
+  
+  // mark that we have done the EEPROM setup
+  EEPROM.write(EE_NEED_SETUP, false);
 }
 
+//**********************************************************************************
+//*                         Flash some RGB colours                                 *
+//**********************************************************************************
 void randomRGBFlash(int delayVal) {
   digitalWrite(tickLed, HIGH);
   if (random(3) == 0) {
@@ -887,6 +926,31 @@ void randomRGBFlash(int delayVal) {
   digitalWrite(GLed, LOW);
   digitalWrite(BLed, LOW);
   delay(delayVal);
+}
+
+void setLedsTestPattern(unsigned long currentMillis) {
+  unsigned long currentSec = currentMillis / 1000;
+  byte phase = currentSec % 4;
+  digitalWrite(tickLed, LOW);
+  digitalWrite(RLed, LOW);
+  digitalWrite(GLed, LOW);
+  digitalWrite(BLed, LOW);
+
+  if (phase == 0) {
+    digitalWrite(tickLed, HIGH);
+  }
+  
+  if (phase == 1) {
+    digitalWrite(RLed, HIGH);
+  }
+  
+  if (phase == 2) {
+    digitalWrite(GLed, HIGH);
+  }
+  
+  if (phase == 3) {
+    digitalWrite(BLed, HIGH);
+  }
 }
 
 //**********************************************************************************
