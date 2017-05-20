@@ -839,34 +839,35 @@ void setup()
   setPWMOnTime(pwmOn);
   setPWMTopTime(pwmTop);
 
+  // Set the target voltage
+  rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+
   // HV GOOOO!!!!
   TCCR1A = tccrOn;
 
   if (doTestPattern) {
     boolean oldUseLDR = useLDR;
     byte oldBacklightMode = backlightMode;
-    
+
     // reset the EEPROM values
     factoryReset();
-    
+
     // turn off LDR
     useLDR = false;
 
     // turn off Scrollback
     scrollback = false;
-    
-    // Set the target voltage
-    rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
+
+    // set backlights to change with the displayed digits
+    backlightMode = BACKLIGHT_COLOUR_TIME;
 
     // All the digits on full
     allBright();
 
     int secCount = 0;
     lastCheckMillis = millis();
-    
+
     boolean inLoop = true;
-    backlightMode = BACKLIGHT_COLOUR_TIME;
-    
     while (inLoop) {
       nowMillis = millis();
       if (nowMillis - lastCheckMillis > 1000) {
@@ -883,11 +884,11 @@ void setup()
         inLoop = false;
       }
     }
-    
+
     useLDR = oldUseLDR;
     backlightMode = oldBacklightMode;
-  } 
-  
+  }
+
   // Start the RTC communication
   Wire.begin();
 
@@ -912,7 +913,7 @@ void setup()
   if (EEPROM.read(EE_HVG_NEED_CALIB)) {
     // Turn off the back lights
     setAllLEDs(0,0,0);
-    
+
     // Do the calibration
     calibrateHVG();
 
