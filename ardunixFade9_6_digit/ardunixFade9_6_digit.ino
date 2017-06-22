@@ -36,35 +36,33 @@
 #define EE_DIGIT_COUNT_HI   8      // The number of times we go round the main loop
 #define EE_DIGIT_COUNT_LO   9      // The number of times we go round the main loop
 #define EE_SCROLLBACK       10     // if we use scollback or not
-#define EE_PULSE_LO         11     // The pulse on width for the PWM mode
-#define EE_PULSE_HI         12     // The pulse on width for the PWM mode
-#define EE_SCROLL_STEPS     13     // The steps in a scrollback
-#define EE_BACKLIGHT_MODE   14     // The back light node
-#define EE_DIM_BRIGHT_LO    15     // Dimming bright value
-#define EE_DIM_BRIGHT_HI    16     // Dimming bright value
-#define EE_DIM_SMOOTH_SPEED 17     // Dimming adaptation speed
-#define EE_RED_INTENSITY    18     // Red channel backlight max intensity
-#define EE_GRN_INTENSITY    19     // Green channel backlight max intensity
-#define EE_BLU_INTENSITY    20     // Blue channel backlight max intensity
-#define EE_HV_VOLTAGE       21     // The HV voltage we want to use
-#define EE_SUPPRESS_ACP     22     // Do we want to suppress ACP during dimmed time
-#define EE_HOUR_BLANK_START 23     // Start of daily blanking period
-#define EE_HOUR_BLANK_END   24     // End of daily blanking period
-#define EE_CYCLE_SPEED      25     // How fast the color cycling does it's stuff
-#define EE_PWM_TOP_LO       26     // The PWM top value if we know it, 0xFF if we need to calculate
-#define EE_PWM_TOP_HI       27     // The PWM top value if we know it, 0xFF if we need to calculate
-#define EE_HVG_NEED_CALIB   28     // 1 if we need to calibrate the HVGenerator, otherwise 0
-#define EE_MIN_DIM_LO       29     // The min dim value
-#define EE_MIN_DIM_HI       30     // The min dim value
-#define EE_ANTI_GHOST       31     // The value we use for anti-ghosting
-#define EE_NEED_SETUP       32     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
+#define EE_FADE             11     // if we use fade or not
+#define EE_PULSE_LO         12     // The pulse on width for the PWM mode
+#define EE_PULSE_HI         13     // The pulse on width for the PWM mode
+#define EE_SCROLL_STEPS     14     // The steps in a scrollback
+#define EE_BACKLIGHT_MODE   15     // The back light node
+#define EE_DIM_BRIGHT_LO    16     // Dimming bright value
+#define EE_DIM_BRIGHT_HI    17     // Dimming bright value
+#define EE_DIM_SMOOTH_SPEED 18     // Dimming adaptation speed
+#define EE_RED_INTENSITY    19     // Red channel backlight max intensity
+#define EE_GRN_INTENSITY    20     // Green channel backlight max intensity
+#define EE_BLU_INTENSITY    21     // Blue channel backlight max intensity
+#define EE_HV_VOLTAGE       22     // The HV voltage we want to use
+#define EE_SUPPRESS_ACP     23     // Do we want to suppress ACP during dimmed time
+#define EE_HOUR_BLANK_START 24     // Start of daily blanking period
+#define EE_HOUR_BLANK_END   25     // End of daily blanking period
+#define EE_CYCLE_SPEED      26     // How fast the color cycling does it's stuff
+#define EE_PWM_TOP_LO       27     // The PWM top value if we know it, 0xFF if we need to calculate
+#define EE_PWM_TOP_HI       28     // The PWM top value if we know it, 0xFF if we need to calculate
+#define EE_HVG_NEED_CALIB   29     // 1 if we need to calibrate the HVGenerator, otherwise 0
+#define EE_MIN_DIM_LO       30     // The min dim value
+#define EE_MIN_DIM_HI       31     // The min dim value
+#define EE_ANTI_GHOST       32     // The value we use for anti-ghosting
+#define EE_NEED_SETUP       33     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
 
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 47
-
-// how often we make reference to the external time provider
-#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
+#define SOFTWARE_VERSION 48
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -140,61 +138,64 @@
 #define MODE_TIME                       0
 
 // Time setting, need all six digits, so no flashing mode indicator
-#define MODE_MINS_SET                   1
-#define MODE_HOURS_SET                  2
-#define MODE_DAYS_SET                   3
-#define MODE_MONTHS_SET                 4
-#define MODE_YEARS_SET                  5
+#define MODE_HOURS_SET                  1
+#define MODE_MINS_SET                   2
+#define MODE_SECS_SET                   3
+#define MODE_DAYS_SET                   4
+#define MODE_MONTHS_SET                 5
+#define MODE_YEARS_SET                  6
 
 // Basic settings
-#define MODE_12_24                      6  // Mode "00" 0 = 24, 1 = 12
+#define MODE_12_24                      7  // Mode "00" 0 = 24, 1 = 12
 #define HOUR_MODE_DEFAULT               false
-#define MODE_LEAD_BLANK                 7  // Mode "01" 1 = blanked
+#define MODE_LEAD_BLANK                 8  // Mode "01" 1 = blanked
 #define LEAD_BLANK_DEFAULT              false
-#define MODE_SCROLLBACK                 8  // Mode "02" 1 = use scrollback
+#define MODE_SCROLLBACK                 9  // Mode "02" 1 = use scrollback
 #define SCROLLBACK_DEFAULT              false
-#define MODE_DATE_FORMAT                9  // Mode "03"
-#define MODE_DAY_BLANKING               10 // Mode "04"
-#define MODE_HR_BLNK_START              11 // Mode "05" - skipped if not using hour blanking
-#define MODE_HR_BLNK_END                12 // Mode "06" - skipped if not using hour blanking
-#define MODE_SUPPRESS_ACP               13 // Mode "07" 1 = suppress ACP when fully dimmed
+#define MODE_FADE                       10 // Mode "03" 1 = use fade
+#define FADE_DEFAULT                    false
+#define MODE_DATE_FORMAT                11 // Mode "04"
+#define MODE_DAY_BLANKING               12 // Mode "05"
+#define MODE_HR_BLNK_START              13 // Mode "06" - skipped if not using hour blanking
+#define MODE_HR_BLNK_END                14 // Mode "07" - skipped if not using hour blanking
+#define MODE_SUPPRESS_ACP               15 // Mode "08" 1 = suppress ACP when fully dimmed
 #define SUPPRESS_ACP_DEFAULT            true
 
 // Display tricks
-#define MODE_FADE_STEPS_UP              14 // Mode "08"
-#define MODE_FADE_STEPS_DOWN            15 // Mode "09"
-#define MODE_DISPLAY_SCROLL_STEPS_UP    16 // Mode "10"
-#define MODE_DISPLAY_SCROLL_STEPS_DOWN  17 // Mode "11"
+#define MODE_FADE_STEPS_UP              16 // Mode "09"
+#define MODE_FADE_STEPS_DOWN            17 // Mode "10"
+#define MODE_DISPLAY_SCROLL_STEPS_UP    18 // Mode "11"
+#define MODE_DISPLAY_SCROLL_STEPS_DOWN  19 // Mode "12"
 
 // Back light
-#define MODE_BACKLIGHT_MODE             18 // Mode "12"
-#define MODE_RED_CNL                    19 // Mode "13"
-#define MODE_GRN_CNL                    20 // Mode "14"
-#define MODE_BLU_CNL                    21 // Mode "15"
-#define MODE_CYCLE_SPEED                22 // Mode "16" - speed the colour cycle cyles at
+#define MODE_BACKLIGHT_MODE             20 // Mode "13"
+#define MODE_RED_CNL                    21 // Mode "14"
+#define MODE_GRN_CNL                    22 // Mode "15"
+#define MODE_BLU_CNL                    23 // Mode "16"
+#define MODE_CYCLE_SPEED                24 // Mode "17" - speed the colour cycle cyles at
 
 // HV generation
-#define MODE_TARGET_HV_UP               23 // Mode "17"
-#define MODE_TARGET_HV_DOWN             24 // Mode "18"
-#define MODE_PULSE_UP                   25 // Mode "19"
-#define MODE_PULSE_DOWN                 26 // Mode "20"
+#define MODE_TARGET_HV_UP               25 // Mode "18"
+#define MODE_TARGET_HV_DOWN             26 // Mode "19"
+#define MODE_PULSE_UP                   27 // Mode "20"
+#define MODE_PULSE_DOWN                 28 // Mode "21"
 
-#define MODE_MIN_DIM_UP                 27 // Mode "21"
-#define MODE_MIN_DIM_DOWN               28 // Mode "22"
+#define MODE_MIN_DIM_UP                 29 // Mode "22"
+#define MODE_MIN_DIM_DOWN               30 // Mode "23"
 
-#define MODE_ANTI_GHOST_UP              29 // Mode "23"
-#define MODE_ANTI_GHOST_DOWN            30 // Mode "24"
+#define MODE_ANTI_GHOST_UP              31 // Mode "24"
+#define MODE_ANTI_GHOST_DOWN            32 // Mode "25"
 
 // Temperature
-#define MODE_TEMP                       31 // Mode "25"
+#define MODE_TEMP                       33 // Mode "26"
 
 // Software Version
-#define MODE_VERSION                    32 // Mode "26"
+#define MODE_VERSION                    34 // Mode "27"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  33
+#define MODE_TUBE_TEST                  35
 
-#define MODE_MAX                        33
+#define MODE_MAX                        35
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
@@ -248,6 +249,8 @@
 #define ANTI_GHOST_MAX                  50
 #define ANTI_GHOST_DEFAULT              0
 
+#define TEMP_DISPLAY_MODE_DUR_MS        5000
+
 // I2C Interface definition
 #define I2C_SLAVE_ADDR                0x68
 #define I2C_TIME_UPDATE               0x00
@@ -268,6 +271,7 @@
 #define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
 #define I2C_SET_OPTION_CYCLE_SPEED    0x10
 #define I2C_SHOW_IP_ADDR              0x11
+#define I2C_SET_OPTION_FADE           0x12
 
 
 //**********************************************************************************
@@ -278,7 +282,7 @@
 
 // ***** Pin Defintions ****** Pin Defintions ****** Pin Defintions ******
 
-// SN74141
+// SN74141/K155ID1
 // These are now managed directly on PORT B, we don't use digitalWrite() for these
 #define ledPin_0_a  13    // package pin 19 // PB5
 #define ledPin_0_b  10    // package pin 16 // PB2
@@ -521,12 +525,16 @@ int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
 int pwmOn = PWM_PULSE_DEFAULT;
 
+#define AIO_REV2 // [AIO_REV1,AIO_REV2]
+
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
-byte decodeDigit[16] = {2, 3, 7, 6, 4, 5, 1, 0, 9, 8, 10, 10, 10, 10, 10, 10};
-
-// This is a mapping for All-In-One Revision 1 ONLY! Not generally used.
-//byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
+#ifdef AIO_REV1 
+  // This is a mapping for All-In-One Revision 1 ONLY! Not generally used.
+  byte decodeDigit[16] = {3,2,8,9,0,1,5,4,6,7,10,10,10,10,10,10};
+#else
+  byte decodeDigit[16] = {2,3,7,6,4,5,1,0,9,8,10,10,10,10,10,10};
+#endif
 
 // Driver pins for the anodes
 byte anodePins[6] = {ledPin_a_1, ledPin_a_2, ledPin_a_3, ledPin_a_4, ledPin_a_5, ledPin_a_6};
@@ -551,6 +559,7 @@ int fadeSteps = FADE_STEPS_DEFAULT;
 int digitOffCount = DIGIT_DISPLAY_OFF;
 int scrollSteps = SCROLL_STEPS_DEFAULT;
 boolean scrollback = true;
+boolean fade = true;
 byte antiGhost = ANTI_GHOST_DEFAULT;
 int dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
 float fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
@@ -566,7 +575,7 @@ boolean blankLeading = false;
 const int DIM_VALUE = DIGIT_DISPLAY_COUNT / 5;
 int minDim = MIN_DIM_DEFAULT;
 
-unsigned long secsDisplayEnd;      // time for the end of the MMSS display
+unsigned int tempDisplayModeDuration;      // time for the end of the temporary display
 int  tempDisplayMode;
 
 int acpOffset = 0;        // Used to provide one arm bandit scolling
@@ -575,7 +584,6 @@ boolean suppressACP = false;
 
 byte currentMode = MODE_TIME;   // Initial cold start mode
 byte nextMode = currentMode;
-int loopCounter = 0;
 byte blankHourStart = 0;
 byte blankHourEnd = 0;
 
@@ -603,14 +611,15 @@ byte dateFormat = DATE_FORMAT_DEFAULT;
 byte dayBlanking = DAY_BLANKING_DEFAULT;
 boolean blanked = false;
 byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 min, 2 press = 1 hour, 3 = 1 day
-unsigned long blankSuppressedEndMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
-unsigned long blankSuppressedStartMillis = 0;   // The end time of the blanking suppression, 0 if we are not suppressed
+unsigned long blankSuppressedMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
+unsigned long blankSuppressedSelectionTimoutMillis = 0;   // Used for determining the end of the blanking period selection timeout
 boolean hourMode = false;
 
-boolean useRTC = false;
+boolean useRTC = false;  // true if we detect an RTC
+boolean useWiFi = false; // true if we have recevied information from the WiFi module
+
 
 // **************************** LED management ***************************
-int ledPWMVal;
 boolean upOrDown;
 
 // Blinking colons led in settings modes
@@ -900,7 +909,7 @@ void setup()
 
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
-  secsDisplayEnd = millis() + 1500;
+  tempDisplayModeDuration = TEMP_DISPLAY_MODE_DUR_MS;
   
   // mark that we have done the EEPROM setup
   EEPROM.write(EE_NEED_SETUP, false);
@@ -958,17 +967,33 @@ void setLedsTestPattern(unsigned long currentMillis) {
 //*                              Main loop                                         *
 //**********************************************************************************
 //**********************************************************************************
+boolean millisNotSet = true;
 void loop()
 {
   nowMillis = millis();
 
+#ifdef TEST_ROLLOVER
+  if (millisNotSet) {
+    if (nowMillis > 60000) {
+      unsigned long newMillis = 4294847296; // 120 secs before rollover
+      setMillis(newMillis);
+      millisNotSet = false;
+    }
+  }
+#endif
+
+  // shows us how fast the loop is running
+  impressionsPerSec++;
+
   // We don't want to get the time from the external time provider always,
   // just enough to keep the internal time provider correct
   // This keeps the outer loop fast and responsive
-  if ((nowMillis - lastCheckMillis) > READ_TIME_PROVIDER_MILLIS) {
-    if (useRTC) {
-      // get the time from the external provider - slow but accurate
-      getRTCTime();
+  // We do this once per minute
+  if (abs(nowMillis - lastCheckMillis) >= 1000) {
+    performOncePerSecondProcessing();
+
+    if (second() == 0) {
+      performOncePerMinuteProcessing();
     }
 
     lastCheckMillis = nowMillis;
@@ -1008,7 +1033,7 @@ void loop()
     saveEEPROMValues();
 
     // Preset the display
-    allFade();
+    allfadeOrNormal();
 
     nextMode = currentMode;
   } else if (button1.isButtonPressedReleased1S()) {
@@ -1021,7 +1046,7 @@ void loop()
       saveEEPROMValues();
 
       // Preset the display
-      allFade();
+      allfadeOrNormal();
     }
 
     nextMode = currentMode;
@@ -1073,53 +1098,68 @@ void loop()
     digitOn(digitBurnDigit, digitBurnValue);
   }
 
-  loopCounter++;
-
+  // Slow regulation of the voltage
   checkHVVoltage();
 
-  setLeds(nowMillis);
+  // Prepare the tick and backlight LEDs
+  setLeds();
+}
+
+// ************************************************************
+// Called once per second
+// ************************************************************
+void performOncePerSecondProcessing() {
+
+  // Store the current value and reset
+  lastImpressionsPerSec = impressionsPerSec;
+  impressionsPerSec = 0;
+
+  // Change the direction of the pulse
+  upOrDown = !upOrDown;
+
+  // If we are in temp display mode, decrement the count
+  if (tempDisplayModeDuration > 0) {
+    if (tempDisplayModeDuration > 1000) {
+      tempDisplayModeDuration -= 1000;
+    } else {
+      tempDisplayModeDuration = 0;
+    }
+  }
+
+  if (blankSuppressedMillis > 0) {
+    if (blankSuppressedMillis > 1000) {
+      blankSuppressedMillis -= 1000;
+    } else {
+      blankSuppressedMillis = 0;
+    }
+  }
+}
+
+// ************************************************************
+// Called once per minute
+// ************************************************************
+void performOncePerMinuteProcessing() {
+  // get the time from the external provider - slow but accurate
+  if (useRTC) {
+    getRTCTime();
+  }
 }
 
 // ************************************************************
 // Set the seconds tick led(s) and the back lights
 // ************************************************************
-void setLeds(unsigned long nowMillis)
+void setLeds()
 {
-  impressionsPerSec++;
-  
-  // Pulse PWM generation - Only update it on a second change (not every time round the loop)
-  if (second() != lastSec) {
-    lastSec = second();
-
-    upOrDown = (second() % 2 == 0);
-
-    // Reset the PWM every now and again, otherwise it drifts
-    if (upOrDown) {
-      ledPWMVal = 0;
-    }
-    lastImpressionsPerSec = impressionsPerSec;
-    impressionsPerSec = 0;
-  }
-
-  // calculate the PWM value
+  int secsDelta;
   if (upOrDown) {
-    ledPWMVal += 2;
+    secsDelta = (nowMillis - lastCheckMillis);
   } else {
-    ledPWMVal -= 2;
+    secsDelta = 1000 - (nowMillis - lastCheckMillis);
   }
-
-  // Stop it underflowing: This would cause a short, bright flash
-  // Which interrupts the flow of zen
-  if (ledPWMVal < 0) {
-    ledPWMVal = 0;
-  }
-  if (ledPWMVal > 255) {
-    ledPWMVal = 255;
-  }
-
+  
   // calculate the PWM factor, goes between minDim% and 100%
   float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_OFF;
-  float pwmFactor = (float) ledPWMVal / (float) 255.0;
+  float pwmFactor = (float) secsDelta / (float) 1000.0;
 
   // Tick led output
   analogWrite(tickLed, getLEDAdjusted(255, pwmFactor, dimFactor));
@@ -1187,7 +1227,10 @@ void setLeds(unsigned long nowMillis)
   }
 }
 
-
+// ************************************************************
+// Show the preview of the next mode - we stay in this mode until the 
+// button is released
+// ************************************************************
 void setNextMode() {
   // turn off blanking
   blanked = false;
@@ -1195,10 +1238,19 @@ void setNextMode() {
   switch (nextMode) {
     case MODE_TIME: {
         loadNumberArrayTime();
-        allFade();
+        allfadeOrNormal();
         break;
       }
     case MODE_HOURS_SET: {
+        if (useWiFi) {
+          // skip past the time settings
+          nextMode++;
+          currentMode++;
+          nextMode++;
+          currentMode++;
+          nextMode++;
+          currentMode++;
+        }
         loadNumberArrayTime();
         highlight0and1();
         break;
@@ -1208,7 +1260,21 @@ void setNextMode() {
         highlight2and3();
         break;
       }
+    case MODE_SECS_SET: {
+        loadNumberArrayTime();
+        highlight4and5();
+        break;
+      }
     case MODE_DAYS_SET: {
+        if (useWiFi) {
+          // skip past the time settings
+          nextMode++;
+          currentMode++;
+          nextMode++;
+          currentMode++;
+          nextMode++;
+          currentMode++;
+        }
         loadNumberArrayDate();
         highlightDaysDateFormat();
         break;
@@ -1235,6 +1301,11 @@ void setNextMode() {
       }
     case MODE_SCROLLBACK: {
         loadNumberArrayConfBool(scrollback, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_FADE: {
+        loadNumberArrayConfBool(fade, nextMode - MODE_12_24);
         displayConfig();
         break;
       }
@@ -1367,34 +1438,37 @@ void setNextMode() {
         break;
       }
     case MODE_DIGIT_BURN: {
-        // Nothing
+        // Nothing: handled separately to suppress multiplexing
       }
   }
 }
 
-// If we are not previewing the next mode, we are dealing with the current mode
+// ************************************************************
+// Show the next mode - once the button is released
+// ************************************************************
 void processCurrentMode() {
   switch (currentMode) {
     case MODE_TIME: {
+        // Check if we are going into blanking mode when we start a new minute
         if (second() == 0) {
+          // Get the blanking status, this may be overridden by blanking suppression
           boolean nativeBlanked = checkBlanking();
-          blanked = nativeBlanked && (nowMillis > blankSuppressedEndMillis);
 
-          if (nowMillis > blankSuppressedEndMillis) {
-            blankSuppressedEndMillis = 0;
-          }
+          // Check if we are in blanking suppression mode
+          blanked = nativeBlanked && (blankSuppressedMillis == 0);
 
-          if (nowMillis > blankSuppressedStartMillis) {
-            blankSuppressedStartMillis = 0;
+          // reset the blanking period selection timer
+          if (nowMillis > blankSuppressedSelectionTimoutMillis) {
+            blankSuppressedSelectionTimoutMillis = 0;
             blankSuppressStep = 0;
           }
         }
 
         if (button1.isButtonPressedAndReleased()) {
-          if ((nowMillis < blankSuppressedStartMillis) || blanked) {
-            if (blankSuppressedStartMillis == 0) {
+          if ((nowMillis < blankSuppressedSelectionTimoutMillis) || blanked) {
+            if (blankSuppressedSelectionTimoutMillis == 0) {
               // Apply 5 sec tineout for setting the suppression time
-              blankSuppressedStartMillis = nowMillis + 5000;
+              blankSuppressedSelectionTimoutMillis = nowMillis + TEMP_DISPLAY_MODE_DUR_MS;
             }
 
             blankSuppressStep++;
@@ -1403,33 +1477,31 @@ void processCurrentMode() {
             }
 
             if (blankSuppressStep == 1) {
-              blankSuppressedEndMillis = nowMillis + 10000;
+              blankSuppressedMillis = 10000;
             } else if (blankSuppressStep == 2) {
-              blankSuppressedEndMillis = nowMillis + 3600000;
+              blankSuppressedMillis = 3600000;
             } else if (blankSuppressStep == 3) {
-              blankSuppressedEndMillis = nowMillis + 3600000 * 4;
+              blankSuppressedMillis = 3600000 * 4;
             }
             blanked = false;
           } else {
             // Always start from the first mode, or increment the temp mode if we are already in a display
-            if (nowMillis < secsDisplayEnd) {
+            if (tempDisplayModeDuration > 0) {
+              tempDisplayModeDuration = TEMP_DISPLAY_MODE_DUR_MS;
               tempDisplayMode++;
             } else {
               tempDisplayMode = TEMP_MODE_MIN;
-
-              // reset the value so that we don't do anything weird on millis() rollover
-              secsDisplayEnd = 0;
             }
 
             if (tempDisplayMode > TEMP_MODE_MAX) {
               tempDisplayMode = TEMP_MODE_MIN;
             }
 
-            secsDisplayEnd = nowMillis + 5000;
+            tempDisplayModeDuration = TEMP_DISPLAY_MODE_DUR_MS;
           }
         }
 
-        if (nowMillis < secsDisplayEnd) {
+        if (tempDisplayModeDuration > 0) {
           blanked = false;
           if (tempDisplayMode == TEMP_MODE_DATE) {
             loadNumberArrayDate();
@@ -1477,8 +1549,8 @@ void processCurrentMode() {
               loadNumberArrayConfInt(lastImpressionsPerSec, currentMode - MODE_12_24);
             }
           }
-          
-          allFade();
+
+          allfadeOrNormal();
 
         } else {
           if (acpOffset > 0) {
@@ -1487,7 +1559,7 @@ void processCurrentMode() {
           } else {
             // Normal time loaded here!!!
             loadNumberArrayTime();
-            allFade();
+            allfadeOrNormal();
 
             // Apply leading blanking
             applyBlanking();
@@ -1509,6 +1581,14 @@ void processCurrentMode() {
         }
         loadNumberArrayTime();
         highlight0and1();
+        break;
+      }
+    case MODE_SECS_SET: {
+        if (button1.isButtonPressedAndReleased()) {
+          resetSecond();
+        }
+        loadNumberArrayTime();
+        highlight4and5();
         break;
       }
     case MODE_DAYS_SET: {
@@ -1556,6 +1636,14 @@ void processCurrentMode() {
           scrollback = !scrollback;
         }
         loadNumberArrayConfBool(scrollback, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_FADE: {
+        if (button1.isButtonPressedAndReleased()) {
+          fade = !fade;
+        }
+        loadNumberArrayConfBool(fade, currentMode - MODE_12_24);
         displayConfig();
         break;
       }
@@ -2316,6 +2404,17 @@ void applyBlanking() {
 // ************************************************************
 // Display preset
 // ************************************************************
+void allfadeOrNormal() {
+  if (fade) {
+    allFade();
+  } else {
+    allNormal();
+  }
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
 void allFade() {
   if (displayType[0] != FADE) displayType[0] = FADE;
   if (displayType[1] != FADE) displayType[1] = FADE;
@@ -2485,9 +2584,18 @@ void allBlanked() {
 }
 
 // ************************************************************
+// Reset the seconds to 00
+// ************************************************************
+void resetSecond() {
+  byte tmpSecs = 0;
+  setTime(hour(), minute(), tmpSecs, day(), month(), year());
+  setRTC();
+}
+
+// ************************************************************
 // increment the time by 1 Sec
 // ************************************************************
-void incsecond() {
+void incSecond() {
   byte tmpSecs = second();
   tmpSecs++;
   if (tmpSecs >= SECS_MAX) {
@@ -2699,6 +2807,16 @@ float getRTCTemp() {
 //**********************************************************************************
 //**********************************************************************************
 
+#ifdef TEST_ROLLOVER
+extern volatile unsigned long timer0_millis;
+void setMillis(unsigned long new_millis){
+  uint8_t oldSREG = SREG;
+  cli();
+  timer0_millis = new_millis;
+  SREG = oldSREG;
+}
+#endif
+
 //**********************************************************************************
 //**********************************************************************************
 //*                               EEPROM interface                                 *
@@ -2717,6 +2835,7 @@ void saveEEPROMValues() {
   EEPROM.write(EE_DIM_DARK_HI, dimDark / 256);
   EEPROM.write(EE_BLANK_LEAD_ZERO, blankLeading);
   EEPROM.write(EE_SCROLLBACK, scrollback);
+  EEPROM.write(EE_FADE, fade);
   EEPROM.write(EE_SCROLL_STEPS, scrollSteps);
   EEPROM.write(EE_DIM_BRIGHT_LO, dimBright % 256);
   EEPROM.write(EE_DIM_BRIGHT_HI, dimBright / 256);
@@ -2767,6 +2886,7 @@ void readEEPROMValues() {
 
   blankLeading = EEPROM.read(EE_BLANK_LEAD_ZERO);
   scrollback = EEPROM.read(EE_SCROLLBACK);
+  fade = EEPROM.read(EE_FADE);
 
   scrollSteps = EEPROM.read(EE_SCROLL_STEPS);
   if ((scrollSteps < SCROLL_STEPS_MIN) || (scrollSteps > SCROLL_STEPS_MAX)) {
@@ -2870,6 +2990,7 @@ void factoryReset() {
   hourMode = HOUR_MODE_DEFAULT;
   blankLeading = LEAD_BLANK_DEFAULT;
   scrollback = SCROLLBACK_DEFAULT;
+  fade = FADE_DEFAULT;
   fadeSteps = FADE_STEPS_DEFAULT;
   dateFormat = DATE_FORMAT_DEFAULT;
   dayBlanking = DAY_BLANKING_DEFAULT;
@@ -3150,11 +3271,14 @@ int getSmoothedHVSensorReading() {
 /**
    receive information from the master
 */
-void receiveEvent(int bytes) {
+void receiveEvent(int bytes) {  
   // the operation tells us what we are getting
   int operation = Wire.read();
 
   if (operation == I2C_TIME_UPDATE) {
+    // If we're getting time from the WiFi module, don't allow the time to be set manually
+    useWiFi = true;
+    
     int newYears = Wire.read();
     int newMonths = Wire.read();
     int newDays = Wire.read();
@@ -3218,6 +3342,9 @@ void receiveEvent(int bytes) {
     ourIP[1] = Wire.read();
     ourIP[2] = Wire.read();
     ourIP[3] = Wire.read();
+  } else if (operation == I2C_SET_OPTION_FADE) {
+    fade = Wire.read();
+    EEPROM.write(EE_FADE, fade);
   }
 }
 
@@ -3225,12 +3352,14 @@ void receiveEvent(int bytes) {
    send information to the master
 */
 void requestEvent() {
-  byte configArray[16];
+  byte configArray[17];
   int idx = 0;
-  configArray[idx++] = encodeBooleanForI2C(hourMode );
+  configArray[idx++] = 48;  // protocol version
+  configArray[idx++] = encodeBooleanForI2C(hourMode);
   configArray[idx++] = encodeBooleanForI2C(blankLeading);
   configArray[idx++] = encodeBooleanForI2C(scrollback);
   configArray[idx++] = encodeBooleanForI2C(suppressACP);
+  configArray[idx++] = encodeBooleanForI2C(fade);
   configArray[idx++] = dateFormat;
   configArray[idx++] = dayBlanking;
   configArray[idx++] = blankHourStart;
@@ -3242,9 +3371,8 @@ void requestEvent() {
   configArray[idx++] = grnCnl;
   configArray[idx++] = bluCnl;
   configArray[idx++] = cycleSpeed;
-  configArray[idx++] = 27;
 
-  Wire.write(configArray, 16);
+  Wire.write(configArray, 17);
 }
 
 byte encodeBooleanForI2C(boolean valueToProcess) {
