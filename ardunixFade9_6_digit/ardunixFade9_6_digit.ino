@@ -59,6 +59,8 @@
 #define EE_MIN_DIM_HI       31     // The min dim value
 #define EE_ANTI_GHOST       32     // The value we use for anti-ghosting
 #define EE_NEED_SETUP       33     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
+#define EE_USE_LDR          34     // if we use the LDR or not (if we don't use the LDR, it has 100% brightness
+#define EE_BLANK_MODE       35     // blank tubes, or LEDs or both
 
 
 // Software version shown in config menu
@@ -160,42 +162,46 @@
 #define MODE_HR_BLNK_END                14 // Mode "07" - skipped if not using hour blanking
 #define MODE_SUPPRESS_ACP               15 // Mode "08" 1 = suppress ACP when fully dimmed
 #define SUPPRESS_ACP_DEFAULT            true
+#define MODE_USE_LDR                    16 // Mode "09" 1 = use LDR, 0 = don't (and have 100% brightness)
+#define MODE_USE_LDR_DEFAULT            true
+#define MODE_BLANK_MODE                 17 // Mode "10" 
+#define MODE_BLANK_MODE_DEFAULT         BLANK_MODE_BOTH
 
 // Display tricks
-#define MODE_FADE_STEPS_UP              16 // Mode "09"
-#define MODE_FADE_STEPS_DOWN            17 // Mode "10"
-#define MODE_DISPLAY_SCROLL_STEPS_UP    18 // Mode "11"
-#define MODE_DISPLAY_SCROLL_STEPS_DOWN  19 // Mode "12"
+#define MODE_FADE_STEPS_UP              18 // Mode "11"
+#define MODE_FADE_STEPS_DOWN            19 // Mode "12"
+#define MODE_DISPLAY_SCROLL_STEPS_UP    20 // Mode "13"
+#define MODE_DISPLAY_SCROLL_STEPS_DOWN  21 // Mode "14"
 
 // Back light
-#define MODE_BACKLIGHT_MODE             20 // Mode "13"
-#define MODE_RED_CNL                    21 // Mode "14"
-#define MODE_GRN_CNL                    22 // Mode "15"
-#define MODE_BLU_CNL                    23 // Mode "16"
-#define MODE_CYCLE_SPEED                24 // Mode "17" - speed the colour cycle cyles at
+#define MODE_BACKLIGHT_MODE             22 // Mode "15"
+#define MODE_RED_CNL                    23 // Mode "16"
+#define MODE_GRN_CNL                    24 // Mode "17"
+#define MODE_BLU_CNL                    25 // Mode "18"
+#define MODE_CYCLE_SPEED                26 // Mode "19" - speed the colour cycle cyles at
 
 // HV generation
-#define MODE_TARGET_HV_UP               25 // Mode "18"
-#define MODE_TARGET_HV_DOWN             26 // Mode "19"
-#define MODE_PULSE_UP                   27 // Mode "20"
-#define MODE_PULSE_DOWN                 28 // Mode "21"
+#define MODE_TARGET_HV_UP               27 // Mode "20"
+#define MODE_TARGET_HV_DOWN             28 // Mode "21"
+#define MODE_PULSE_UP                   29 // Mode "22"
+#define MODE_PULSE_DOWN                 30 // Mode "23"
 
-#define MODE_MIN_DIM_UP                 29 // Mode "22"
-#define MODE_MIN_DIM_DOWN               30 // Mode "23"
+#define MODE_MIN_DIM_UP                 31 // Mode "24"
+#define MODE_MIN_DIM_DOWN               32 // Mode "25"
 
-#define MODE_ANTI_GHOST_UP              31 // Mode "24"
-#define MODE_ANTI_GHOST_DOWN            32 // Mode "25"
+#define MODE_ANTI_GHOST_UP              33 // Mode "26"
+#define MODE_ANTI_GHOST_DOWN            34 // Mode "27"
 
 // Temperature
-#define MODE_TEMP                       33 // Mode "26"
+#define MODE_TEMP                       35 // Mode "28"
 
 // Software Version
-#define MODE_VERSION                    34 // Mode "27"
+#define MODE_VERSION                    36 // Mode "29"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  35
+#define MODE_TUBE_TEST                  37
 
-#define MODE_MAX                        35
+#define MODE_MAX                        37
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
@@ -231,6 +237,13 @@
 #define DAY_BLANKING_MAX                8
 #define DAY_BLANKING_DEFAULT            0
 
+#define BLANK_MODE_MIN                  0
+#define BLANK_MODE_TUBES                0  // Use blanking for tubes only 
+#define BLANK_MODE_LEDS                 1  // Use blanking for LEDs only
+#define BLANK_MODE_BOTH                 2  // Use blanking for tubes and LEDs
+#define BLANK_MODE_MAX                  2
+#define BLANK_MODE_DEFAULT              2
+
 #define BACKLIGHT_MIN                   0
 #define BACKLIGHT_FIXED                 0   // Just define a colour and stick to it
 #define BACKLIGHT_PULSE                 1   // pulse the defined colour
@@ -250,6 +263,8 @@
 #define ANTI_GHOST_DEFAULT              0
 
 #define TEMP_DISPLAY_MODE_DUR_MS        5000
+
+#define USE_LDR_DEFAULT                 true
 
 // I2C Interface definition
 #define I2C_SLAVE_ADDR                0x68
@@ -272,6 +287,8 @@
 #define I2C_SET_OPTION_CYCLE_SPEED    0x10
 #define I2C_SHOW_IP_ADDR              0x11
 #define I2C_SET_OPTION_FADE           0x12
+#define I2C_SET_OPTION_USE_LDR        0x13
+#define I2C_SET_OPTION_BLANK_MODE     0x14
 
 
 //**********************************************************************************
@@ -586,6 +603,9 @@ byte currentMode = MODE_TIME;   // Initial cold start mode
 byte nextMode = currentMode;
 byte blankHourStart = 0;
 byte blankHourEnd = 0;
+byte blankMode = 0;
+boolean blankTubes = false;
+boolean blankLEDs = false;
 
 // ************************ Ambient light dimming ************************
 int dimDark = SENSOR_LOW_DEFAULT;
@@ -1126,6 +1146,7 @@ void performOncePerSecondProcessing() {
     }
   }
 
+  // decrement the blanking supression counter
   if (blankSuppressedMillis > 0) {
     if (blankSuppressedMillis > 1000) {
       blankSuppressedMillis -= 1000;
@@ -1133,6 +1154,25 @@ void performOncePerSecondProcessing() {
       blankSuppressedMillis = 0;
     }
   }
+
+  
+  // Get the blanking status, this may be overridden by blanking suppression
+  // Only blank if we are in TIME mode
+  if (currentMode == MODE_TIME) {
+    boolean nativeBlanked = checkBlanking();
+
+    // Check if we are in blanking suppression mode
+    blanked = nativeBlanked && (blankSuppressedMillis == 0);
+
+    // reset the blanking period selection timer
+    if (nowMillis > blankSuppressedSelectionTimoutMillis) {
+      blankSuppressedSelectionTimoutMillis = 0;
+      blankSuppressStep = 0;
+    }
+  } else {
+    blanked = false;
+  }          
+  setTubesAndLEDSBlankMode();
 }
 
 // ************************************************************
@@ -1164,64 +1204,70 @@ void setLeds()
   // Tick led output
   analogWrite(tickLed, getLEDAdjusted(255, pwmFactor, dimFactor));
 
-  // RGB Backlight PWM led output
-  if (currentMode == MODE_TIME) {
-    switch (backlightMode) {
-      case BACKLIGHT_FIXED:
-        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], 1, 1));
-        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], 1, 1));
-        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], 1, 1));
-        break;
-      case BACKLIGHT_PULSE:
-        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], pwmFactor, 1));
-        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], pwmFactor, 1));
-        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], pwmFactor, 1));
-        break;
-      case BACKLIGHT_CYCLE:
-        cycleColours3(colors);
-        analogWrite(RLed, getLEDAdjusted(colors[0], 1, 1));
-        analogWrite(GLed, getLEDAdjusted(colors[1], 1, 1));
-        analogWrite(BLed, getLEDAdjusted(colors[2], 1, 1));
-        break;
-      case BACKLIGHT_FIXED_DIM:
-        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], 1, dimFactor));
-        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], 1, dimFactor));
-        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], 1, dimFactor));
-        break;
-      case BACKLIGHT_PULSE_DIM:
-        analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], pwmFactor, dimFactor));
-        analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], pwmFactor, dimFactor));
-        analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], pwmFactor, dimFactor));
-        break;
-      case BACKLIGHT_CYCLE_DIM:
-        cycleColours3(colors);
-        analogWrite(RLed, getLEDAdjusted(colors[0], 1, dimFactor));
-        analogWrite(GLed, getLEDAdjusted(colors[1], 1, dimFactor));
-        analogWrite(BLed, getLEDAdjusted(colors[2], 1, dimFactor));
-        break;
-    }
+  if (blankLEDs) {
+    analogWrite(RLed, 0);
+    analogWrite(GLed, 0);
+    analogWrite(BLed, 0);
   } else {
-    // Settings modes
-    ledBlinkCtr++;
-    if (ledBlinkCtr > 40) {
-      ledBlinkCtr = 0;
-
-      ledBlinkNumber++;
-      if (ledBlinkNumber > nextMode) {
-        // Make a pause
-        ledBlinkNumber = -2;
+    // RGB Backlight PWM led output
+    if (currentMode == MODE_TIME) {
+      switch (backlightMode) {
+        case BACKLIGHT_FIXED:
+          analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], 1, 1));
+          analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], 1, 1));
+          analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], 1, 1));
+          break;
+        case BACKLIGHT_PULSE:
+          analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], pwmFactor, 1));
+          analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], pwmFactor, 1));
+          analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], pwmFactor, 1));
+          break;
+        case BACKLIGHT_CYCLE:
+          cycleColours3(colors);
+          analogWrite(RLed, getLEDAdjusted(colors[0], 1, 1));
+          analogWrite(GLed, getLEDAdjusted(colors[1], 1, 1));
+          analogWrite(BLed, getLEDAdjusted(colors[2], 1, 1));
+          break;
+        case BACKLIGHT_FIXED_DIM:
+          analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], 1, dimFactor));
+          analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], 1, dimFactor));
+          analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], 1, dimFactor));
+          break;
+        case BACKLIGHT_PULSE_DIM:
+          analogWrite(RLed, getLEDAdjusted(rgb_backlight_curve[redCnl], pwmFactor, dimFactor));
+          analogWrite(GLed, getLEDAdjusted(rgb_backlight_curve[grnCnl], pwmFactor, dimFactor));
+          analogWrite(BLed, getLEDAdjusted(rgb_backlight_curve[bluCnl], pwmFactor, dimFactor));
+          break;
+        case BACKLIGHT_CYCLE_DIM:
+          cycleColours3(colors);
+          analogWrite(RLed, getLEDAdjusted(colors[0], 1, dimFactor));
+          analogWrite(GLed, getLEDAdjusted(colors[1], 1, dimFactor));
+          analogWrite(BLed, getLEDAdjusted(colors[2], 1, dimFactor));
+          break;
       }
-    }
+    } else {
+      // Settings modes
+      ledBlinkCtr++;
+      if (ledBlinkCtr > 40) {
+        ledBlinkCtr = 0;
 
-    if ((ledBlinkNumber <= nextMode) && (ledBlinkNumber > 0)) {
-      if (ledBlinkCtr < 3) {
-        analogWrite(RLed, 255);
-        analogWrite(GLed, 255);
-        analogWrite(BLed, 255);
-      } else {
-        analogWrite(RLed, 0);
-        analogWrite(GLed, 0);
-        analogWrite(BLed, 0);
+        ledBlinkNumber++;
+        if (ledBlinkNumber > nextMode) {
+          // Make a pause
+          ledBlinkNumber = -2;
+        }
+      }
+
+      if ((ledBlinkNumber <= nextMode) && (ledBlinkNumber > 0)) {
+        if (ledBlinkCtr < 3) {
+          analogWrite(RLed, 255);
+          analogWrite(GLed, 255);
+          analogWrite(BLed, 255);
+        } else {
+          analogWrite(RLed, 0);
+          analogWrite(GLed, 0);
+          analogWrite(BLed, 0);
+        }
       }
     }
   }
@@ -1234,6 +1280,7 @@ void setLeds()
 void setNextMode() {
   // turn off blanking
   blanked = false;
+  setTubesAndLEDSBlankMode();
 
   switch (nextMode) {
     case MODE_TIME: {
@@ -1339,6 +1386,16 @@ void setNextMode() {
       }
     case MODE_SUPPRESS_ACP: {
         loadNumberArrayConfBool(suppressACP, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_BLANK_MODE: {
+        loadNumberArrayConfInt(blankMode, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_USE_LDR: {
+        loadNumberArrayConfBool(useLDR, nextMode - MODE_12_24);
         displayConfig();
         break;
       }
@@ -1449,22 +1506,8 @@ void setNextMode() {
 void processCurrentMode() {
   switch (currentMode) {
     case MODE_TIME: {
-        // Check if we are going into blanking mode when we start a new minute
-        if (second() == 0) {
-          // Get the blanking status, this may be overridden by blanking suppression
-          boolean nativeBlanked = checkBlanking();
-
-          // Check if we are in blanking suppression mode
-          blanked = nativeBlanked && (blankSuppressedMillis == 0);
-
-          // reset the blanking period selection timer
-          if (nowMillis > blankSuppressedSelectionTimoutMillis) {
-            blankSuppressedSelectionTimoutMillis = 0;
-            blankSuppressStep = 0;
-          }
-        }
-
         if (button1.isButtonPressedAndReleased()) {
+          // Deal with blanking first
           if ((nowMillis < blankSuppressedSelectionTimoutMillis) || blanked) {
             if (blankSuppressedSelectionTimoutMillis == 0) {
               // Apply 5 sec tineout for setting the suppression time
@@ -1484,6 +1527,7 @@ void processCurrentMode() {
               blankSuppressedMillis = 3600000 * 4;
             }
             blanked = false;
+            setTubesAndLEDSBlankMode();
           } else {
             // Always start from the first mode, or increment the temp mode if we are already in a display
             if (tempDisplayModeDuration > 0) {
@@ -1503,6 +1547,7 @@ void processCurrentMode() {
 
         if (tempDisplayModeDuration > 0) {
           blanked = false;
+          setTubesAndLEDSBlankMode();
           if (tempDisplayMode == TEMP_MODE_DATE) {
             loadNumberArrayDate();
           }
@@ -1696,6 +1741,25 @@ void processCurrentMode() {
           suppressACP = !suppressACP;
         }
         loadNumberArrayConfBool(suppressACP, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_BLANK_MODE: {
+        if (button1.isButtonPressedAndReleased()) {
+          blankMode++;
+          if (blankMode > BLANK_MODE_MAX) {
+            blankMode = BLANK_MODE_MIN;
+          }
+        }
+        loadNumberArrayConfInt(blankMode, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_USE_LDR: {
+        if (button1.isButtonPressedAndReleased()) {
+          useLDR = !useLDR;
+        }
+        loadNumberArrayConfBool(useLDR, currentMode - MODE_12_24);
         displayConfig();
         break;
       }
@@ -2228,7 +2292,7 @@ void outputDisplay()
 
   for ( int i = 0 ; i < 6 ; i ++ )
   {
-    if (blanked) {
+    if (blankTubes) {
       tmpDispType = BLANKED;
     } else {
       tmpDispType = displayType[i];
@@ -2743,6 +2807,39 @@ boolean getHoursBlanked() {
   }
 }
 
+// ************************************************************
+// Set the tubes and LEDs blanking variables based on blanking mode and 
+// blank mode settings
+// ************************************************************
+void setTubesAndLEDSBlankMode() {
+  if (blanked) {
+    switch(blankMode) {
+      case BLANK_MODE_TUBES:
+      {
+        blankTubes = true;
+        blankLEDs = false;
+        break;
+      }
+      case BLANK_MODE_LEDS:
+      {
+        blankTubes = false;
+        blankLEDs = true;
+        break;
+      }
+      case BLANK_MODE_BOTH:
+      {
+        blankTubes = true;
+        blankLEDs = true;
+        break;
+      }
+    }
+  } else {
+    blankTubes = false;
+    blankLEDs = false;
+  }
+}
+
+
 //**********************************************************************************
 //**********************************************************************************
 //*                         RTC Module Time Provider                               *
@@ -2856,6 +2953,8 @@ void saveEEPROMValues() {
   EEPROM.write(EE_MIN_DIM_LO, minDim % 256);
   EEPROM.write(EE_MIN_DIM_HI, minDim / 256);
   EEPROM.write(EE_ANTI_GHOST, antiGhost);
+  EEPROM.write(EE_USE_LDR, useLDR);
+  EEPROM.write(EE_BLANK_MODE, blankMode);
 }
 
 // ************************************************************
@@ -2981,6 +3080,13 @@ void readEEPROMValues() {
     antiGhost = ANTI_GHOST_DEFAULT;
   }
   dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
+  
+  blankMode= EEPROM.read(EE_BLANK_MODE);
+  if ((blankMode < BLANK_MODE_MIN) || (blankMode > BLANK_MODE_MAX)) {
+    blankMode = BLANK_MODE_DEFAULT;
+  }
+
+  useLDR = EEPROM.read(EE_USE_LDR);
 }
 
 // ************************************************************
@@ -3013,6 +3119,8 @@ void factoryReset() {
   pwmTop = PWM_TOP_DEFAULT;
   minDim = MIN_DIM_DEFAULT;
   antiGhost = ANTI_GHOST_DEFAULT;
+  useLDR = USE_LDR_DEFAULT;
+  blankMode = BLANK_MODE_DEFAULT;
 
   saveEEPROMValues();
 }
@@ -3068,21 +3176,24 @@ int getRawHVADCThreshold(double targetVoltage) {
 // maximum value, we have to clamp it as the final step
 // ******************************************************************
 int getDimmingFromLDR() {
-  int rawSensorVal = 1023 - analogRead(LDRPin);
-  double sensorDiff = rawSensorVal - sensorLDRSmoothed;
-  sensorLDRSmoothed += (sensorDiff / sensorSmoothCountLDR);
+  if (useLDR) {
+    int rawSensorVal = 1023 - analogRead(LDRPin);
+    double sensorDiff = rawSensorVal - sensorLDRSmoothed;
+    sensorLDRSmoothed += (sensorDiff / sensorSmoothCountLDR);
 
-  double sensorSmoothedResult = sensorLDRSmoothed - dimDark;
-  if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
-  if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
-  sensorSmoothedResult = (sensorSmoothedResult - dimDark) * sensorFactor;
+    double sensorSmoothedResult = sensorLDRSmoothed - dimDark;
+    if (sensorSmoothedResult < dimDark) sensorSmoothedResult = dimDark;
+    if (sensorSmoothedResult > dimBright) sensorSmoothedResult = dimBright;
+    sensorSmoothedResult = (sensorSmoothedResult - dimDark) * sensorFactor;
 
-  int returnValue = sensorSmoothedResult;
+    int returnValue = sensorSmoothedResult;
 
-  if (returnValue < minDim) returnValue = minDim;
-  if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
-
-  return returnValue;
+    if (returnValue < minDim) returnValue = minDim;
+    if (returnValue > DIGIT_DISPLAY_OFF) returnValue = DIGIT_DISPLAY_OFF;
+    return returnValue;
+  } else {
+    return DIGIT_DISPLAY_OFF;  
+  }
 }
 
 // ******************************************************************
@@ -3345,6 +3456,13 @@ void receiveEvent(int bytes) {
   } else if (operation == I2C_SET_OPTION_FADE) {
     fade = Wire.read();
     EEPROM.write(EE_FADE, fade);
+  } else if (operation == I2C_SET_OPTION_USE_LDR) {
+    byte readByteUseLDR = Wire.read();
+    useLDR = (readByteUseLDR == 1);
+    EEPROM.write(EE_FADE, useLDR);
+  } else if (operation == I2C_SET_OPTION_BLANK_MODE) {
+    blankMode = Wire.read();
+    EEPROM.write(EE_BLANK_MODE, blankMode);
   }
 }
 
@@ -3352,7 +3470,7 @@ void receiveEvent(int bytes) {
    send information to the master
 */
 void requestEvent() {
-  byte configArray[17];
+  byte configArray[19];
   int idx = 0;
   configArray[idx++] = 48;  // protocol version
   configArray[idx++] = encodeBooleanForI2C(hourMode);
@@ -3371,8 +3489,10 @@ void requestEvent() {
   configArray[idx++] = grnCnl;
   configArray[idx++] = bluCnl;
   configArray[idx++] = cycleSpeed;
+  configArray[idx++] = encodeBooleanForI2C(useLDR);
+  configArray[idx++] = blankMode;
 
-  Wire.write(configArray, 17);
+  Wire.write(configArray, 19);
 }
 
 byte encodeBooleanForI2C(boolean valueToProcess) {
