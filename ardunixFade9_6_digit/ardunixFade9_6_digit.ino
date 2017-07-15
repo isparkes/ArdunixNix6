@@ -61,6 +61,7 @@
 #define EE_NEED_SETUP       33     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
 #define EE_USE_LDR          34     // if we use the LDR or not (if we don't use the LDR, it has 100% brightness
 #define EE_BLANK_MODE       35     // blank tubes, or LEDs or both
+#define EE_DATE_SLOTS       36     // Show date every now and again
 
 
 // Software version shown in config menu
@@ -74,16 +75,16 @@
 #define DISPLAY_COUNT_MAX     2000 // Maximum value we can set to
 #define DISPLAY_COUNT_MIN     500  // Minimum value we can set to
 
-#define MIN_DIM_DEFAULT 100         // The default minimum dim count
-#define MIN_DIM_MIN     100         // The minimum dim count
-#define MIN_DIM_MAX     500         // The maximum dim count
+#define MIN_DIM_DEFAULT       100  // The default minimum dim count
+#define MIN_DIM_MIN           100  // The minimum dim count
+#define MIN_DIM_MAX           500  // The maximum dim count
 
-#define SENSOR_LOW_MIN      0
-#define SENSOR_LOW_MAX      900
-#define SENSOR_LOW_DEFAULT  100  // Dark
-#define SENSOR_HIGH_MIN     0
-#define SENSOR_HIGH_MAX     900
-#define SENSOR_HIGH_DEFAULT 700 // Bright
+#define SENSOR_LOW_MIN        0
+#define SENSOR_LOW_MAX        900
+#define SENSOR_LOW_DEFAULT    100  // Dark
+#define SENSOR_HIGH_MIN       0
+#define SENSOR_HIGH_MAX       900
+#define SENSOR_HIGH_DEFAULT   700 // Bright
 
 #define SENSOR_SMOOTH_READINGS_MIN     1
 #define SENSOR_SMOOTH_READINGS_MAX     255
@@ -266,6 +267,11 @@
 
 #define USE_LDR_DEFAULT                 true
 
+#define SLOTS_MIN                       0
+#define SLOTS_NONE                      0   // Don't use slots effect
+#define SLOTS_1M                        1   // use slots effect every minute
+#define SLOTS_MAX                       1
+
 // I2C Interface definition
 #define I2C_SLAVE_ADDR                0x68
 #define I2C_TIME_UPDATE               0x00
@@ -330,6 +336,222 @@
 
 #define sensorPin   A0    // Package pin 23 // PC0 // Analog input pin for HV sense: HV divided through 390k and 4k7 divider, using 5V reference
 #define LDRPin      A1    // Package pin 24 // PC1 // Analog input for Light dependent resistor.
+
+//**********************************************************************************
+
+/**
+ * A class that displays a message by scrolling it into and out of the display
+ *
+ * Thanks judge!
+ */
+extern byte NumberArray[];
+extern byte displayType[];
+extern boolean scrollback;
+
+struct Transition {
+  /**
+   * Default the effect and hold duration.
+   */
+  Transition() : Transition(500, 500, 3000) {
+  }
+
+  Transition(int effectDuration, int holdDuration) : Transition(effectDuration, effectDuration, holdDuration) {
+  }
+
+  Transition(int effectInDuration, int effectOutDuration, int holdDuration) {
+    this->effectInDuration = effectInDuration;
+    this->effectOutDuration = effectOutDuration;
+    this->holdDuration = holdDuration;
+    this->started = 0;
+    this->end = 0;
+  }
+
+  void start(unsigned long now) {
+    if (end < now) {
+      this->started = now;
+      this->end = getEnd();
+      saveCurrentDisplayType(); 
+    }
+    // else we are already running!
+  }
+
+  boolean scrollMsg(unsigned long now)
+  {
+    if (now < end) {
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        // Scroll -1 -> -6
+        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
+      } else if (msCount < effectInDuration * 2) {
+        loadAlternateValues();
+        // Scroll 5 -> 0
+        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadAlternateValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadAlternateValues();
+        // Scroll 1 -> 6
+        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        // Scroll 0 -> -5
+        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration - 5);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  boolean scrambleMsg(unsigned long now)
+  {
+    if (now < end) {
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        scramble(msCount, 5 - (msCount % effectInDuration) * 6 / effectInDuration, 6);
+      } else if (msCount < effectInDuration * 2) {
+        loadAlternateValues();
+        scramble(msCount, 0, 5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadAlternateValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadAlternateValues();
+        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
+      }
+      return true;  // we are still running
+    }
+    return false;   // We aren't running
+  }
+
+  boolean scrollInScrambleOut(unsigned long now)
+  {
+    if (now < end) {
+      int msCount = now - started;
+      if (msCount < effectInDuration) {
+        loadRegularValues();
+        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
+      } else if (msCount < effectInDuration * 2) {
+        restoreCurrentDisplayType();
+        loadAlternateValues();
+        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
+      } else if (msCount < effectInDuration * 2 + holdDuration) {
+        loadAlternateValues();
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
+        loadAlternateValues();
+        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
+      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
+        loadRegularValues();
+        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
+      }
+
+      return true;  // we are still running
+    }
+
+    return false;   // We aren't running
+  }
+
+  /**
+   * +ve scroll right
+   * -ve scroll left
+   */
+  static int scroll(char count) {
+    byte copy[6] = {0, 0, 0, 0, 0, 0};
+    memcpy(copy, NumberArray, sizeof(copy));
+    char offset = 0;
+    char slope = 1;
+    if (count < 0) {
+      count = -count;
+      offset = 5;
+      slope = -1;
+    }
+    for (char i=0; i<6; i++) {
+      if (i < count) {
+        displayType[offset + i * slope] = BLANKED;
+      }
+      if (i >= count) {
+        NumberArray[offset + i * slope] = copy[offset + (i-count) * slope];
+      }
+    }
+
+    return count;
+  }
+
+  static unsigned long hash(unsigned long x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+  }
+
+  // In these functions we want something that changes quickly
+  // hence msCount/20. Plus it needs to be different for different
+  // indices, hence +i. Plus it needs to be 'random', hence hash function
+  static int scramble(int msCount, byte start, byte end) {
+    for (int i=start; i < end; i++) {
+      NumberArray[i] = hash(msCount / 20 + i) % 10;
+    }
+
+    return start;
+  }
+
+  void setRegularValues() {
+    memcpy(regularDisplay, NumberArray, sizeof(regularDisplay));    
+  }
+  
+  void setAlternateValues() {
+    memcpy(alternateDisplay, NumberArray, sizeof(alternateDisplay));    
+  }
+
+  void loadRegularValues() {
+    memcpy(NumberArray, regularDisplay, sizeof(regularDisplay));    
+  }
+
+  void loadAlternateValues() {
+    memcpy(NumberArray, alternateDisplay, sizeof(alternateDisplay));    
+  }
+  
+  void saveCurrentDisplayType() {
+    memcpy(savedDisplayType, displayType, sizeof(savedDisplayType));  
+    savedScrollback = scrollback;
+    scrollback = false;
+  }
+  
+  void restoreCurrentDisplayType() {
+    memcpy(displayType, savedDisplayType, sizeof(savedDisplayType));
+    scrollback = savedScrollback;
+  }
+  
+protected:
+  /**** Don't let Joe Public see this stuff ****/
+
+  int effectInDuration;  // How long an effect should take in ms
+  int effectOutDuration; // How long an effect should take in ms
+  int holdDuration;      // How long the message should be displayed for in ms
+  unsigned long started; // When we were started (timestamp)
+  unsigned long end;     // When the whole thing will end (timestamp)
+
+  /**
+   * The end time has to match what displayMessage() wants,
+   * so let sub-classes override it.
+   */
+  unsigned long getEnd() {
+    return started + effectInDuration * 2 + holdDuration + effectOutDuration * 2;
+  }
+
+  // buffer variables for doing the scrolling/scrambling with
+  byte regularDisplay[6] = {0, 0, 0, 0, 0, 0};
+  byte alternateDisplay[6] = {0, 0, 0, 0, 0, 0};
+  boolean savedScrollback;
+  byte savedDisplayType[6] = {FADE, FADE, FADE, FADE, FADE, FADE};
+};
+
+Transition transition(500, 1000, 3000);
 
 //**********************************************************************************
 
@@ -542,7 +764,9 @@ int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
 int pwmOn = PWM_PULSE_DEFAULT;
 
-#define AIO_REV2 // [AIO_REV1,AIO_REV2]
+// All-In-One Rev1 has a mix up in the tube wiring. All other clocks are 
+// correct.
+#define NOT_AIO_REV1 // [AIO_REV1,NOT_AIO_REV1]
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
@@ -634,6 +858,7 @@ byte blankSuppressStep = 0;    // The press we are on: 1 press = suppress for 1 
 unsigned long blankSuppressedMillis = 0;   // The end time of the blanking, 0 if we are not suppressed
 unsigned long blankSuppressedSelectionTimoutMillis = 0;   // Used for determining the end of the blanking period selection timeout
 boolean hourMode = false;
+boolean triggeredThisSec = false;
 
 boolean useRTC = false;  // true if we detect an RTC
 boolean useWiFi = false; // true if we have recevied information from the WiFi module
@@ -930,56 +1155,13 @@ void setup()
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
   tempDisplayModeDuration = TEMP_DISPLAY_MODE_DUR_MS;
-  
+
+  // don't blank anything right now
+  blanked = false;
+  setTubesAndLEDSBlankMode();
+
   // mark that we have done the EEPROM setup
   EEPROM.write(EE_NEED_SETUP, false);
-}
-
-//**********************************************************************************
-//*                         Flash some RGB colours                                 *
-//**********************************************************************************
-void randomRGBFlash(int delayVal) {
-  digitalWrite(tickLed, HIGH);
-  if (random(3) == 0) {
-    digitalWrite(RLed, HIGH);
-  }
-  if (random(3) == 0) {
-    digitalWrite(GLed, HIGH);
-  }
-  if (random(3) == 0) {
-    digitalWrite(BLed, HIGH);
-  }
-  delay(delayVal);
-  digitalWrite(tickLed, LOW);
-  digitalWrite(RLed, LOW);
-  digitalWrite(GLed, LOW);
-  digitalWrite(BLed, LOW);
-  delay(delayVal);
-}
-
-void setLedsTestPattern(unsigned long currentMillis) {
-  unsigned long currentSec = currentMillis / 1000;
-  byte phase = currentSec % 4;
-  digitalWrite(tickLed, LOW);
-  digitalWrite(RLed, LOW);
-  digitalWrite(GLed, LOW);
-  digitalWrite(BLed, LOW);
-
-  if (phase == 0) {
-    digitalWrite(tickLed, HIGH);
-  }
-  
-  if (phase == 1) {
-    digitalWrite(RLed, HIGH);
-  }
-  
-  if (phase == 2) {
-    digitalWrite(GLed, HIGH);
-  }
-  
-  if (phase == 3) {
-    digitalWrite(BLed, HIGH);
-  }
 }
 
 //**********************************************************************************
@@ -992,16 +1174,6 @@ void loop()
 {
   nowMillis = millis();
 
-#ifdef TEST_ROLLOVER
-  if (millisNotSet) {
-    if (nowMillis > 60000) {
-      unsigned long newMillis = 4294847296; // 120 secs before rollover
-      setMillis(newMillis);
-      millisNotSet = false;
-    }
-  }
-#endif
-
   // shows us how fast the loop is running
   impressionsPerSec++;
 
@@ -1012,8 +1184,14 @@ void loop()
   if (abs(nowMillis - lastCheckMillis) >= 1000) {
     performOncePerSecondProcessing();
 
-    if (second() == 0) {
+    // we only want to once per minute processing to be called once each minute 
+    if ((second() == 0) && (!triggeredThisSec)) {
       performOncePerMinuteProcessing();
+      triggeredThisSec = true;
+    }
+
+    if ((second() == 1) && triggeredThisSec) {
+      triggeredThisSec = false;
     }
 
     lastCheckMillis = nowMillis;
@@ -1053,7 +1231,7 @@ void loop()
     saveEEPROMValues();
 
     // Preset the display
-    allfadeOrNormal();
+    allFadeOrNormal();
 
     nextMode = currentMode;
   } else if (button1.isButtonPressedReleased1S()) {
@@ -1066,7 +1244,7 @@ void loop()
       saveEEPROMValues();
 
       // Preset the display
-      allfadeOrNormal();
+      allFadeOrNormal();
     }
 
     nextMode = currentMode;
@@ -1171,7 +1349,7 @@ void performOncePerSecondProcessing() {
     }
   } else {
     blanked = false;
-  }          
+  }
   setTubesAndLEDSBlankMode();
 }
 
@@ -1285,7 +1463,7 @@ void setNextMode() {
   switch (nextMode) {
     case MODE_TIME: {
         loadNumberArrayTime();
-        allfadeOrNormal();
+        allFadeOrNormal();
         break;
       }
     case MODE_HOURS_SET: {
@@ -1595,19 +1773,31 @@ void processCurrentMode() {
             }
           }
 
-          allfadeOrNormal();
+          allFadeOrNormal();
 
         } else {
           if (acpOffset > 0) {
             loadNumberArrayACP();
             allBright();
           } else {
-            // Normal time loaded here!!!
-            loadNumberArrayTime();
-            allfadeOrNormal();
+            if (second() == 50) {
+              transition.start(nowMillis);
+              loadNumberArrayDate();
+              transition.setAlternateValues();
+              loadNumberArrayTime();
+              transition.setRegularValues();
+            }
 
-            // Apply leading blanking
-            applyBlanking();
+            // set up the display
+            boolean msgDisplaying = transition.scrollInScrambleOut(nowMillis);
+            if (!msgDisplaying) {
+              loadNumberArrayTime();
+
+              allFadeOrNormal();
+
+              // Apply leading blanking
+              applyBlanking();
+            }
           }
         }
         break;
@@ -2468,7 +2658,7 @@ void applyBlanking() {
 // ************************************************************
 // Display preset
 // ************************************************************
-void allfadeOrNormal() {
+void allFadeOrNormal() {
   if (fade) {
     allFade();
   } else {
@@ -2767,7 +2957,7 @@ void incYears() {
 boolean checkBlanking() {
   // Check day blanking, but only when we are in
   // normal time mode
-  if ((second() == 0) && (currentMode == MODE_TIME)) {
+  if (currentMode == MODE_TIME) {
     switch (dayBlanking) {
       case DAY_BLANKING_NEVER:
         return false;
@@ -2839,6 +3029,49 @@ void setTubesAndLEDSBlankMode() {
   }
 }
 
+void randomRGBFlash(int delayVal) {
+  digitalWrite(tickLed, HIGH);
+  if (random(3) == 0) {
+    digitalWrite(RLed, HIGH);
+  }
+  if (random(3) == 0) {
+    digitalWrite(GLed, HIGH);
+  }
+  if (random(3) == 0) {
+    digitalWrite(BLed, HIGH);
+  }
+  delay(delayVal);
+  digitalWrite(tickLed, LOW);
+  digitalWrite(RLed, LOW);
+  digitalWrite(GLed, LOW);
+  digitalWrite(BLed, LOW);
+  delay(delayVal);
+}
+
+void setLedsTestPattern(unsigned long currentMillis) {
+  unsigned long currentSec = currentMillis / 1000;
+  byte phase = currentSec % 4;
+  digitalWrite(tickLed, LOW);
+  digitalWrite(RLed, LOW);
+  digitalWrite(GLed, LOW);
+  digitalWrite(BLed, LOW);
+
+  if (phase == 0) {
+    digitalWrite(tickLed, HIGH);
+  }
+  
+  if (phase == 1) {
+    digitalWrite(RLed, HIGH);
+  }
+  
+  if (phase == 2) {
+    digitalWrite(GLed, HIGH);
+  }
+  
+  if (phase == 3) {
+    digitalWrite(BLed, HIGH);
+  }
+}
 
 //**********************************************************************************
 //**********************************************************************************
@@ -2897,22 +3130,6 @@ float getRTCTemp() {
     return 0.0;
   }
 }
-
-//**********************************************************************************
-//**********************************************************************************
-//*                           Internal Time Provider                               *
-//**********************************************************************************
-//**********************************************************************************
-
-#ifdef TEST_ROLLOVER
-extern volatile unsigned long timer0_millis;
-void setMillis(unsigned long new_millis){
-  uint8_t oldSREG = SREG;
-  cli();
-  timer0_millis = new_millis;
-  SREG = oldSREG;
-}
-#endif
 
 //**********************************************************************************
 //**********************************************************************************
@@ -3000,16 +3217,6 @@ void readEEPROMValues() {
   sensorSmoothCountLDR = EEPROM.read(EE_DIM_SMOOTH_SPEED);
   if ((sensorSmoothCountLDR < SENSOR_SMOOTH_READINGS_MIN) || (sensorSmoothCountLDR > SENSOR_SMOOTH_READINGS_MAX)) {
     sensorSmoothCountLDR = SENSOR_SMOOTH_READINGS_DEFAULT;
-  }
-
-  dateFormat = EEPROM.read(EE_DATE_FORMAT);
-  if ((dateFormat < DATE_FORMAT_MIN) || (dateFormat > DATE_FORMAT_MAX)) {
-    dateFormat = DATE_FORMAT_DEFAULT;
-  }
-
-  dayBlanking = EEPROM.read(EE_DAY_BLANKING);
-  if ((dayBlanking < DAY_BLANKING_MIN) || (dayBlanking > DAY_BLANKING_MAX)) {
-    dayBlanking = DAY_BLANKING_DEFAULT;
   }
 
   backlightMode = EEPROM.read(EE_BACKLIGHT_MODE);
