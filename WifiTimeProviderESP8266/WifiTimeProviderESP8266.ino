@@ -938,7 +938,7 @@ void clockConfigPageHandler()
   //response_message += getCheckBox("suppressACP", "on", "Suppress ACP when fully dimmed", (configSuppressACP == 1));
 
   // LDR
-  response_message += getRadioGroupHeader("Suppress LDR:");
+  response_message += getRadioGroupHeader("Use LDR:");
   if (configSuppressACP) {
     response_message += getRadioButton("useLDR", "On", "on", true);
     response_message += getRadioButton("useLDR", "Off", "off", false);
