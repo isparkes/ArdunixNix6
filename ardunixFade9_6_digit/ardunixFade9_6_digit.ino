@@ -778,7 +778,7 @@ int pwmOn = PWM_PULSE_DEFAULT;
 
 // All-In-One Rev1 has a mix up in the tube wiring. All other clocks are 
 // correct.
-#define AIO_REV1 // [AIO_REV1,NOT_AIO_REV1]
+#define NOT_AIO_REV1 // [AIO_REV1,NOT_AIO_REV1]
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
