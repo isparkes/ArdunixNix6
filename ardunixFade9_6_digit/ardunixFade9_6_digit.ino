@@ -61,8 +61,7 @@
 #define EE_NEED_SETUP       33     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
 #define EE_USE_LDR          34     // if we use the LDR or not (if we don't use the LDR, it has 100% brightness
 #define EE_BLANK_MODE       35     // blank tubes, or LEDs or both
-#define EE_DATE_SLOTS       36     // Show date every now and again
-
+#define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
 #define SOFTWARE_VERSION 48
@@ -173,36 +172,37 @@
 #define MODE_FADE_STEPS_DOWN            19 // Mode "12"
 #define MODE_DISPLAY_SCROLL_STEPS_UP    20 // Mode "13"
 #define MODE_DISPLAY_SCROLL_STEPS_DOWN  21 // Mode "14"
+#define MODE_SLOTS_MODE                 22 // Mode "15"
 
 // Back light
-#define MODE_BACKLIGHT_MODE             22 // Mode "15"
-#define MODE_RED_CNL                    23 // Mode "16"
-#define MODE_GRN_CNL                    24 // Mode "17"
-#define MODE_BLU_CNL                    25 // Mode "18"
-#define MODE_CYCLE_SPEED                26 // Mode "19" - speed the colour cycle cyles at
+#define MODE_BACKLIGHT_MODE             23 // Mode "16"
+#define MODE_RED_CNL                    24 // Mode "17"
+#define MODE_GRN_CNL                    25 // Mode "18"
+#define MODE_BLU_CNL                    26 // Mode "19"
+#define MODE_CYCLE_SPEED                27 // Mode "20" - speed the colour cycle cyles at
 
 // HV generation
-#define MODE_TARGET_HV_UP               27 // Mode "20"
-#define MODE_TARGET_HV_DOWN             28 // Mode "21"
-#define MODE_PULSE_UP                   29 // Mode "22"
-#define MODE_PULSE_DOWN                 30 // Mode "23"
+#define MODE_TARGET_HV_UP               28 // Mode "21"
+#define MODE_TARGET_HV_DOWN             29 // Mode "22"
+#define MODE_PULSE_UP                   30 // Mode "23"
+#define MODE_PULSE_DOWN                 31 // Mode "24"
 
-#define MODE_MIN_DIM_UP                 31 // Mode "24"
-#define MODE_MIN_DIM_DOWN               32 // Mode "25"
+#define MODE_MIN_DIM_UP                 32 // Mode "25"
+#define MODE_MIN_DIM_DOWN               33 // Mode "26"
 
-#define MODE_ANTI_GHOST_UP              33 // Mode "26"
-#define MODE_ANTI_GHOST_DOWN            34 // Mode "27"
+#define MODE_ANTI_GHOST_UP              34 // Mode "27"
+#define MODE_ANTI_GHOST_DOWN            35 // Mode "28"
 
 // Temperature
-#define MODE_TEMP                       35 // Mode "28"
+#define MODE_TEMP                       36 // Mode "29"
 
 // Software Version
-#define MODE_VERSION                    36 // Mode "29"
+#define MODE_VERSION                    37 // Mode "30"
 
 // Tube test - all six digits, so no flashing mode indicator
-#define MODE_TUBE_TEST                  37
+#define MODE_TUBE_TEST                  38
 
-#define MODE_MAX                        37
+#define MODE_MAX                        38
 
 // Pseudo mode - burn the tubes and nothing else
 #define MODE_DIGIT_BURN                 99 // Digit burn mode - accesible by super long press
@@ -267,10 +267,11 @@
 
 #define USE_LDR_DEFAULT                 true
 
-#define SLOTS_MIN                       0
-#define SLOTS_NONE                      0   // Don't use slots effect
-#define SLOTS_1M                        1   // use slots effect every minute
-#define SLOTS_MAX                       1
+#define SLOTS_MODE_MIN                0
+#define SLOTS_MODE_NONE               0   // Don't use slots effect
+#define SLOTS_MODE_1M_SCR_SCR         1   // use slots effect every minute, scroll in, scramble out
+#define SLOTS_MODE_MAX                1
+#define SLOTS_MODE_DEFAULT            1
 
 // I2C Interface definition
 #define I2C_SLAVE_ADDR                0x68
@@ -295,6 +296,7 @@
 #define I2C_SET_OPTION_FADE           0x12
 #define I2C_SET_OPTION_USE_LDR        0x13
 #define I2C_SET_OPTION_BLANK_MODE     0x14
+#define I2C_SET_OPTION_SLOTS_MODE     0x15
 
 
 //**********************************************************************************
@@ -375,6 +377,18 @@ struct Transition {
     // else we are already running!
   }
 
+  boolean isMessageOnDisplay(unsigned long now)
+  {
+    return (now < end);
+  }
+
+  // we need to get the seconds updated, otherwise we show the old
+  // time at the end of the stunt
+  void updateRegularDisplaySeconds() {
+    regularDisplay[5] = second() % 10;
+    regularDisplay[4] = second() / 10;
+  }
+
   boolean scrollMsg(unsigned long now)
   {
     if (now < end) {
@@ -449,10 +463,8 @@ struct Transition {
         loadRegularValues();
         scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
       }
-
       return true;  // we are still running
     }
-
     return false;   // We aren't running
   }
 
@@ -766,7 +778,7 @@ int pwmOn = PWM_PULSE_DEFAULT;
 
 // All-In-One Rev1 has a mix up in the tube wiring. All other clocks are 
 // correct.
-#define NOT_AIO_REV1 // [AIO_REV1,NOT_AIO_REV1]
+#define AIO_REV1 // [AIO_REV1,NOT_AIO_REV1]
 
 // Used for special mappings of the 74141 -> digit (wiring aid)
 // allows the board wiring to be much simpler
@@ -822,6 +834,7 @@ int  tempDisplayMode;
 int acpOffset = 0;        // Used to provide one arm bandit scolling
 int acpTick = 0;          // The number of counts before we scroll
 boolean suppressACP = false;
+byte slotsMode = SLOTS_MODE_DEFAULT;
 
 byte currentMode = MODE_TIME;   // Initial cold start mode
 byte nextMode = currentMode;
@@ -1071,15 +1084,15 @@ void setup()
 
     // turn off Scrollback
     scrollback = false;
-    
+
     // All the digits on full
     allBright();
 
     int secCount = 0;
     lastCheckMillis = millis();
-    
+
     boolean inLoop = true;
-    
+
     while (inLoop) {
       nowMillis = millis();
       if (nowMillis - lastCheckMillis > 1000) {
@@ -1096,13 +1109,13 @@ void setup()
         inLoop = false;
       }
     }
-    
+
     useLDR = oldUseLDR;
   }
 
   // reset the LEDs
   setLedsTestPattern(0);
-      
+
   // Set up the HVG if we need to
   if (EEPROM.read(EE_HVG_NEED_CALIB)) {
     calibrateHVG();
@@ -1174,7 +1187,7 @@ void loop()
 {
   nowMillis = millis();
 
-  // shows us how fast the loop is running
+  // shows us how fast the inner loop is running
   impressionsPerSec++;
 
   // We don't want to get the time from the external time provider always,
@@ -1261,8 +1274,8 @@ void loop()
   digitOffCount = getDimmingFromLDR();
   fadeStep = digitOffCount / fadeSteps;
 
+  // One armed bandit trigger every 10th minute
   if ((currentMode != MODE_DIGIT_BURN) && (nextMode != MODE_DIGIT_BURN)) {
-    // One armed bandit trigger every 10th minute
     if (acpOffset == 0) {
       if (((minute() % 10) == 9) && (second() == 15)) {
         // suppress ACP when fully dimmed
@@ -1333,7 +1346,6 @@ void performOncePerSecondProcessing() {
     }
   }
 
-  
   // Get the blanking status, this may be overridden by blanking suppression
   // Only blank if we are in TIME mode
   if (currentMode == MODE_TIME) {
@@ -1374,7 +1386,7 @@ void setLeds()
   } else {
     secsDelta = 1000 - (nowMillis - lastCheckMillis);
   }
-  
+
   // calculate the PWM factor, goes between minDim% and 100%
   float dimFactor = (float) digitOffCount / (float) DIGIT_DISPLAY_OFF;
   float pwmFactor = (float) secsDelta / (float) 1000.0;
@@ -1589,6 +1601,11 @@ void setNextMode() {
         displayConfig();
         break;
       }
+    case MODE_SLOTS_MODE: {
+        loadNumberArrayConfInt(slotsMode, nextMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
     case MODE_BACKLIGHT_MODE: {
         loadNumberArrayConfInt(backlightMode, nextMode - MODE_12_24);
         displayConfig();
@@ -1780,17 +1797,40 @@ void processCurrentMode() {
             loadNumberArrayACP();
             allBright();
           } else {
-            if (second() == 50) {
-              transition.start(nowMillis);
-              loadNumberArrayDate();
-              transition.setAlternateValues();
-              loadNumberArrayTime();
-              transition.setRegularValues();
-            }
+            if (slotsMode > SLOTS_MODE_MIN) {
+              if (second() == 50) {
 
-            // set up the display
-            boolean msgDisplaying = transition.scrollInScrambleOut(nowMillis);
-            if (!msgDisplaying) {
+                // initialise the slots values
+                loadNumberArrayDate();
+                transition.setAlternateValues();
+                loadNumberArrayTime();
+                transition.setRegularValues();
+
+                transition.start(nowMillis);
+              }
+
+              boolean msgDisplaying;
+              switch (slotsMode) {
+                case SLOTS_MODE_1M_SCR_SCR:
+                {
+                  msgDisplaying = transition.scrollInScrambleOut(nowMillis);
+                  break;
+                }
+              }
+
+              if (msgDisplaying) {
+                transition.updateRegularDisplaySeconds();
+              } else {
+                // do normal time thing when we are not in slots
+                loadNumberArrayTime();
+
+                allFadeOrNormal();
+
+                // Apply leading blanking
+                applyBlanking();
+              }
+            } else {
+              // no slots mode, just do normal time thing
               loadNumberArrayTime();
 
               allFadeOrNormal();
@@ -1996,6 +2036,17 @@ void processCurrentMode() {
           }
         }
         loadNumberArrayConfInt(scrollSteps, currentMode - MODE_12_24);
+        displayConfig();
+        break;
+      }
+    case MODE_SLOTS_MODE: {
+        if (button1.isButtonPressedAndReleased()) {
+          slotsMode++;
+          if (slotsMode > SLOTS_MODE_MAX) {
+            slotsMode = SLOTS_MODE_MIN;
+          }
+        }
+        loadNumberArrayConfInt(slotsMode, currentMode - MODE_12_24);
         displayConfig();
         break;
       }
@@ -3172,6 +3223,7 @@ void saveEEPROMValues() {
   EEPROM.write(EE_ANTI_GHOST, antiGhost);
   EEPROM.write(EE_USE_LDR, useLDR);
   EEPROM.write(EE_BLANK_MODE, blankMode);
+  EEPROM.write(EE_SLOTS_MODE, slotsMode);
 }
 
 // ************************************************************
@@ -3287,13 +3339,19 @@ void readEEPROMValues() {
     antiGhost = ANTI_GHOST_DEFAULT;
   }
   dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
-  
+
   blankMode= EEPROM.read(EE_BLANK_MODE);
   if ((blankMode < BLANK_MODE_MIN) || (blankMode > BLANK_MODE_MAX)) {
     blankMode = BLANK_MODE_DEFAULT;
   }
 
   useLDR = EEPROM.read(EE_USE_LDR);
+
+  slotsMode= EEPROM.read(EE_SLOTS_MODE);
+  if ((slotsMode < SLOTS_MODE_MIN) || (slotsMode > SLOTS_MODE_MAX)) {
+    slotsMode = SLOTS_MODE_DEFAULT;
+  }
+
 }
 
 // ************************************************************
@@ -3328,6 +3386,7 @@ void factoryReset() {
   antiGhost = ANTI_GHOST_DEFAULT;
   useLDR = USE_LDR_DEFAULT;
   blankMode = BLANK_MODE_DEFAULT;
+  slotsMode = SLOTS_MODE_DEFAULT;
 
   saveEEPROMValues();
 }
@@ -3670,6 +3729,9 @@ void receiveEvent(int bytes) {
   } else if (operation == I2C_SET_OPTION_BLANK_MODE) {
     blankMode = Wire.read();
     EEPROM.write(EE_BLANK_MODE, blankMode);
+  } else if (operation == I2C_SET_OPTION_SLOTS_MODE) {
+    slotsMode = Wire.read();
+    EEPROM.write(EE_SLOTS_MODE, slotsMode);
   }
 }
 
@@ -3677,7 +3739,7 @@ void receiveEvent(int bytes) {
    send information to the master
 */
 void requestEvent() {
-  byte configArray[19];
+  byte configArray[20];
   int idx = 0;
   configArray[idx++] = 48;  // protocol version
   configArray[idx++] = encodeBooleanForI2C(hourMode);
@@ -3698,8 +3760,9 @@ void requestEvent() {
   configArray[idx++] = cycleSpeed;
   configArray[idx++] = encodeBooleanForI2C(useLDR);
   configArray[idx++] = blankMode;
+  configArray[idx++] = slotsMode;
 
-  Wire.write(configArray, 19);
+  Wire.write(configArray, 20);
 }
 
 byte encodeBooleanForI2C(boolean valueToProcess) {
