@@ -18,7 +18,8 @@
 #include <EEPROM.h>
 #include <time.h>
   
-#define SOFTWARE_VERSION "1.0.4"
+#define SOFTWARE_VERSION "1.0.5"
+#define DEFAULT_TIME_SERVER_URL "http://time-zone-server.scapp.io/getTime/Europe/Zurich"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
 
@@ -34,7 +35,8 @@ const char *serialNumber = "0x0x0x";  // this is to be customized at burn time
 boolean blueLedState = true;
 
 // used for flashing the blue LED
-int blinkTime;
+int blinkOnTime = 1000;
+int blinkTopTime = 2000;
 unsigned long lastMillis = 0;
 
 // Timer for how often we send the I2C data
@@ -64,6 +66,10 @@ ADC_MODE(ADC_VCC);
 #define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
 #define I2C_SET_OPTION_CYCLE_SPEED    0x10
 #define I2C_SHOW_IP_ADDR              0x11
+#define I2C_SET_OPTION_FADE           0x12
+#define I2C_SET_OPTION_USE_LDR        0x13
+#define I2C_SET_OPTION_BLANK_MODE     0x14
+#define I2C_SET_OPTION_SLOTS_MODE     0x15
 
 // Clock config
 byte configHourMode;
@@ -81,6 +87,10 @@ byte configRedCnl;
 byte configGreenCnl;
 byte configBlueCnl;
 byte configCycleSpeed;
+byte configUseFade;
+byte configUseLDR;
+byte configBlankMode;
+byte configSlotsMode;
 
 ESP8266WebServer server(80);
 
@@ -105,8 +115,16 @@ void setup()
   String epass = getPasswordFromEEPROM();
   timeServerURL = getTimeServerURLFromEEPROM();
 
-  // Try to connect
-  boolean wlanConnected = connectToWLAN(esid.c_str(), epass.c_str());
+  // Try to connect, if we have valid credentials
+  boolean wlanConnected = false;
+  if (esid.length() > 0) {
+#ifdef DEBUG
+    Serial.print("found esid: ");
+    Serial.println(esid);
+    Serial.println("Trying to connect");
+#endif
+    wlanConnected = connectToWLAN(esid.c_str(), epass.c_str());
+  }
 
   // If we can't connect, fall back into AP mode
   if (wlanConnected) {
@@ -184,11 +202,19 @@ void loop()
       if (!timeStr.startsWith("ERROR:")) {
         sendTimeToI2C(timeStr);
         
-        // all OK, flash 1 second
-        blinkTime = 1000;
+        // all OK, flash 10 millisecond per second
+        blinkOnTime = 10;
+        blinkTopTime = 2000;
+#ifdef DEBUG
+        Serial.println("Normal time serve mode");
+#endif
       } else {
         // connected, but time server not found, flash middle speed
-        blinkTime = 500;
+        blinkOnTime = 250;
+        blinkTopTime = 500;
+#ifdef DEBUG
+        Serial.println("Connected, but no time server found");
+#endif
       }
 
       // Allow the IP to be displayed on the clock
@@ -198,16 +224,25 @@ void loop()
     }
   } else {
     // offline, flash fast
-    blinkTime = 100;
-  }
-  
-  if ((millis() - lastMillis) > blinkTime) {
-    lastMillis = millis();
-#ifndef DEBUG
-    toggleBlueLED();
+    blinkOnTime = 100;
+    blinkTopTime = 200;
+#ifdef DEBUG
+    Serial.println("Offline");
 #endif
   }
-
+  
+  if (((millis() - lastMillis) > blinkTopTime) && blueLedState) {
+    lastMillis = millis();
+    blueLedState = false;
+#ifndef DEBUG
+    setBlueLED(blueLedState);
+#endif
+  } else if (((millis() - lastMillis) > blinkOnTime) && !blueLedState) {
+    blueLedState = true;
+#ifndef DEBUG
+    setBlueLED(blueLedState);
+#endif    
+  }
 }
 
 // ----------------------------------------------------------------------------------------------------
@@ -595,6 +630,50 @@ void clockConfigPageHandler()
 
   // -----------------------------------------------------------------------------
 
+  if (server.hasArg("useFade"))
+  {
+#ifdef DEBUG
+    Serial.print("Got useFade param: "); Serial.println(server.arg("useFade"));
+#endif
+    if ((server.arg("useFade") == "on") && (!configUseFade)) {
+#ifdef DEBUG
+      Serial.println("I2C --> Set useFade on");
+#endif
+      setClockOptionUseFade(false);
+    }
+
+    if ((server.arg("useFade") == "off") && (configUseFade)) {
+#ifdef DEBUG
+      Serial.println("I2C --> Set useFade off");
+#endif
+      setClockOptionUseFade(true);
+    }
+  }
+
+  // -----------------------------------------------------------------------------
+
+  if (server.hasArg("useLDR"))
+  {
+#ifdef DEBUG
+    Serial.print("Got useLDR param: "); Serial.println(server.arg("useLDR"));
+#endif
+    if ((server.arg("useLDR") == "on") && (!configUseLDR)) {
+#ifdef DEBUG
+      Serial.println("I2C --> Set useLDR on");
+#endif
+      setClockOptionUseLDR(false);
+    }
+
+    if ((server.arg("useLDR") == "off") && (configUseLDR)) {
+#ifdef DEBUG
+      Serial.println("I2C --> Set useLDR off");
+#endif
+      setClockOptionUseLDR(true);
+    }
+  }
+
+  // -----------------------------------------------------------------------------
+
   if (server.hasArg("dateFormat")) {
 #ifdef DEBUG
     Serial.print("Got dateFormat param: "); Serial.println(server.arg("dateFormat"));
@@ -760,6 +839,36 @@ void clockConfigPageHandler()
 
   // -----------------------------------------------------------------------------
 
+  if (server.hasArg("blankMode")) {
+#ifdef DEBUG
+    Serial.print("Got blankMode param: "); Serial.println(server.arg("blankMode"));
+#endif
+    byte newBlankMode = atoi(server.arg("blankMode").c_str());
+    if (newBlankMode != configBlankMode) {
+      setClockOptionBlankMode(newBlankMode);
+#ifdef DEBUG
+      Serial.print("I2C --> Set blankMode: "); Serial.println(newBlankMode);
+#endif
+    }
+  }
+
+  // -----------------------------------------------------------------------------
+
+  if (server.hasArg("slotsMode")) {
+#ifdef DEBUG
+    Serial.print("Got slotsMode param: "); Serial.println(server.arg("slotsMode"));
+#endif
+    byte newSlotsMode = atoi(server.arg("slotsMode").c_str());
+    if (newSlotsMode != configSlotsMode) {
+      setClockOptionSlotsMode(newSlotsMode);
+#ifdef DEBUG
+      Serial.print("I2C --> Set slotsMode: "); Serial.println(newSlotsMode);
+#endif
+    }
+  }
+
+  // -----------------------------------------------------------------------------
+
   // Get the options, put the result into variables called "config*"
   getClockOptionsFromI2C();
 
@@ -804,6 +913,18 @@ void clockConfigPageHandler()
   response_message += getRadioGroupFooter();
   //response_message += getCheckBox("useScrollback", "on", "Use scrollback effect", (configScrollback == 1));
 
+  // fade
+  response_message += getRadioGroupHeader("Fade effect:");
+  if (configScrollback) {
+    response_message += getRadioButton("useFade", "On", "on", true);
+    response_message += getRadioButton("useFade", "Off", "off", false);
+  } else {
+    response_message += getRadioButton("useFade", "On", "on", false);
+    response_message += getRadioButton("useFade", "Off", "off", true);
+  }
+  response_message += getRadioGroupFooter();
+  //response_message += getCheckBox("useFade", "on", "Use fade effect", (configUseFade == 1));
+
   // Suppress ACP
   response_message += getRadioGroupHeader("Suppress ACP when dimmed:");
   if (configSuppressACP) {
@@ -815,6 +936,18 @@ void clockConfigPageHandler()
   }
   response_message += getRadioGroupFooter();
   //response_message += getCheckBox("suppressACP", "on", "Suppress ACP when fully dimmed", (configSuppressACP == 1));
+
+  // LDR
+  response_message += getRadioGroupHeader("Suppress LDR:");
+  if (configSuppressACP) {
+    response_message += getRadioButton("useLDR", "On", "on", true);
+    response_message += getRadioButton("useLDR", "Off", "off", false);
+  } else {
+    response_message += getRadioButton("useLDR", "On", "on", false);
+    response_message += getRadioButton("useLDR", "Off", "off", true);
+  }
+  response_message += getRadioGroupFooter();
+  //response_message += getCheckBox("useLDR", "on", "Use LDR for dimming", (useLDR == 1));
 
   // Date format
   response_message += getDropDownHeader("Date format:", "dateFormat", false);
@@ -836,6 +969,13 @@ void clockConfigPageHandler()
   response_message += getDropDownOption("8", "Blank during selected hours on week days only", (configDayBlanking == 8));
   response_message += getDropDownFooter();
 
+  // Blank Mode
+  response_message += getDropDownHeader("Blank Mode:", "blankMode", true);
+  response_message += getDropDownOption("0", "Blank tubes only", (configBlankMode == 0));
+  response_message += getDropDownOption("1", "Blank LEDs only", (configBlankMode == 1));
+  response_message += getDropDownOption("2", "Blank tubes and LEDs", (configBlankMode == 2));
+  response_message += getDropDownFooter();
+  
   boolean hoursDisabled = (configDayBlanking < 4);
 
   // Blank hours from
@@ -865,8 +1005,14 @@ void clockConfigPageHandler()
   response_message += getNumberInput("Green intensity:", "grnCnl", 0, 15, configGreenCnl, false);
   response_message += getNumberInput("Blue intensity:", "bluCnl", 0, 15, configBlueCnl, false);
 
-  // Cycle peed
+  // Cycle speed
   response_message += getNumberInput("Backlight Cycle Speed:", "cycleSpeed", 2, 64, configCycleSpeed, false);
+
+  // Slots Mode
+  response_message += getDropDownHeader("Date Slots:", "slotsMode", true);
+  response_message += getDropDownOption("0", "Don't use slots mode", (configSlotsMode == 0));
+  response_message += getDropDownOption("1", "Scroll In, Scramble Out", (configSlotsMode == 1));
+  response_message += getDropDownFooter();
 
   // form footer
   response_message += getSubmitButton("Set");
@@ -1092,6 +1238,14 @@ String getTimeServerURLFromEEPROM() {
   Serial.println(eurl.length());
 #endif
 
+  if (eurl.length() == 0) {
+#ifdef DEBUG
+    Serial.println("Recovered blank time server URL: ");
+    Serial.println("Returning default time server URL");
+#endif
+    eurl = DEFAULT_TIME_SERVER_URL;
+  }
+
   return eurl;
 }
 
@@ -1117,24 +1271,28 @@ void storeTimeServerURLInEEPROM(String timeServerURL) {
 }
 
 void resetEEPROM() {
-  for (int i = 0; i < 344; i++)
-  {
-    EEPROM.write(i, 0);
-  }
+  wipeEEPROM();
+  storeTimeServerURLInEEPROM(DEFAULT_TIME_SERVER_URL);
+  storeCredentialsInEEPROM("","");
+}
 
+void wipeEEPROM() {
+  for (int i = 0; i < 344; i++) {EEPROM.write(i, 0);}
   EEPROM.commit();
 }
+
 
 // ----------------------------------------------------------------------------------------------------
 // ----------------------------------------- Utility functions ----------------------------------------
 // ----------------------------------------------------------------------------------------------------
 
-/**
-   Switch the state of the blue LED and send it to the GPIO. Used in normal "heartbeat" processing and to show processing.
-*/
 void toggleBlueLED() {
   blueLedState = ! blueLedState;
   digitalWrite(blueLedPin, blueLedState);
+}
+
+void setBlueLED(boolean newState) {
+  digitalWrite(blueLedPin, newState);
 }
 
 /**
@@ -1202,15 +1360,29 @@ boolean sendTimeToI2C(String timeString) {
    Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean getClockOptionsFromI2C() {
-  int available = Wire.requestFrom(I2C_SLAVE_ADDR, 16);
+  int available = Wire.requestFrom(I2C_SLAVE_ADDR, 20);
 
 #ifdef DEBUG
   Serial.print("I2C <-- Received bytes: ");
   Serial.println(available);
 #endif
-  if (available == 16) {
+  if (available == 20) {
 
     byte receivedByte = Wire.read();
+#ifdef DEBUG
+    Serial.print("I2C <-- Got protocol header: ");
+    Serial.println(receivedByte);
+#endif
+
+    if (receivedByte != 48) {
+#ifdef DEBUG
+      Serial.print("I2C Protocol ERROR! Expected header 48, but got: ");
+      Serial.println(receivedByte);
+#endif
+      return false;
+    }
+    
+    receivedByte = Wire.read();
 #ifdef DEBUG
     Serial.print("I2C <-- Got hour mode: ");
     Serial.println(receivedByte);
@@ -1237,6 +1409,13 @@ boolean getClockOptionsFromI2C() {
     Serial.println(receivedByte);
 #endif
     configSuppressACP = receivedByte;
+
+    receivedByte = Wire.read();
+#ifdef DEBUG
+    Serial.print("I2C <-- Got useFade: ");
+    Serial.println(receivedByte);
+#endif
+    configUseFade = receivedByte;
 
     receivedByte = Wire.read();
 #ifdef DEBUG
@@ -1317,10 +1496,33 @@ boolean getClockOptionsFromI2C() {
 
     receivedByte = Wire.read();
 #ifdef DEBUG
-    Serial.print("I2C <-- Got trailer: ");
+    Serial.print("I2C <-- Got useLDR: ");
     Serial.println(receivedByte);
 #endif
+    configUseLDR = receivedByte;
+
+    receivedByte = Wire.read();
+#ifdef DEBUG
+    Serial.print("I2C <-- Got blankMode: ");
+    Serial.println(receivedByte);
+#endif
+    configBlankMode = receivedByte;
+
+    receivedByte = Wire.read();
+#ifdef DEBUG
+    Serial.print("I2C <-- Got slotsMode: ");
+    Serial.println(receivedByte);
+#endif
+    configSlotsMode = receivedByte;
+
+  } else {
+    // didn't get the right number of bytes
+#ifdef DEBUG
+    Serial.print("I2C <-- Got wrong number of bytes, expected 20, got: ");
+    Serial.println(available);
+#endif
   }
+  
   int error = Wire.endTransmission();
   return (error == 0);
 }
@@ -1366,6 +1568,14 @@ boolean setClockOptionSuppressACP(boolean newMode) {
   return setClockOptionBoolean(I2C_SET_OPTION_SUPPRESS_ACP, newMode);
 }
 
+boolean setClockOptionUseFade(boolean newMode) {
+  return setClockOptionBoolean(I2C_SET_OPTION_FADE, newMode);
+}
+
+boolean setClockOptionUseLDR(boolean newMode) {
+  return setClockOptionBoolean(I2C_SET_OPTION_USE_LDR, newMode);
+}
+
 boolean setClockOptionDateFormat(byte newMode) {
   return setClockOptionByte(I2C_SET_OPTION_DATE_FORMAT, newMode);
 }
@@ -1408,6 +1618,14 @@ boolean setClockOptionBluCnl(byte newMode) {
 
 boolean setClockOptionCycleSpeed(byte newMode) {
   return setClockOptionByte(I2C_SET_OPTION_CYCLE_SPEED, newMode);
+}
+
+boolean setClockOptionBlankMode(byte newMode) {
+  return setClockOptionByte(I2C_SET_OPTION_BLANK_MODE, newMode);
+}
+
+boolean setClockOptionSlotsMode(byte newMode) {
+  return setClockOptionByte(I2C_SET_OPTION_SLOTS_MODE, newMode);
 }
 
 /**
