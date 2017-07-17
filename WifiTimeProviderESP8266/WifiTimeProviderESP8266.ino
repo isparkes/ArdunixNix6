@@ -939,7 +939,7 @@ void clockConfigPageHandler()
 
   // LDR
   response_message += getRadioGroupHeader("Use LDR:");
-  if (configSuppressACP) {
+  if (configUseLDR) {
     response_message += getRadioButton("useLDR", "On", "on", true);
     response_message += getRadioButton("useLDR", "Off", "off", false);
   } else {
