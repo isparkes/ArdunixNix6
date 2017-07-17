@@ -3725,7 +3725,7 @@ void receiveEvent(int bytes) {
   } else if (operation == I2C_SET_OPTION_USE_LDR) {
     byte readByteUseLDR = Wire.read();
     useLDR = (readByteUseLDR == 1);
-    EEPROM.write(EE_FADE, useLDR);
+    EEPROM.write(EE_USE_LDR, useLDR);
   } else if (operation == I2C_SET_OPTION_BLANK_MODE) {
     blankMode = Wire.read();
     EEPROM.write(EE_BLANK_MODE, blankMode);
