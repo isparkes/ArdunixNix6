@@ -915,7 +915,7 @@ void clockConfigPageHandler()
 
   // fade
   response_message += getRadioGroupHeader("Fade effect:");
-  if (configScrollback) {
+  if (configUseFade) {
     response_message += getRadioButton("useFade", "On", "on", true);
     response_message += getRadioButton("useFade", "Off", "off", false);
   } else {
