@@ -18,7 +18,7 @@
 #include <EEPROM.h>
 #include <time.h>
   
-#define SOFTWARE_VERSION "1.0.5"
+#define SOFTWARE_VERSION "1.0.6"
 #define DEFAULT_TIME_SERVER_URL "http://time-zone-server.scapp.io/getTime/Europe/Zurich"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
@@ -985,7 +985,7 @@ void clockConfigPageHandler()
   response_message += getNumberInput("Blank to:", "blankTo", 0, 23, configBlankTo, hoursDisabled);
 
   // Fade steps
-  response_message += getNumberInput("Fade steps:", "fadeSteps", 50, 200, configFadeSteps, false);
+  response_message += getNumberInput("Fade steps:", "fadeSteps", 20, 200, configFadeSteps, false);
 
   // Scroll steps
   response_message += getNumberInput("Scroll steps:", "scrollSteps", 1, 40, configScrollSteps, false);
