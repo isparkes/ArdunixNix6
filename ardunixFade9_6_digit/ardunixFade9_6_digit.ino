@@ -319,11 +319,11 @@
 #define ledPin_a_5  1     //      - Secs  tens  // package pin 3  // PD1
 #define ledPin_a_4  2     //      - Mins  units // package pin 4  // PD2
 #define ledPin_a_3  4     //      - Mins  tens  // package pin 6  // PD4
-#define ledPin_a_2  A2    //      - Hours units // package pin 25 // PC2
+#define ledPin_a_2  7    //       - Hours units // package pin 13 // PD7
 #define ledPin_a_1  A3    // high - Hours tens  // package pin 26 // PC3
 
 // button input
-#define inputPin1   7     // package pin 13 // PD7
+#define inputPin1   A2     // package pin 25 // PC2
 
 // PWM pin used to drive the DC-DC converter
 #define hvDriverPin 9     // package pin 15 // PB1
@@ -2662,7 +2662,7 @@ void outputDisplay()
 void digitOn(int digit, int value) {
   switch (digit) {
     case 0: PORTC = PORTC | B00001000; break; // PC3 - equivalent to digitalWrite(ledPin_a_1,HIGH);
-    case 1: PORTC = PORTC | B00000100; break; // PC2 - equivalent to digitalWrite(ledPin_a_2,HIGH);
+    case 1: PORTD = PORTD | B10000000; break; // PD7 - equivalent to digitalWrite(ledPin_a_2,HIGH);
     case 2: PORTD = PORTD | B00010000; break; // PD4 - equivalent to digitalWrite(ledPin_a_3,HIGH);
     case 3: PORTD = PORTD | B00000100; break; // PD2 - equivalent to digitalWrite(ledPin_a_4,HIGH);
     case 4: PORTD = PORTD | B00000010; break; // PD1 - equivalent to digitalWrite(ledPin_a_5,HIGH);
@@ -2680,8 +2680,8 @@ void digitOff() {
   //digitalWrite(anodePins[digit], LOW);
 
   // turn all digits off - equivalent to digitalWrite(ledPin_a_n,LOW); (n=1,2,3,4,5,6) but much faster
-  PORTC = PORTC & B11110011;
-  PORTD = PORTD & B11101000;
+  PORTC = PORTC & B11110111;
+  PORTD = PORTD & B01101000;
 }
 
 // ************************************************************
