@@ -298,6 +298,10 @@
 #define I2C_SET_OPTION_BLANK_MODE     0x14
 #define I2C_SET_OPTION_SLOTS_MODE     0x15
 
+//Thresholds to establish which button was pressed
+#define GENERAL_BUTTON_THRESHOLD      200
+#define BLANK_BUTTON_THRESHOLD        900
+
 
 //**********************************************************************************
 //**********************************************************************************
@@ -676,25 +680,50 @@ struct Button {
       }
     }
 
+    // ************************************************************
+    // Check if button is pressed for a very long time (> 8) and released
+    // ************************************************************
+    boolean isBlankButtonPressedReleased() {
+      if (blankButtonWasReleased) {
+        blankButtonWasReleased = false;
+        return true;
+      } else {
+        return false;
+      }
+    }
+
   private:
     byte inputPin;
     boolean activeLow;
+    int buttonValue = 1023;
 
     int  button1PressedCount = 0;
     unsigned long button1PressStartMillis = 0;
+
+    int blankButtonPressedCount = 0;
+    
     const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
+    
     boolean buttonWasReleased = false;
+    
     boolean buttonPress8S = false;
     boolean buttonPress2S = false;
     boolean buttonPress1S = false;
     boolean buttonPress = false;
+    
     boolean buttonPressRelease8S = false;
     boolean buttonPressRelease2S = false;
     boolean buttonPressRelease1S = false;
     boolean buttonPressRelease = false;
+    
+    boolean blankButtonPress = false;
+    boolean blankButtonWasReleased = false;
 
     void checkButtonInternal(unsigned long nowMillis) {
-      if (digitalRead(inputPin) == 0) {
+
+      buttonValue = analogRead(inputPin);
+      
+      if (buttonValue < GENERAL_BUTTON_THRESHOLD) {
         buttonWasReleased = false;
 
         // We need consecutive pressed counts to treat this is pressed
@@ -728,6 +757,15 @@ struct Button {
             buttonPress = true;
           }
         }
+      } else if (buttonValue > GENERAL_BUTTON_THRESHOLD && buttonValue < BLANK_BUTTON_THRESHOLD) {
+        blankButtonWasReleased = false;
+        
+        if (blankButtonPressedCount < debounceCounter) {
+          blankButtonPressedCount +=1;
+          if (blankButtonPressedCount == debounceCounter){
+            blankButtonPress = true;
+          }
+        }
       } else {
         // mark this as a press and release if we were pressed for less than a long press
         if (button1PressedCount == debounceCounter) {
@@ -747,6 +785,8 @@ struct Button {
           } else if (buttonPress) {
             buttonPressRelease = true;
           }
+        } else if (blankButtonPressedCount == debounceCounter) {
+          blankButtonWasReleased = true;
         }
 
         // Reset the switch flags debounce counter
@@ -754,7 +794,9 @@ struct Button {
         buttonPress2S = false;
         buttonPress1S = false;
         buttonPress = false;
+        blankButtonPress = false;
         button1PressedCount = 0;
+        blankButtonPressedCount =0;
       }
     }
 
@@ -767,7 +809,10 @@ struct Button {
       buttonPress2S = false;
       buttonPress1S = false;
       buttonPress = false;
+      blankButtonPress = false;
+      blankButtonWasReleased = false;
       button1PressedCount = 0;
+      blankButtonPressedCount = 0;
     }
 };
 
