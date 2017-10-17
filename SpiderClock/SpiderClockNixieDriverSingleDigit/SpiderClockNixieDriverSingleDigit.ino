@@ -34,7 +34,7 @@ const int SENSOR_SMOOTH_READINGS_DEFAULT = 3;    // Speed at which the brighness
 const double SENSOR_RANGE = (double)(SENSOR_HIGH_VALUE - SENSOR_LOW_VALUE);
 
 // Define the digital value we expect when the button is *pressed* 
-const int BUTTON_ACTIVE = 1;                     // 1 = with pull down, 0 = with pull up
+const int BUTTON_ACTIVE = 0;                     // 1 = with pull down, 0 = with pull up
 
 //**********************************************************************************
 //**********************************************************************************
