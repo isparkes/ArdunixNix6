@@ -64,7 +64,7 @@
 #define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 48
+#define SOFTWARE_VERSION 49
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -1244,7 +1244,7 @@ void loop()
     saveEEPROMValues();
 
     // Preset the display
-    allFadeOrNormal();
+    allFadeOrNormal(false);
 
     nextMode = currentMode;
   } else if (button1.isButtonPressedReleased1S()) {
@@ -1257,7 +1257,7 @@ void loop()
       saveEEPROMValues();
 
       // Preset the display
-      allFadeOrNormal();
+      allFadeOrNormal(false);
     }
 
     nextMode = currentMode;
@@ -1475,7 +1475,7 @@ void setNextMode() {
   switch (nextMode) {
     case MODE_TIME: {
         loadNumberArrayTime();
-        allFadeOrNormal();
+        allFadeOrNormal(true);
         break;
       }
     case MODE_HOURS_SET: {
@@ -1790,7 +1790,7 @@ void processCurrentMode() {
             }
           }
 
-          allFadeOrNormal();
+          allFadeOrNormal(false);
 
         } else {
           if (acpOffset > 0) {
@@ -1805,6 +1805,7 @@ void processCurrentMode() {
                 transition.setAlternateValues();
                 loadNumberArrayTime();
                 transition.setRegularValues();
+                allFadeOrNormal(false);
 
                 transition.start(nowMillis);
               }
@@ -1824,19 +1825,13 @@ void processCurrentMode() {
                 // do normal time thing when we are not in slots
                 loadNumberArrayTime();
 
-                allFadeOrNormal();
-
-                // Apply leading blanking
-                applyBlanking();
+                allFadeOrNormal(true);
               }
             } else {
               // no slots mode, just do normal time thing
               loadNumberArrayTime();
 
-              allFadeOrNormal();
-
-              // Apply leading blanking
-              applyBlanking();
+              allFadeOrNormal(true);
             }
           }
         }
@@ -2709,11 +2704,15 @@ void applyBlanking() {
 // ************************************************************
 // Display preset
 // ************************************************************
-void allFadeOrNormal() {
+void allFadeOrNormal(boolean blanking) {
   if (fade) {
     allFade();
   } else {
     allNormal();
+  }
+
+  if (blanking) {
+    applyBlanking();
   }
 }
 
