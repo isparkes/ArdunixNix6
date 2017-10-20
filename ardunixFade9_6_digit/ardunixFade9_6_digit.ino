@@ -1258,6 +1258,8 @@ void loop()
   // Check button, we evaluate below
   button1.checkButton(nowMillis);
 
+  //****************************************************************************************************BLANK BUTTON CHECK HERE**********************//
+
   // ******* Preview the next display mode *******
   // What is previewed here will get actioned when
   // the button is released
