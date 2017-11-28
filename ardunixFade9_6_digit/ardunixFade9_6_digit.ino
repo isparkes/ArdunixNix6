@@ -299,8 +299,18 @@
 #define I2C_SET_OPTION_SLOTS_MODE     0x15
 
 //Thresholds to establish which button was pressed
-#define GENERAL_BUTTON_THRESHOLD      200
-#define BLANK_BUTTON_THRESHOLD        900
+#define BLANK_BUTTON_MIN        100
+#define GENERAL_BUTTON_MIN      220
+#define R_BUTTON_MIN            320
+#define G_BUTTON_MIN            470
+#define B_BUTTON_MIN            600
+#define RGB_BUTTON_MIN          720
+#define BLANK_BUTTON_MAX        160
+#define GENERAL_BUTTON_MAX      280
+#define R_BUTTON_MAX            420
+#define G_BUTTON_MAX            550
+#define B_BUTTON_MAX            680
+#define RGB_BUTTON_MAX          800
 
 
 //**********************************************************************************
@@ -681,11 +691,59 @@ struct Button {
     }
 
     // ************************************************************
-    // Check if button is pressed for a very long time (> 8) and released
+    // Check if blank button is pressed and released
     // ************************************************************
     boolean isBlankButtonPressedReleased() {
       if (blankButtonWasReleased) {
         blankButtonWasReleased = false;
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // ************************************************************
+    // Check if red button is pressed and released
+    // ************************************************************
+    boolean isRButtonPressedReleased() {
+      if (rButtonWasReleased) {
+        rButtonWasReleased = false;
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // ************************************************************
+    // Check if green button is pressed and released
+    // ************************************************************
+    boolean isGButtonPressedReleased() {
+      if (gButtonWasReleased) {
+        gButtonWasReleased = false;
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // ************************************************************
+    // Check if blue button is pressed and released
+    // ************************************************************
+    boolean isBButtonPressedReleased() {
+      if (bButtonWasReleased) {
+        bButtonWasReleased = false;
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // ************************************************************
+    // Check if rgb button is pressed and released
+    // ************************************************************
+    boolean isRGBButtonPressedReleased() {
+      if (rgbButtonWasReleased) {
+        rgbButtonWasReleased = false;
         return true;
       } else {
         return false;
@@ -701,6 +759,10 @@ struct Button {
     unsigned long button1PressStartMillis = 0;
 
     int blankButtonPressedCount = 0;
+    int rButtonPressedCount = 0;
+    int gButtonPressedCount = 0;
+    int bButtonPressedCount = 0;
+    int rgbButtonPressedCount = 0;
     
     const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
     
@@ -719,11 +781,23 @@ struct Button {
     boolean blankButtonPress = false;
     boolean blankButtonWasReleased = false;
 
+    boolean rButtonPress = false;
+    boolean rButtonWasReleased = false;
+
+    boolean gButtonPress = false;
+    boolean gButtonWasReleased = false;
+
+    boolean bButtonPress = false;
+    boolean bButtonWasReleased = false;
+
+    boolean rgbButtonPress = false;
+    boolean rgbButtonWasReleased = false;
+
     void checkButtonInternal(unsigned long nowMillis) {
 
       buttonValue = analogRead(inputPin);
       
-      if (buttonValue < GENERAL_BUTTON_THRESHOLD) {
+      if (buttonValue < (GENERAL_BUTTON_MAX) && buttonValue > (GENERAL_BUTTON_MIN)) {
         buttonWasReleased = false;
 
         // We need consecutive pressed counts to treat this is pressed
@@ -757,7 +831,8 @@ struct Button {
             buttonPress = true;
           }
         }
-      } else if (buttonValue > GENERAL_BUTTON_THRESHOLD && buttonValue < BLANK_BUTTON_THRESHOLD) {
+        
+      } else if (buttonValue < (BLANK_BUTTON_MAX) && buttonValue > (BLANK_BUTTON_MIN)) {
         blankButtonWasReleased = false;
         
         if (blankButtonPressedCount < debounceCounter) {
@@ -766,6 +841,47 @@ struct Button {
             blankButtonPress = true;
           }
         }
+        
+      } else if (buttonValue < (R_BUTTON_MAX) && buttonValue > (R_BUTTON_MIN)) {
+        rButtonWasReleased = false;
+        
+        if (rButtonPressedCount < debounceCounter) {
+          rButtonPressedCount +=1;
+          if (rButtonPressedCount == debounceCounter){
+            rButtonPress = true;
+          }
+        }
+
+      } else if (buttonValue < (G_BUTTON_MAX) && buttonValue > (G_BUTTON_MIN)) {
+        gButtonWasReleased = false;
+        
+        if (gButtonPressedCount < debounceCounter) {
+          gButtonPressedCount +=1;
+          if (gButtonPressedCount == debounceCounter){
+            gButtonPress = true;
+          }
+        }
+
+      } else if (buttonValue < (B_BUTTON_MAX) && buttonValue > (B_BUTTON_MIN)) {
+        bButtonWasReleased = false;
+        
+        if (bButtonPressedCount < debounceCounter) {
+          bButtonPressedCount +=1;
+          if (bButtonPressedCount == debounceCounter){
+            bButtonPress = true;
+          }
+        }
+
+      } else if (buttonValue < (RGB_BUTTON_MAX) && buttonValue > (RGB_BUTTON_MIN)) {
+        rgbButtonWasReleased = false;
+        
+        if (rgbButtonPressedCount < debounceCounter) {
+          rgbButtonPressedCount +=1;
+          if (rgbButtonPressedCount == debounceCounter){
+            rgbButtonPress = true;
+          }
+        }
+        
       } else {
         // mark this as a press and release if we were pressed for less than a long press
         if (button1PressedCount == debounceCounter) {
@@ -787,6 +903,14 @@ struct Button {
           }
         } else if (blankButtonPressedCount == debounceCounter) {
           blankButtonWasReleased = true;
+        } else if (rButtonPressedCount == debounceCounter) {
+          rButtonWasReleased = true;
+        } else if (gButtonPressedCount == debounceCounter) {
+          gButtonWasReleased = true;
+        } else if (bButtonPressedCount == debounceCounter) {
+          bButtonWasReleased = true;
+        } else if (rgbButtonPressedCount == debounceCounter) {
+          rgbButtonWasReleased = true;
         }
 
         // Reset the switch flags debounce counter
@@ -795,8 +919,16 @@ struct Button {
         buttonPress1S = false;
         buttonPress = false;
         blankButtonPress = false;
+        rButtonPress = false;
+        gButtonPress = false;
+        bButtonPress = false;
+        rgbButtonPress = false;
         button1PressedCount = 0;
-        blankButtonPressedCount =0;
+        blankButtonPressedCount = 0;
+        rButtonPressedCount = 0;
+        gButtonPressedCount = 0;
+        bButtonPressedCount = 0;
+        rgbButtonPressedCount = 0;
       }
     }
 
@@ -810,11 +942,26 @@ struct Button {
       buttonPress1S = false;
       buttonPress = false;
       blankButtonPress = false;
+      rButtonPress = false;
+      gButtonPress = false;
+      bButtonPress = false;
+      rgbButtonPress = false;
       blankButtonWasReleased = false;
+      rButtonWasReleased = false;
+      gButtonWasReleased = false;
+      bButtonWasReleased = false;
+      rgbButtonWasReleased = false;
       button1PressedCount = 0;
       blankButtonPressedCount = 0;
+      rButtonPressedCount = 0;
+      gButtonPressedCount = 0;
+      bButtonPressedCount = 0;
+      rgbButtonPressedCount = 0;
     }
 };
+
+// ******************** Manual button override mode ******************
+int manualOverride = 0;
 
 // ********************** HV generator variables *********************
 int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
@@ -994,7 +1141,10 @@ const byte rgb_backlight_curve[] = {0, 16, 32, 48, 64, 80, 99, 112, 128, 144, 16
 //**********************************************************************************
 //**********************************************************************************
 void setup()
-{
+{ 
+  //Delayed start to ensure the input interface is ready
+  delay(100);
+  
   pinMode(ledPin_0_a, OUTPUT);
   pinMode(ledPin_0_b, OUTPUT);
   pinMode(ledPin_0_c, OUTPUT);
@@ -1019,9 +1169,9 @@ void setup()
   analogWrite(BLed, 0);
 
   // NOTE:
-  // Grounding the input pin causes it to actuate
-  pinMode(inputPin1, INPUT ); // set the input pin 1
-  digitalWrite(inputPin1, HIGH); // set pin 1 as a pull up resistor.
+  // This pin reads the input value from the input decode board
+  pinMode(inputPin1, INPUT );
+  digitalWrite(inputPin1, LOW);
 
   // Set the driver pin to putput
   pinMode(hvDriverPin, OUTPUT);
@@ -1258,7 +1408,13 @@ void loop()
   // Check button, we evaluate below
   button1.checkButton(nowMillis);
 
-  //****************************************************************************************************BLANK BUTTON CHECK HERE**********************//
+  if(button1.isBlankButtonPressedReleased()) {
+    if(manualOverride <2){
+      manualOverride++;
+    } else {
+      manualOverride = 0;
+    }
+  }
 
   // ******* Preview the next display mode *******
   // What is previewed here will get actioned when
@@ -1398,8 +1554,14 @@ void performOncePerSecondProcessing() {
   if (currentMode == MODE_TIME) {
     boolean nativeBlanked = checkBlanking();
 
-    // Check if we are in blanking suppression mode
+    if(manualOverride == 1 /*aka always on*/){
+      blanked = false;
+    } else if(manualOverride == 2 /*aka always off*/) {
+      blanked = true;
+    } else {
+      // Check if we are in blanking suppression mode
     blanked = nativeBlanked && (blankSuppressedMillis == 0);
+    }
 
     // reset the blanking period selection timer
     if (nowMillis > blankSuppressedSelectionTimoutMillis) {
