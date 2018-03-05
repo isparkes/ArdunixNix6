@@ -268,7 +268,7 @@
 #define USE_LDR_DEFAULT                 true
 
 // Limit on the length of time we stay in test mode
-#define TEST_MODE_MAX_SECS              120
+#define TEST_MODE_MAX_MS                60000
 
 #define SLOTS_MODE_MIN                  0
 #define SLOTS_MODE_NONE                 0   // Don't use slots effect
@@ -1108,7 +1108,7 @@ void setup()
       }
 
       // turn off test mode
-      blankTubes = (nowMillis - startTestMode > 1000 * TEST_MODE_MAX_SECS);
+      blankTubes = (nowMillis - startTestMode > TEST_MODE_MAX_MS);
 
       loadNumberArraySameValue(secCount);
       outputDisplay();
@@ -1119,6 +1119,7 @@ void setup()
 
       if (button1.isButtonPressedNow() && (secCount == 8)) {
         inLoop = false;
+        blankTubes = false;
       }
     }
 
