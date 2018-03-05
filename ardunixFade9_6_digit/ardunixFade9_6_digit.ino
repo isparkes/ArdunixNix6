@@ -64,7 +64,7 @@
 #define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION 49
+#define SOFTWARE_VERSION      50
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -267,36 +267,39 @@
 
 #define USE_LDR_DEFAULT                 true
 
-#define SLOTS_MODE_MIN                0
-#define SLOTS_MODE_NONE               0   // Don't use slots effect
-#define SLOTS_MODE_1M_SCR_SCR         1   // use slots effect every minute, scroll in, scramble out
-#define SLOTS_MODE_MAX                1
-#define SLOTS_MODE_DEFAULT            1
+// Limit on the length of time we stay in test mode
+#define TEST_MODE_MAX_SECS              120
+
+#define SLOTS_MODE_MIN                  0
+#define SLOTS_MODE_NONE                 0   // Don't use slots effect
+#define SLOTS_MODE_1M_SCR_SCR           1   // use slots effect every minute, scroll in, scramble out
+#define SLOTS_MODE_MAX                  1
+#define SLOTS_MODE_DEFAULT              1
 
 // I2C Interface definition
-#define I2C_SLAVE_ADDR                0x68
-#define I2C_TIME_UPDATE               0x00
-#define I2C_GET_OPTIONS               0x01
-#define I2C_SET_OPTION_12_24          0x02
-#define I2C_SET_OPTION_BLANK_LEAD     0x03
-#define I2C_SET_OPTION_SCROLLBACK     0x04
-#define I2C_SET_OPTION_SUPPRESS_ACP   0x05
-#define I2C_SET_OPTION_DATE_FORMAT    0x06
-#define I2C_SET_OPTION_DAY_BLANKING   0x07
-#define I2C_SET_OPTION_BLANK_START    0x08
-#define I2C_SET_OPTION_BLANK_END      0x09
-#define I2C_SET_OPTION_FADE_STEPS     0x0a
-#define I2C_SET_OPTION_SCROLL_STEPS   0x0b
-#define I2C_SET_OPTION_BACKLIGHT_MODE 0x0c
-#define I2C_SET_OPTION_RED_CHANNEL    0x0d
-#define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
-#define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
-#define I2C_SET_OPTION_CYCLE_SPEED    0x10
-#define I2C_SHOW_IP_ADDR              0x11
-#define I2C_SET_OPTION_FADE           0x12
-#define I2C_SET_OPTION_USE_LDR        0x13
-#define I2C_SET_OPTION_BLANK_MODE     0x14
-#define I2C_SET_OPTION_SLOTS_MODE     0x15
+#define I2C_SLAVE_ADDR                 0x68
+#define I2C_TIME_UPDATE                0x00
+#define I2C_GET_OPTIONS                0x01
+#define I2C_SET_OPTION_12_24           0x02
+#define I2C_SET_OPTION_BLANK_LEAD      0x03
+#define I2C_SET_OPTION_SCROLLBACK      0x04
+#define I2C_SET_OPTION_SUPPRESS_ACP    0x05
+#define I2C_SET_OPTION_DATE_FORMAT     0x06
+#define I2C_SET_OPTION_DAY_BLANKING    0x07
+#define I2C_SET_OPTION_BLANK_START     0x08
+#define I2C_SET_OPTION_BLANK_END       0x09
+#define I2C_SET_OPTION_FADE_STEPS      0x0a
+#define I2C_SET_OPTION_SCROLL_STEPS    0x0b
+#define I2C_SET_OPTION_BACKLIGHT_MODE  0x0c
+#define I2C_SET_OPTION_RED_CHANNEL     0x0d
+#define I2C_SET_OPTION_GREEN_CHANNEL   0x0e
+#define I2C_SET_OPTION_BLUE_CHANNEL    0x0f
+#define I2C_SET_OPTION_CYCLE_SPEED     0x10
+#define I2C_SHOW_IP_ADDR               0x11
+#define I2C_SET_OPTION_FADE            0x12
+#define I2C_SET_OPTION_USE_LDR         0x13
+#define I2C_SET_OPTION_BLANK_MODE      0x14
+#define I2C_SET_OPTION_SLOTS_MODE      0x15
 
 
 //**********************************************************************************
@@ -1093,6 +1096,9 @@ void setup()
 
     boolean inLoop = true;
 
+    // We don't want to stay in test mode forever
+    long startTestMode = lastCheckMillis;
+
     while (inLoop) {
       nowMillis = millis();
       if (nowMillis - lastCheckMillis > 1000) {
@@ -1100,11 +1106,17 @@ void setup()
         secCount++;
         secCount = secCount % 10;
       }
+
+      // turn off test mode
+      blankTubes = (nowMillis - startTestMode > 1000 * TEST_MODE_MAX_SECS);
+
       loadNumberArraySameValue(secCount);
       outputDisplay();
       checkHVVoltage();
+
       setLedsTestPattern(nowMillis);
       button1.checkButton(nowMillis);
+
       if (button1.isButtonPressedNow() && (secCount == 8)) {
         inLoop = false;
       }
@@ -1748,12 +1760,10 @@ void processCurrentMode() {
           }
 
           if (tempDisplayMode == TEMP_MODE_TEMP) {
-            if (useRTC) {
-              loadNumberArrayTemp(MODE_TEMP);
-            } else {
-              // we can't show the temperature if we don't have the RTC, just skip
-              tempDisplayMode++;
-            }
+            byte timeProv = 10;
+            if (useRTC) timeProv += 1;
+            if (useWiFi) timeProv += 2;
+            loadNumberArrayTemp(timeProv);
           }
 
           if (tempDisplayMode == TEMP_MODE_LDR) {
