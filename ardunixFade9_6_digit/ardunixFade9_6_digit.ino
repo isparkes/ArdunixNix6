@@ -64,7 +64,7 @@
 #define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION      50
+#define SOFTWARE_VERSION      51
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -276,8 +276,11 @@
 #define SLOTS_MODE_MAX                  1
 #define SLOTS_MODE_DEFAULT              1
 
-// I2C Interface definition
-#define I2C_SLAVE_ADDR                 0x68
+// RTC address
+#define RTC_I2C_ADDRESS                0x68
+
+// I2C Slave Interface definition
+#define I2C_SLAVE_ADDR                 0x69
 #define I2C_TIME_UPDATE                0x00
 #define I2C_GET_OPTIONS                0x01
 #define I2C_SET_OPTION_12_24           0x02
@@ -301,6 +304,7 @@
 #define I2C_SET_OPTION_BLANK_MODE      0x14
 #define I2C_SET_OPTION_SLOTS_MODE      0x15
 
+#define MAX_WIFI_TIME                  5
 
 //**********************************************************************************
 //**********************************************************************************
@@ -357,11 +361,9 @@ struct Transition {
   /**
    * Default the effect and hold duration.
    */
-  Transition() : Transition(500, 500, 3000) {
-  }
+  Transition() : Transition(500, 500, 3000) {}
 
-  Transition(int effectDuration, int holdDuration) : Transition(effectDuration, effectDuration, holdDuration) {
-  }
+  Transition(int effectDuration, int holdDuration) : Transition(effectDuration, effectDuration, holdDuration) {}
 
   Transition(int effectInDuration, int effectOutDuration, int holdDuration) {
     this->effectInDuration = effectInDuration;
@@ -860,8 +862,6 @@ boolean useLDR = true;
 // RTC, uses Analogue pins A4 (SDA) and A5 (SCL)
 DS3231 Clock;
 
-#define RTC_I2C_ADDRESS 0x68
-
 // State variables for detecting changes
 byte lastSec;
 unsigned long nowMillis = 0;
@@ -876,8 +876,8 @@ unsigned long blankSuppressedSelectionTimoutMillis = 0;   // Used for determinin
 boolean hourMode = false;
 boolean triggeredThisSec = false;
 
-boolean useRTC = false;  // true if we detect an RTC
-boolean useWiFi = false; // true if we have recevied information from the WiFi module
+byte useRTC = false;  // true if we detect an RTC
+byte useWiFi = 0; // the number of minutes ago we recevied information from the WiFi module, 0 = don't use WiFi
 
 
 // **************************** LED management ***************************
@@ -896,14 +896,8 @@ byte bluCnl = COLOUR_BLU_CNL_DEFAULT;
 byte cycleCount = 0;
 byte cycleSpeed = CYCLE_SPEED_DEFAULT;
 
+// Back light cycling
 int colors[3];
-
-// Strateg2
-//float hueIncrement = 0.0;
-//int hueCount = 0;
-//float hue = 0.0;
-
-// Strategy 3
 int changeSteps = 0;
 byte currentColour = 0;
 
@@ -1152,31 +1146,7 @@ void setup()
   // initialise the internal time (in case we don't find the time provider)
   nowMillis = millis();
   setTime(12, 34, 56, 1, 3, 2017);
-
-  // Start the RTC communication
-  Wire.begin();
-
-  // Set up the time provider
-  // first try to find the RTC, if not available, go into slave mode
-  Wire.beginTransmission(RTC_I2C_ADDRESS);
-  if (Wire.endTransmission() == 0) {
-    // Make sure the clock keeps running even on battery
-    Clock.enableOscillator(true, true, 0);
-
-    // show that we are using the RTC
-    useRTC = true;
-  } else {
-    // Wait for I2C in slave mode
-    Wire.end();
-    Wire.begin(I2C_SLAVE_ADDR);
-    Wire.onReceive(receiveEvent);
-    Wire.onRequest(requestEvent);
-  }
-
-  // Recover the time from the RTC
-  if (useRTC) {
-    getRTCTime();
-  }
+  getRTCTime();
 
   // Show the version for 1 s
   tempDisplayMode = TEMP_MODE_VERSION;
@@ -1382,8 +1352,14 @@ void performOncePerSecondProcessing() {
 // Called once per minute
 // ************************************************************
 void performOncePerMinuteProcessing() {
-  // get the time from the external provider - slow but accurate
-  if (useRTC) {
+  if (useWiFi > 0) {
+    if (useWiFi == MAX_WIFI_TIME) {
+      // We recently got an update, send to the RTC (if installed)
+      setRTC();      
+    }
+    useWiFi--;
+  } else {
+    // get the time from the external RTC provider - (if installed)
     getRTCTime();
   }
 }
@@ -1492,7 +1468,7 @@ void setNextMode() {
         break;
       }
     case MODE_HOURS_SET: {
-        if (useWiFi) {
+        if (useWiFi > 0) {
           // skip past the time settings
           nextMode++;
           currentMode++;
@@ -1516,7 +1492,7 @@ void setNextMode() {
         break;
       }
     case MODE_DAYS_SET: {
-        if (useWiFi) {
+        if (useWiFi > 0) {
           // skip past the time settings
           nextMode++;
           currentMode++;
@@ -1763,7 +1739,7 @@ void processCurrentMode() {
           if (tempDisplayMode == TEMP_MODE_TEMP) {
             byte timeProv = 10;
             if (useRTC) timeProv += 1;
-            if (useWiFi) timeProv += 2;
+            if (useWiFi > 0) timeProv += 2;
             loadNumberArrayTemp(timeProv);
           }
 
@@ -1772,33 +1748,29 @@ void processCurrentMode() {
           }
 
           if (tempDisplayMode == TEMP_MODE_VERSION) {
-            loadNumberArrayConfInt(SOFTWARE_VERSION, currentMode - MODE_12_24);
+            loadNumberArrayConfInt(SOFTWARE_VERSION, 0);
           }
 
           if (tempDisplayMode == TEMP_IP_ADDR12) {
-            if (useRTC) {
+            if (useWiFi > 0) {
+              loadNumberArrayIP(ourIP[0], ourIP[1]);
+            } else {
               // we can't show the IP address if we have the RTC, just skip
               tempDisplayMode++;
-            } else {
-              loadNumberArrayIP(ourIP[0], ourIP[1]);
             }
           }
 
           if (tempDisplayMode == TEMP_IP_ADDR34) {
-            if (useRTC) {
+            if (useWiFi > 0) {
+              loadNumberArrayIP(ourIP[2], ourIP[3]);
+            } else {
               // we can't show the IP address if we have the RTC, just skip
               tempDisplayMode++;
-            } else {
-              loadNumberArrayIP(ourIP[2], ourIP[3]);
             }
           }
 
           if (tempDisplayMode == TEMP_IMPR) {
-            if (useRTC) {
-              tempDisplayMode = TEMP_MODE_MIN;
-            } else {
-              loadNumberArrayConfInt(lastImpressionsPerSec, currentMode - MODE_12_24);
-            }
+            loadNumberArrayConfInt(lastImpressionsPerSec, 0);
           }
 
           allFadeOrNormal(false);
@@ -3144,23 +3116,37 @@ void setLedsTestPattern(unsigned long currentMillis) {
 // Get the time from the RTC
 // ************************************************************
 void getRTCTime() {
+  // Start the RTC communication in master mode
+  Wire.end();
+  Wire.begin();
 
+  // Set up the time provider
+  // first try to find the RTC, if not available, go into slave mode
+  Wire.beginTransmission(RTC_I2C_ADDRESS);
+  useRTC = (Wire.endTransmission() == 0);
   if (useRTC) {
-    Wire.beginTransmission(RTC_I2C_ADDRESS);
-    if (Wire.endTransmission() == 0) {
-      bool PM;
-      bool twentyFourHourClock;
-      bool century = false;
+    bool PM;
+    bool twentyFourHourClock;
+    bool century = false;
 
-      byte years = Clock.getYear() + 2000;
-      byte months = Clock.getMonth(century);
-      byte days = Clock.getDate();
-      byte hours = Clock.getHour(twentyFourHourClock, PM);
-      byte mins = Clock.getMinute();
-      byte secs = Clock.getSecond();
-      setTime(hours, mins, secs, days, months, years);
-    }
+    byte years = Clock.getYear() + 2000;
+    byte months = Clock.getMonth(century);
+    byte days = Clock.getDate();
+    byte hours = Clock.getHour(twentyFourHourClock, PM);
+    byte mins = Clock.getMinute();
+    byte secs = Clock.getSecond();
+    setTime(hours, mins, secs, days, months, years);
+      
+    // Make sure the clock keeps running even on battery
+    if (!Clock.oscillatorCheck())
+      Clock.enableOscillator(true, true, 0);
   }
+  
+  // Return back to I2C in slave mode
+  Wire.end();
+  Wire.begin(I2C_SLAVE_ADDR);
+  Wire.onReceive(receiveEvent);
+  Wire.onRequest(requestEvent);
 }
 
 // ************************************************************
@@ -3170,6 +3156,13 @@ void getRTCTime() {
 // ************************************************************
 void setRTC() {
   if (useRTC) {
+    // Start the RTC communication in master mode
+    Wire.end();
+    Wire.begin();
+
+    // Set up the time provider
+    // first try to find the RTC, if not available, go into slave mode
+    Wire.beginTransmission(RTC_I2C_ADDRESS);
     Clock.setClockMode(false); // false = 24h
     Clock.setYear(year() % 100);
     Clock.setMonth(month());
@@ -3178,6 +3171,12 @@ void setRTC() {
     Clock.setHour(hour());
     Clock.setMinute(minute());
     Clock.setSecond(second());
+
+    Wire.endTransmission();
+    Wire.end();
+    Wire.begin(I2C_SLAVE_ADDR);
+    Wire.onReceive(receiveEvent);
+    Wire.onRequest(requestEvent);
   }
 }
 
@@ -3663,8 +3662,8 @@ void receiveEvent(int bytes) {
   int operation = Wire.read();
 
   if (operation == I2C_TIME_UPDATE) {
-    // If we're getting time from the WiFi module, don't allow the time to be set manually
-    useWiFi = true;
+    // If we're getting time from the WiFi module, mark that we have an active WiFi with a 5 min time out
+    useWiFi = MAX_WIFI_TIME;
     
     int newYears = Wire.read();
     int newMonths = Wire.read();
