@@ -1,11 +1,18 @@
 /*
-   ESP8266 Webserver for the Arduino Nixie clock
+   ESP8266 Webserver for the Arduino Nixie Clock Firmware V1
     - Starts the ESP8266 as an access point and provides a web interface to configure and store WiFi credentials.
     - Allows the time server to be defined and stored
 
-   Program with following settings (status line in IDE):
+   Program with following settings (status line / IDE):
 
-   Generic ESP8266 Module, 80MHz, 80MHz, DIO, 115200, 1M (64k SPIFFS), ck, Disabled, none
+   Generic ESP8266 Module, 
+    Flash: 80MHz, 
+    CPU: 160MHz, 
+    Flash Mode: DIO, 
+    Upload speed: 115200, 
+    Flash size: 1M (no SPIFFS), 
+    Reset method: ck, Disabled, none
+    Erase Flash: All contents
 
    Go to http://192.168.4.1 in a web browser connected to this access point to see it
 */
@@ -18,7 +25,7 @@
 #include <EEPROM.h>
 #include <time.h>
   
-#define SOFTWARE_VERSION "1.0.6"
+#define SOFTWARE_VERSION "1.0.7"
 #define DEFAULT_TIME_SERVER_URL "http://time-zone-server.scapp.io/getTime/Europe/Zurich"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
@@ -41,13 +48,14 @@ unsigned long lastMillis = 0;
 
 // Timer for how often we send the I2C data
 long lastI2CUpdateTime = 0;
+byte preferredI2CSlaveAddress = 0xFF;
+byte preferredAddressFoundBy = 0; // 0 = not found, 1 = found by default, 2 = found by ping
 
 String timeServerURL = "";
 
 ADC_MODE(ADC_VCC);
 
 // I2C Interface definition
-#define I2C_SLAVE_ADDR                0x68
 #define I2C_TIME_UPDATE               0x00
 #define I2C_GET_OPTIONS               0x01
 #define I2C_SET_OPTION_12_24          0x02
@@ -100,9 +108,7 @@ ESP8266WebServer server(80);
 void setup()
 {
 #ifdef DEBUG
-  Serial.begin(115200);
-  Serial.println();
-  Serial.println("Configuring access point...");
+  setupDebug();
 #else
   pinMode(blueLedPin, OUTPUT);
 #endif
@@ -118,24 +124,20 @@ void setup()
   // Try to connect, if we have valid credentials
   boolean wlanConnected = false;
   if (esid.length() > 0) {
-#ifdef DEBUG
-    Serial.print("found esid: ");
-    Serial.println(esid);
-    Serial.println("Trying to connect");
-#endif
+
+    debugMsg("found esid: ");
+    debugMsg(esid);
+    debugMsg("Trying to connect");
+
     wlanConnected = connectToWLAN(esid.c_str(), epass.c_str());
   }
 
   // If we can't connect, fall back into AP mode
   if (wlanConnected) {
-#ifdef DEBUG
-    Serial.println("WiFi connected, stop softAP");
-#endif
+    debugMsg("WiFi connected, stop softAP");
     WiFi.mode(WIFI_STA);
   } else {
-#ifdef DEBUG
-    Serial.println("WiFi not connected, start softAP");
-#endif
+    debugMsg("WiFi not connected, start softAP");
     WiFi.mode(WIFI_AP_STA);
     
     // You can add the password parameter if you want the AP to be password protected
@@ -148,17 +150,12 @@ void setup()
 
   IPAddress apIP = WiFi.softAPIP();
   IPAddress myIP = WiFi.localIP();
-#ifdef DEBUG
-  Serial.print("AP IP address: ");
-  Serial.println(apIP);
-  Serial.print("IP address: ");
-  Serial.println(myIP);
-#endif
+  debugMsg("AP IP address: " + formatIPAsString(apIP));
+  debugMsg("AP IP address: " + formatIPAsString(apIP));
+  debugMsg("IP address: " + formatIPAsString(myIP));
 
   Wire.begin(0, 2); // SDA = 0, SCL = 2
-#ifdef DEBUG
-  Serial.println("I2C master started");
-#endif
+  debugMsg("I2C master started");
   
   /* Set page handler functions */
   server.on("/",            rootPageHandler);
@@ -170,11 +167,10 @@ void setup()
   server.on("/local.css",   localCSSHandler);
   server.onNotFound(handleNotFound);
 
+  scanI2CBus();
+  
   server.begin();
-
-#ifdef DEBUG
-  Serial.println("HTTP server started");
-#endif
+  debugMsg("HTTP server started");
 }
 
 // ----------------------------------------------------------------------------------------------------
@@ -203,18 +199,14 @@ void loop()
         sendTimeToI2C(timeStr);
         
         // all OK, flash 10 millisecond per second
-        blinkOnTime = 10;
-        blinkTopTime = 2000;
-#ifdef DEBUG
-        Serial.println("Normal time serve mode");
-#endif
+        blinkOnTime = 5;
+        blinkTopTime = 1000;
+        debugMsg("Normal time serve mode");
       } else {
         // connected, but time server not found, flash middle speed
         blinkOnTime = 250;
         blinkTopTime = 500;
-#ifdef DEBUG
-        Serial.println("Connected, but no time server found");
-#endif
+        debugMsg("Connected, but no time server found");
       }
 
       // Allow the IP to be displayed on the clock
@@ -226,9 +218,6 @@ void loop()
     // offline, flash fast
     blinkOnTime = 100;
     blinkTopTime = 200;
-#ifdef DEBUG
-    Serial.println("Offline");
-#endif
   }
   
   if (((millis() - lastMillis) > blinkTopTime) && blueLedState) {
@@ -237,6 +226,9 @@ void loop()
 #ifndef DEBUG
     setBlueLED(blueLedState);
 #endif
+    if (WiFi.status() != WL_CONNECTED) {
+      debugMsgContinue(".");
+    }
   } else if (((millis() - lastMillis) > blinkOnTime) && !blueLedState) {
     blueLedState = true;
 #ifndef DEBUG
@@ -263,9 +255,7 @@ void rootPageHandler()
   if (WiFi.status() == WL_CONNECTED)
   {
     IPAddress ip = WiFi.localIP();
-    String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-
-    response_message += getTableRow2Col("WLAN IP", ipStr);
+    response_message += getTableRow2Col("WLAN IP", formatIPAsString(ip));
     response_message += getTableRow2Col("WLAN MAC", WiFi.macAddress());
     response_message += getTableRow2Col("WLAN SSID", WiFi.SSID());
     response_message += getTableRow2Col("Time server URL", timeServerURL);
@@ -301,7 +291,15 @@ void rootPageHandler()
     Wire.beginTransmission(idx);
     int error = Wire.endTransmission();
     if (error == 0) {
-      response_message += getTableRow2Col("Found I2C slave at",idx);
+      String slaveMsg = "Found I2C slave at";
+      if (idx == preferredI2CSlaveAddress) {
+        if (preferredAddressFoundBy == 1) {
+          slaveMsg += " (default)";
+        } else if (preferredAddressFoundBy == 2) {
+          slaveMsg += " (ping)";
+        }
+      }
+      response_message += getTableRow2Col(slaveMsg,idx);
     }
   }
 
@@ -345,43 +343,33 @@ void wlanPageHandler()
   {
     if (server.hasArg("password"))
     {
-#ifdef DEBUG
-    Serial.println("Connect WiFi");
-    Serial.print("SSID:");
-    Serial.println(server.arg("ssid"));
-    Serial.print("PASSWORD:");
-    Serial.println(server.arg("password"));
-#endif
+      debugMsg("Connect WiFi");
+      debugMsg("SSID:");
+      debugMsg(server.arg("ssid"));
+      debugMsg("PASSWORD:");
+      debugMsg(server.arg("password"));
       WiFi.begin(server.arg("ssid").c_str(), server.arg("password").c_str());
     }
     else
     {
       WiFi.begin(server.arg("ssid").c_str());
-#ifdef DEBUG
-    Serial.println("Connect WiFi");
-    Serial.print("SSID:");
-    Serial.println(server.arg("ssid"));
-#endif
+      debugMsg("Connect WiFi");
+      debugMsg("SSID:");
+      debugMsg(server.arg("ssid"));
     }
 
     while (WiFi.status() != WL_CONNECTED)
     {
       delay(500);
-#ifdef DEBUG
-      Serial.print(".");
-#endif
+      debugMsgContinue(".");
     }
 
     storeCredentialsInEEPROM(server.arg("ssid"), server.arg("password"));
 
-#ifdef DEBUG
-    Serial.println("");
-    Serial.println("WiFi connected");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("SoftAP IP address: ");
-    Serial.println(WiFi.softAPIP());
-#endif
+    debugMsg("");
+    debugMsg("WiFi connected");
+    debugMsg("IP address: " + formatIPAsString(WiFi.localIP()));
+    debugMsg("SoftAP IP address: " + formatIPAsString(WiFi.softAPIP()));
   }
 
   String esid = getSSIDFromEEPROM();
@@ -414,17 +402,13 @@ void wlanPageHandler()
       wlanId += String(WiFi.RSSI(ap_idx));
       wlanId += ")";
 
-#ifdef DEBUG
-    Serial.println("");
-    Serial.print("found ssid: ");
-    Serial.println(WiFi.SSID(ap_idx));
-    Serial.print("Is current: ");
-    if ((esid==ssid)) {
-      Serial.println("Y");
-    } else {
-      Serial.println("N");
-    }
-#endif
+      debugMsg("");
+      debugMsg("found ssid: " + WiFi.SSID(ap_idx));      
+      if ((esid==ssid)) {
+        debugMsg("IsCurrent: Y");
+      } else {
+        debugMsg("IsCurrent: N");
+      }
 
       response_message += getDropDownOption(ssid, wlanId, (esid==ssid));
     }
@@ -544,20 +528,14 @@ void clockConfigPageHandler()
 {
   if (server.hasArg("12h24hMode"))
   {
-#ifdef DEBUG
-    Serial.print("Got 24h mode param: "); Serial.println(server.arg("12h24hMode"));
-#endif
+    debugMsg("Got 24h mode param: " + server.arg("12h24hMode"));
     if ((server.arg("12h24hMode") == "24h") && (configHourMode)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set 24h mode");
-#endif
+      debugMsg("I2C --> Set 24h mode");
       setClockOption12H24H(true);
     }
 
     if ((server.arg("12h24hMode") == "12h")  && (!configHourMode)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set 12h mode");
-#endif
+      debugMsg("I2C --> Set 12h mode");
       setClockOption12H24H(false);
     }
   }
@@ -566,20 +544,14 @@ void clockConfigPageHandler()
 
   if (server.hasArg("blankLeading"))
   {
-#ifdef DEBUG
-    Serial.print("Got blankLeading param: "); Serial.println(server.arg("blankLeading"));
-#endif
+    debugMsg("Got blankLeading param: " + server.arg("blankLeading"));
     if ((server.arg("blankLeading") == "blank") && (!configBlankLead)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set blank leading zero");
-#endif
+      debugMsg("I2C --> Set blank leading zero");
       setClockOptionBlankLeadingZero(false);
     }
 
     if ((server.arg("blankLeading") == "show") && (configBlankLead)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set show leading zero");
-#endif
+      debugMsg("I2C --> Set show leading zero");
       setClockOptionBlankLeadingZero(true);
     }
   }
@@ -588,20 +560,14 @@ void clockConfigPageHandler()
 
   if (server.hasArg("useScrollback"))
   {
-#ifdef DEBUG
-    Serial.print("Got useScrollback param: "); Serial.println(server.arg("useScrollback"));
-#endif
+    debugMsg("Got useScrollback param: " + server.arg("useScrollback"));
     if ((server.arg("useScrollback") == "on") && (!configScrollback)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set scrollback on");
-#endif
+      debugMsg("I2C --> Set scrollback on");
       setClockOptionScrollback(false);
     }
 
     if ((server.arg("useScrollback") == "off") && (configScrollback)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set scrollback off");
-#endif
+      debugMsg("I2C --> Set scrollback off");
       setClockOptionScrollback(true);
     }
   }
@@ -610,20 +576,14 @@ void clockConfigPageHandler()
 
   if (server.hasArg("suppressACP"))
   {
-#ifdef DEBUG
-    Serial.print("Got suppressACP param: "); Serial.println(server.arg("suppressACP"));
-#endif
+    debugMsg("Got suppressACP param: " + server.arg("suppressACP"));
     if ((server.arg("suppressACP") == "on") && (!configSuppressACP)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set suppressACP on");
-#endif
+      debugMsg("I2C --> Set suppressACP on");
       setClockOptionSuppressACP(false);
     }
 
     if ((server.arg("suppressACP") == "off") && (configSuppressACP)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set suppressACP off");
-#endif
+      debugMsg("I2C --> Set suppressACP off");
       setClockOptionSuppressACP(true);
     }
   }
@@ -632,20 +592,14 @@ void clockConfigPageHandler()
 
   if (server.hasArg("useFade"))
   {
-#ifdef DEBUG
-    Serial.print("Got useFade param: "); Serial.println(server.arg("useFade"));
-#endif
+    debugMsg("Got useFade param: " + server.arg("useFade"));
     if ((server.arg("useFade") == "on") && (!configUseFade)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set useFade on");
-#endif
+      debugMsg("I2C --> Set useFade on");
       setClockOptionUseFade(false);
     }
 
     if ((server.arg("useFade") == "off") && (configUseFade)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set useFade off");
-#endif
+      debugMsg("I2C --> Set useFade off");
       setClockOptionUseFade(true);
     }
   }
@@ -654,20 +608,14 @@ void clockConfigPageHandler()
 
   if (server.hasArg("useLDR"))
   {
-#ifdef DEBUG
-    Serial.print("Got useLDR param: "); Serial.println(server.arg("useLDR"));
-#endif
+    debugMsg("Got useLDR param: " + server.arg("useLDR"));
     if ((server.arg("useLDR") == "on") && (!configUseLDR)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set useLDR on");
-#endif
+      debugMsg("I2C --> Set useLDR on");
       setClockOptionUseLDR(false);
     }
 
     if ((server.arg("useLDR") == "off") && (configUseLDR)) {
-#ifdef DEBUG
-      Serial.println("I2C --> Set useLDR off");
-#endif
+      debugMsg("I2C --> Set useLDR off");
       setClockOptionUseLDR(true);
     }
   }
@@ -675,195 +623,143 @@ void clockConfigPageHandler()
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("dateFormat")) {
-#ifdef DEBUG
-    Serial.print("Got dateFormat param: "); Serial.println(server.arg("dateFormat"));
-#endif
+    debugMsg("Got dateFormat param: " + server.arg("dateFormat"));
     byte newDateFormat = atoi(server.arg("dateFormat").c_str());
     if (newDateFormat != configDateFormat) {
       setClockOptionDateFormat(newDateFormat);
-#ifdef DEBUG
-      Serial.print("I2C --> Set dateFormat: "); Serial.println(newDateFormat);
-#endif
+      debugMsg("I2C --> Set dateFormat: " + newDateFormat);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("dayBlanking")) {
-#ifdef DEBUG
-    Serial.print("Got dayBlanking param: "); Serial.println(server.arg("dayBlanking"));
-#endif
+    debugMsg("Got dayBlanking param: " + server.arg("dayBlanking"));
     byte newDayBlanking = atoi(server.arg("dayBlanking").c_str());
     if (newDayBlanking != configDayBlanking) {
       setClockOptionDayBlanking(newDayBlanking);
-#ifdef DEBUG
-      Serial.print("I2C --> Set dayBlanking: "); Serial.println(newDayBlanking);
-#endif
+      debugMsg("I2C --> Set dayBlanking: " + newDayBlanking);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("blankFrom")) {
-#ifdef DEBUG
-    Serial.print("Got blankFrom param: "); Serial.println(server.arg("blankFrom"));
-#endif
+    debugMsg("Got blankFrom param: " + server.arg("blankFrom"));
     byte newBlankFrom = atoi(server.arg("blankFrom").c_str());
     if (newBlankFrom != configBlankFrom) {
       setClockOptionBlankFrom(newBlankFrom);
-#ifdef DEBUG
-      Serial.print("I2C --> Set blankFrom: "); Serial.println(newBlankFrom);
-#endif
+      debugMsg("I2C --> Set blankFrom: " + newBlankFrom);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("blankTo")) {
-#ifdef DEBUG
-    Serial.print("Got blankTo param: "); Serial.println(server.arg("blankTo"));
-#endif
+    debugMsg("Got blankTo param: " + server.arg("blankTo"));
     byte newBlankTo = atoi(server.arg("blankTo").c_str());
     if (newBlankTo != configBlankTo) {
       setClockOptionBlankTo(newBlankTo);
-#ifdef DEBUG
-      Serial.print("I2C --> Set blankTo: "); Serial.println(newBlankTo);
-#endif
+      debugMsg("I2C --> Set blankTo: " + newBlankTo);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("fadeSteps")) {
-#ifdef DEBUG
-    Serial.print("Got fadeSteps param: "); Serial.println(server.arg("fadeSteps"));
-#endif
+    debugMsg("Got fadeSteps param: " + server.arg("fadeSteps"));
     byte newFadeSteps = atoi(server.arg("fadeSteps").c_str());
     if (newFadeSteps != configFadeSteps) {
       setClockOptionFadeSteps(newFadeSteps);
-#ifdef DEBUG
-      Serial.print("I2C --> Set fadeSteps: "); Serial.println(newFadeSteps);
-#endif
+      debugMsg("I2C --> Set fadeSteps: " + newFadeSteps);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("scrollSteps")) {
-#ifdef DEBUG
-    Serial.print("Got scrollSteps param: "); Serial.println(server.arg("scrollSteps"));
-#endif
+    debugMsg("Got scrollSteps param: " + server.arg("scrollSteps"));
     byte newScrollSteps = atoi(server.arg("scrollSteps").c_str());
     if (newScrollSteps != configScrollSteps) {
       setClockOptionScrollSteps(newScrollSteps);
-#ifdef DEBUG
-      Serial.print("I2C --> Set fadeSteps: "); Serial.println(newScrollSteps);
-#endif
+      debugMsg("I2C --> Set fadeSteps: " + newScrollSteps);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("backLight")) {
-#ifdef DEBUG
-    Serial.print("Got backLight param: "); Serial.println(server.arg("backLight"));
-#endif
+    debugMsg("Got backLight param: " + server.arg("backLight"));
     byte newBacklight = atoi(server.arg("backLight").c_str());
     if (newBacklight != configBacklightMode) {
       setClockOptionBacklightMode(newBacklight);
-#ifdef DEBUG
-      Serial.print("I2C --> Set backLight: "); Serial.println(newBacklight);
-#endif
+      debugMsg("I2C --> Set backLight: " + newBacklight);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("redCnl")) {
-#ifdef DEBUG
-    Serial.print("Got redCnl param: "); Serial.println(server.arg("redCnl"));
-#endif
+    debugMsg("Got redCnl param: " + server.arg("redCnl"));
     byte newRedCnl = atoi(server.arg("redCnl").c_str());
     if (newRedCnl != configRedCnl) {
       setClockOptionRedCnl(newRedCnl);
-#ifdef DEBUG
-      Serial.print("I2C --> Set redCnl: "); Serial.println(newRedCnl);
-#endif
+      debugMsg("I2C --> Set redCnl: " + newRedCnl);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("grnCnl")) {
-#ifdef DEBUG
-    Serial.print("Got grnCnl param: "); Serial.println(server.arg("grnCnl"));
-#endif
+    debugMsg("Got grnCnl param: " + server.arg("grnCnl"));
     byte newGreenCnl = atoi(server.arg("grnCnl").c_str());
     if (newGreenCnl != configGreenCnl) {
       setClockOptionGrnCnl(newGreenCnl);
-#ifdef DEBUG
-      Serial.print("I2C --> Set grnCnl: "); Serial.println(newGreenCnl);
-#endif
+      debugMsg("I2C --> Set grnCnl: " + newGreenCnl);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("bluCnl")) {
-#ifdef DEBUG
-    Serial.print("Got bluCnl param: "); Serial.println(server.arg("bluCnl"));
-#endif
+    debugMsg("Got bluCnl param: " + server.arg("bluCnl"));
     byte newBlueCnl = atoi(server.arg("bluCnl").c_str());
     if (newBlueCnl != configBlueCnl) {
       setClockOptionBluCnl(newBlueCnl);
-#ifdef DEBUG
-      Serial.print("I2C --> Set bluCnl: "); Serial.println(newBlueCnl);
-#endif
+      debugMsg("I2C --> Set bluCnl: " + newBlueCnl);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("cycleSpeed")) {
-#ifdef DEBUG
-    Serial.print("Got cycleSpeed param: "); Serial.println(server.arg("cycleSpeed"));
-#endif
+    debugMsg("Got cycleSpeed param: " + server.arg("cycleSpeed"));
     byte newCycleSpeed = atoi(server.arg("cycleSpeed").c_str());
     if (newCycleSpeed != configCycleSpeed) {
       setClockOptionCycleSpeed(newCycleSpeed);
-#ifdef DEBUG
-      Serial.print("I2C --> Set cycleSpeed: "); Serial.println(newCycleSpeed);
-#endif
+      debugMsg("I2C --> Set cycleSpeed: " + newCycleSpeed);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("blankMode")) {
-#ifdef DEBUG
-    Serial.print("Got blankMode param: "); Serial.println(server.arg("blankMode"));
-#endif
+    debugMsg("Got blankMode param: " + server.arg("blankMode"));
     byte newBlankMode = atoi(server.arg("blankMode").c_str());
     if (newBlankMode != configBlankMode) {
       setClockOptionBlankMode(newBlankMode);
-#ifdef DEBUG
-      Serial.print("I2C --> Set blankMode: "); Serial.println(newBlankMode);
-#endif
+      debugMsg("I2C --> Set blankMode: " + newBlankMode);
     }
   }
 
   // -----------------------------------------------------------------------------
 
   if (server.hasArg("slotsMode")) {
-#ifdef DEBUG
-    Serial.print("Got slotsMode param: "); Serial.println(server.arg("slotsMode"));
-#endif
+    debugMsg("Got slotsMode param: " + server.arg("slotsMode"));
     byte newSlotsMode = atoi(server.arg("slotsMode").c_str());
     if (newSlotsMode != configSlotsMode) {
       setClockOptionSlotsMode(newSlotsMode);
-#ifdef DEBUG
-      Serial.print("I2C --> Set slotsMode: "); Serial.println(newSlotsMode);
-#endif
+      debugMsg("I2C --> Set slotsMode: " + newSlotsMode);
     }
   }
 
@@ -1069,9 +965,7 @@ void localCSSHandler()
 */
 boolean connectToWLAN(const char* ssid, const char* password) {
   int retries = 0;
-#ifdef DEBUG
-  Serial.println("Connecting to WLAN");
-#endif
+  debugMsg("Connecting to WLAN");
   if (password && strlen(password) > 0 ) {
     WiFi.begin(ssid, password);
   } else {
@@ -1081,15 +975,14 @@ boolean connectToWLAN(const char* ssid, const char* password) {
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
-#ifdef DEBUG
-    Serial.print(".");
-#endif
+    debugMsgContinue(".");
     retries++;
     if (retries > 20) {
       return false;
     }
   }
 
+  debugMsg("Connected");
   return true;
 }
 
@@ -1112,9 +1005,7 @@ String getTimeFromTimeZoneServer() {
   if (httpCode == HTTP_CODE_OK) {
     payload = http.getString();
   } else {
-#ifdef DEBUG
     Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-#endif
     if (httpCode > 0) {
       // RFC error codes don't have a string mapping
       payload = "ERROR: " + String(httpCode);
@@ -1134,9 +1025,6 @@ String getTimeFromTimeZoneServer() {
 // ----------------------------------------------------------------------------------------------------
 
 String getSSIDFromEEPROM() {
-#ifdef DEBUG
-  Serial.println("Reading EEPROM ssid");
-#endif
   String esid = "";
   for (int i = 0; i < 32; i++)
   {
@@ -1148,18 +1036,11 @@ String getSSIDFromEEPROM() {
     }
     esid += char(readByte);
   }
-#ifdef DEBUG
-  Serial.print("Recovered SSID: ");
-  Serial.println(esid);
-#endif
+  debugMsg("Recovered SSID: " + esid);
   return esid;
 }
 
 String getPasswordFromEEPROM() {
-#ifdef DEBUG
-  Serial.println("Reading EEPROM password");
-#endif
-
   String epass = "";
   for (int i = 32; i < 96; i++)
   {
@@ -1171,43 +1052,29 @@ String getPasswordFromEEPROM() {
     }
     epass += char(EEPROM.read(i));
   }
-#ifdef DEBUG
-  Serial.print("Recovered password: ");
-  Serial.println(epass);
-#endif
+  debugMsg("Recovered password: " + epass);
 
   return epass;
 }
 
 void storeCredentialsInEEPROM(String qsid, String qpass) {
-#ifdef DEBUG
-  Serial.print("writing eeprom ssid, length ");
-  Serial.println(qsid.length());
-#endif
+  debugMsg("writing eeprom ssid, length " + qsid.length());
   for (int i = 0; i < 32; i++)
   {
     if (i < qsid.length()) {
       EEPROM.write(i, qsid[i]);
-#ifdef DEBUG
-      Serial.print("Wrote: ");
-      Serial.println(qsid[i]);
-#endif
+      debugMsg("Wrote: " + qsid[i]);
     } else {
       EEPROM.write(i, 0);
     }
   }
-#ifdef DEBUG
-  Serial.print("writing eeprom pass, length ");
-  Serial.println(qpass.length());
-#endif
+  debugMsg("writing eeprom pass, length " + qpass.length());
+
   for (int i = 0; i < 96; i++)
   {
     if ( i < qpass.length()) {
       EEPROM.write(32 + i, qpass[i]);
-#ifdef DEBUG
-      Serial.print("Wrote: ");
-      Serial.println(qpass[i]);
-#endif
+      debugMsg("Wrote: " + qpass[i]);
     } else {
       EEPROM.write(32 + i, 0);
     }
@@ -1217,10 +1084,6 @@ void storeCredentialsInEEPROM(String qsid, String qpass) {
 }
 
 String getTimeServerURLFromEEPROM() {
-#ifdef DEBUG
-  Serial.println("Reading time server URL");
-#endif
-
   String eurl = "";
   for (int i = 96; i < (96 + 256); i++)
   {
@@ -1232,17 +1095,12 @@ String getTimeServerURLFromEEPROM() {
     }
     eurl += char(readByte);
   }
-#ifdef DEBUG
-  Serial.print("Recovered time server URL: ");
-  Serial.println(eurl);
-  Serial.println(eurl.length());
-#endif
+  debugMsg("Recovered time server URL: " + eurl);
+  debugMsg("URL length: " + eurl.length());
 
   if (eurl.length() == 0) {
-#ifdef DEBUG
-    Serial.println("Recovered blank time server URL: ");
-    Serial.println("Returning default time server URL");
-#endif
+    debugMsg("Recovered blank time server URL: ");
+    debugMsg("Returning default time server URL");
     eurl = DEFAULT_TIME_SERVER_URL;
   }
 
@@ -1250,18 +1108,12 @@ String getTimeServerURLFromEEPROM() {
 }
 
 void storeTimeServerURLInEEPROM(String timeServerURL) {
-#ifdef DEBUG
-  Serial.print("writing time server URL, length ");
-  Serial.println(timeServerURL.length());
-#endif
   for (int i = 0; i < 256; i++)
   {
     if (i < timeServerURL.length()) {
       EEPROM.write(96 + i, timeServerURL[i]);
-#ifdef DEBUG
-      Serial.print("Wrote: ");
-      Serial.println(timeServerURL[i]);
-#endif
+      debugMsg("Wrote: " + timeServerURL[i]);
+      debugMsg("writing time server URL, length " + timeServerURL.length());
     } else {
       EEPROM.write(96 + i, 0);
     }
@@ -1271,6 +1123,7 @@ void storeTimeServerURLInEEPROM(String timeServerURL) {
 }
 
 void resetEEPROM() {
+  debugMsg("Clearing EEPROM");
   wipeEEPROM();
   storeTimeServerURLInEEPROM(DEFAULT_TIME_SERVER_URL);
   storeCredentialsInEEPROM("","");
@@ -1321,6 +1174,28 @@ int getIntValue(String data, char separator, int index) {
   return atoi(result.c_str());
 }
 
+void debugMsg(String msg) {
+  #ifdef DEBUG
+  Serial.println(msg);
+  #endif
+}
+void debugMsgContinue(String msg) {
+  #ifdef DEBUG
+  Serial.print(msg);
+  #endif
+}
+
+void setupDebug() {
+  #ifdef DEBUG
+  Serial.begin(115200);
+  debugMsg("Starting debug session");
+  #endif
+}
+
+String formatIPAsString(IPAddress ip) {
+  return String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
+}
+
 // ----------------------------------------------------------------------------------------------------
 // ------------------------------------------- I2C functions ------------------------------------------
 // ----------------------------------------------------------------------------------------------------
@@ -1339,12 +1214,9 @@ boolean sendTimeToI2C(String timeString) {
 
   byte yearAdjusted = (year - 2000);
 
-#ifdef DEBUG
-  Serial.println("Sending time to I2C");
-  Serial.println(timeString);
-#endif
+  debugMsg("Sending time to I2C: " + timeString);
 
-  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.beginTransmission(preferredI2CSlaveAddress);
   Wire.write(I2C_TIME_UPDATE); // Command
   Wire.write(yearAdjusted);
   Wire.write(month);
@@ -1360,167 +1232,97 @@ boolean sendTimeToI2C(String timeString) {
    Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean getClockOptionsFromI2C() {
-  int available = Wire.requestFrom(I2C_SLAVE_ADDR, 20);
-
-#ifdef DEBUG
-  Serial.print("I2C <-- Received bytes: ");
-  Serial.println(available);
-#endif
+  int available = Wire.requestFrom(preferredI2CSlaveAddress, 20);
+  debugMsgContinue("I2C <-- Received bytes: " + available);
   if (available == 20) {
 
     byte receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got protocol header: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got protocol header: " + receivedByte);
 
     if (receivedByte != 48) {
-#ifdef DEBUG
-      Serial.print("I2C Protocol ERROR! Expected header 48, but got: ");
-      Serial.println(receivedByte);
-#endif
+      debugMsg("I2C Protocol ERROR! Expected header 48, but got: " + receivedByte);
       return false;
     }
     
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got hour mode: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got hour mode: " + receivedByte);
     configHourMode = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got blank lead: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got blank lead: " + receivedByte);
     configBlankLead = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got scrollback: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got scrollback: " + receivedByte);
     configScrollback = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got suppress ACP: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got suppress ACP: " + receivedByte);
     configSuppressACP = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got useFade: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got useFade: " + receivedByte);
     configUseFade = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got date format: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got date format: " + receivedByte);
     configDateFormat = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got day blanking: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got day blanking: " + receivedByte);
     configDayBlanking = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got blank hour start: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got blank hour start: " + receivedByte);
     configBlankFrom = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got blank hour end: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got blank hour end: " + receivedByte);
     configBlankTo = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got fade steps: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got fade steps: " + receivedByte);
     configFadeSteps = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got scroll steps: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got scroll steps: " + receivedByte);
     configScrollSteps = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got backlight mode: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got backlight mode: " + receivedByte);
     configBacklightMode = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got red channel: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got red channel: " + receivedByte);
     configRedCnl = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got green channel: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got green channel: " + receivedByte);
     configGreenCnl = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got blue channel: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got blue channel: " + receivedByte);
     configBlueCnl = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got cycle speed: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got cycle speed: " + receivedByte);
     configCycleSpeed = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got useLDR: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got useLDR: " + receivedByte);
     configUseLDR = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got blankMode: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got blankMode: " + receivedByte);
     configBlankMode = receivedByte;
 
     receivedByte = Wire.read();
-#ifdef DEBUG
-    Serial.print("I2C <-- Got slotsMode: ");
-    Serial.println(receivedByte);
-#endif
+    debugMsg("I2C <-- Got slotsMode: " + receivedByte);
     configSlotsMode = receivedByte;
 
   } else {
     // didn't get the right number of bytes
-#ifdef DEBUG
-    Serial.print("I2C <-- Got wrong number of bytes, expected 20, got: ");
-    Serial.println(available);
-#endif
+    debugMsg("I2C <-- Got wrong number of bytes, expected 20, got: " + available);
   }
   
   int error = Wire.endTransmission();
@@ -1528,20 +1330,9 @@ boolean getClockOptionsFromI2C() {
 }
 
 boolean sendIPAddressToI2C(IPAddress ip) {
-  
-#ifdef DEBUG
-  Serial.println("Sending IP Address to I2C");
-  Serial.print(ip[0]);
-  Serial.print(".");
-  Serial.print(ip[1]);
-  Serial.print(".");
-  Serial.print(ip[2]);
-  Serial.print(".");
-  Serial.print(ip[3]);
-  Serial.println("");
-#endif
+  debugMsg("Sending IP Address to I2C: " + formatIPAsString(ip));
 
-  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.beginTransmission(preferredI2CSlaveAddress);
   Wire.write(I2C_SHOW_IP_ADDR); // Command
   Wire.write(ip[0]);
   Wire.write(ip[1]);
@@ -1632,14 +1423,9 @@ boolean setClockOptionSlotsMode(byte newMode) {
    Send the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean setClockOptionBoolean(byte option, boolean newMode) {
-#ifdef DEBUG
-  Serial.print("I2C --> setting boolean option: ");
-  Serial.print(option);
-  Serial.print(" with value: ");
-  Serial.println(newMode);
-#endif
+  debugMsg("I2C --> setting boolean option: " + String(option) + " with value: " + String(newMode));
 
-  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.beginTransmission(preferredI2CSlaveAddress);
   Wire.write(option);
   byte newOption;
   if (newMode) {
@@ -1657,19 +1443,39 @@ boolean setClockOptionBoolean(byte option, boolean newMode) {
    Send the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean setClockOptionByte(byte option, byte newMode) {
-#ifdef DEBUG
-  Serial.print("I2C --> setting byte option: ");
-  Serial.print(option);
-  Serial.print(" with value: ");
-  Serial.println(newMode);
-#endif
+  debugMsg("I2C --> setting byte option: " + String(option) + " with value: " + String(newMode));
 
-  Wire.beginTransmission(I2C_SLAVE_ADDR);
+  Wire.beginTransmission(preferredI2CSlaveAddress);
   Wire.write(option);
   Wire.write(newMode);
   int error = Wire.endTransmission();
   delay(10);
   return (error == 0);
+}
+
+boolean scanI2CBus() {
+  debugMsg("Scanning I2C bus");
+  byte pingAnsweredFrom = 0xff;
+  for (int idx = 0 ; idx < 128 ; idx++)
+  {
+    Wire.beginTransmission(idx);
+    int error = Wire.endTransmission();
+    if (error == 0) {
+      debugMsg("Received a response from " + String(idx));
+      preferredI2CSlaveAddress = idx;
+      preferredAddressFoundBy = 1;
+      if (getClockOptionsFromI2C()) {
+        debugMsg("Received a ping answer from " + String(idx));
+        pingAnsweredFrom = idx;
+      }
+    }
+  }
+
+  // if we got a ping answer, then we must use that
+  if (pingAnsweredFrom != 0xff) {
+    preferredI2CSlaveAddress = pingAnsweredFrom;
+    preferredAddressFoundBy = 2;
+  }
 }
 
 // ----------------------------------------------------------------------------------------------------
