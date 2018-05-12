@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <time.h>
   
-#define SOFTWARE_VERSION "1.0.7"
+#define SOFTWARE_VERSION "Rev4_v0051"
 #define DEFAULT_TIME_SERVER_URL "http://time-zone-server.scapp.io/getTime/Europe/Zurich"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
