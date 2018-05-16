@@ -1005,7 +1005,7 @@ String getTimeFromTimeZoneServer() {
   if (httpCode == HTTP_CODE_OK) {
     payload = http.getString();
   } else {
-    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    debugMsg("[HTTP] GET... failed, error: " + http.errorToString(httpCode));
     if (httpCode > 0) {
       // RFC error codes don't have a string mapping
       payload = "ERROR: " + String(httpCode);
@@ -1108,12 +1108,12 @@ String getTimeServerURLFromEEPROM() {
 }
 
 void storeTimeServerURLInEEPROM(String timeServerURL) {
+  debugMsg("writing time server URL, length " + timeServerURL.length());
   for (int i = 0; i < 256; i++)
   {
     if (i < timeServerURL.length()) {
       EEPROM.write(96 + i, timeServerURL[i]);
       debugMsg("Wrote: " + timeServerURL[i]);
-      debugMsg("writing time server URL, length " + timeServerURL.length());
     } else {
       EEPROM.write(96 + i, 0);
     }
@@ -1232,8 +1232,8 @@ boolean sendTimeToI2C(String timeString) {
    Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean getClockOptionsFromI2C() {
-  int available = Wire.requestFrom(preferredI2CSlaveAddress, 20);
-  debugMsgContinue("I2C <-- Received bytes: " + available);
+  int available = Wire.requestFrom((int)preferredI2CSlaveAddress, 20);
+  debugMsg("I2C <-- Received bytes (expecting 20): " + available);
   if (available == 20) {
 
     byte receivedByte = Wire.read();
