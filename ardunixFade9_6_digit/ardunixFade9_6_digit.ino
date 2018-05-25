@@ -3532,7 +3532,7 @@ void calibrateHVG() {
   setPWMOnTime(PWM_PULSE_MIN);
   for (int i = 0 ; i < 768 ; i++ ) {
     //loadNumberArray8s();
-    loadNumberArrayConfInt(pwmOn, currentMode - MODE_12_24);
+    loadNumberArrayConfInt(pwmOn, 0);
     allBright();
     outputDisplay();
 
@@ -3550,7 +3550,7 @@ void calibrateHVG() {
   setPWMOnTime(pwmOn + 50);
   for (int i = 0 ; i < 768 ; i++ ) {
     //loadNumberArray8s();
-    loadNumberArrayConfInt(pwmOn, currentMode - MODE_12_24);
+    loadNumberArrayConfInt(pwmOn, 0);
     allBright();
     outputDisplay();
 
