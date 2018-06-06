@@ -64,7 +64,7 @@
 #define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION      51
+#define SOFTWARE_VERSION      52
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -97,7 +97,7 @@
 #define HVGEN_TARGET_VOLTAGE_MAX     200
 
 // The PWM parameters
-#define PWM_TOP_DEFAULT   1000
+#define PWM_TOP_DEFAULT   10000
 #define PWM_TOP_MIN       300
 #define PWM_TOP_MAX       10000
 #define PWM_PULSE_DEFAULT 200
