@@ -7,7 +7,7 @@
 //*  - Configuration stored in EEPROM                                              *
 //*  - Low hardware component count (as much as possible done in code)             *
 //*  - Single button operation with software debounce                              *
-//*  - Single 74141 for digit display (other versions use 2 or even 6!)            *
+//*  - Single K155ID1 for digit display (other versions use 2 or even 6!)          *
 //*  - Automatic dimming, using a Light Dependent Resistor                         *
 //*  - RGB back light management                                                   *
 //*                                                                                *
@@ -3415,9 +3415,17 @@ void factoryReset() {
 // ************************************************************
 void checkHVVoltage() {
   if (getSmoothedHVSensorReading() > rawHVADCThreshold) {
-    setPWMTopTime(pwmTop + 1);
+    int diff = getSmoothedHVSensorReading() - rawHVADCThreshold;
+    int inc = 1;
+    if (diff > 20) inc = 50;
+    else if (diff > 10) inc = 5;
+    setPWMTopTime(pwmTop + inc);
   } else {
-    setPWMTopTime(pwmTop - 1);
+    int diff = rawHVADCThreshold - getSmoothedHVSensorReading();
+    int inc = 1;
+    if (diff > 20) inc = 50;
+    else if (diff > 10) inc = 5;
+    setPWMTopTime(pwmTop - inc);
   }
 }
 
