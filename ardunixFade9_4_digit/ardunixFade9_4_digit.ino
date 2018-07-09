@@ -67,7 +67,7 @@
 #define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION      53
+#define SOFTWARE_VERSION      453
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -1043,11 +1043,13 @@ void loop()
     nextMode = currentMode;
   }
 
+  // -------------------------------------------------------------------------------
+
   // ************* Process the modes *************
   if (nextMode != currentMode) {
-    setNextMode();
+    processDisplayMode(nextMode);
   } else {
-    processCurrentMode();
+    processDisplayMode(currentMode);
   }
 
   // get the LDR ambient light reading
@@ -1088,6 +1090,8 @@ void loop()
     // Digit burn mode
     digitOn(digitBurnDigit, digitBurnValue);
   }
+
+  // -------------------------------------------------------------------------------
 
   // Slow regulation of the voltage
   checkHVVoltage();
@@ -1250,83 +1254,10 @@ void setLeds()
 }
 
 // ************************************************************
-// Show the preview of the next mode - we stay in this mode until the 
-// button is released
-// ************************************************************
-void setNextMode() {
-  // turn off blanking
-  blanked = false;
-  setTubesAndLEDSBlankMode();
-
-  switch (nextMode) {
-    case MODE_HOURS_SET: {
-        if (useWiFi > 0) {
-          // skip past the time settings
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-        }
-        break;
-      }
-    case MODE_DAYS_SET: {
-        if (useWiFi > 0) {
-          // skip past the time settings
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-        }
-        break;
-      }
-    case MODE_HR_BLNK_START: {
-        if (dayBlanking < DAY_BLANKING_HOURS) {
-          // Skip past the start and end hour if the blanking mode says it is not relevant
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-        }
-        break;
-      }
-    case MODE_RED_CNL: {
-        if ((backlightMode == BACKLIGHT_CYCLE) || (backlightMode == BACKLIGHT_CYCLE_DIM))  {
-          // Skip if we are in cycle mode
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-          nextMode++;
-          currentMode++;
-        }
-        break;
-      }
-    case MODE_CYCLE_SPEED: {
-        if ((backlightMode != BACKLIGHT_CYCLE) && (backlightMode != BACKLIGHT_CYCLE_DIM))  {
-          // Skip if we are in cycle mode
-          nextMode++;
-          currentMode++;
-        }
-        break;
-      }
-    case MODE_DIGIT_BURN: {
-        // Nothing: handled separately to suppress multiplexing
-      }
-  }
-  
-  loadNumberArrayConfItem(nextMode);
-  confBlink();
-}
-
-// ************************************************************
 // Show the next mode - once the button is released
 // ************************************************************
-void processCurrentMode() {
-  switch (currentMode) {
+void processDisplayMode(int displayMode) {
+  switch (displayMode) {
     case MODE_TIME: {
         if (button1.isButtonPressedAndReleased()) {
           // Deal with blanking first
@@ -1372,10 +1303,12 @@ void processCurrentMode() {
           setTubesAndLEDSBlankMode();
           if (tempDisplayMode == TEMP_MODE_SECS) {
             loadNumberArrayMinsSecs();
+            allFadeOrNormal(false);
           }
 
           if (tempDisplayMode == TEMP_MODE_DATE) {
             loadNumberArrayDayMonth();
+            allFadeOrNormal(false);
           }
 
           if (tempDisplayMode == TEMP_MODE_TEMP) {
@@ -1383,19 +1316,23 @@ void processCurrentMode() {
             if (useRTC) timeProv += 1;
             if (useWiFi > 0) timeProv += 2;
             loadNumberArrayTemp();
+            allFadeOrNormal(false);
           }
 
           if (tempDisplayMode == TEMP_MODE_LDR) {
             loadNumberArrayInt(digitOffCount);
+            allFadeOrNormal(false);
           }
 
           if (tempDisplayMode == TEMP_MODE_VERSION) {
-            loadNumberArrayConfInt(SOFTWARE_VERSION, currentMode);
+            loadNumberArrayConfInt(SOFTWARE_VERSION, displayMode);
+            allFadeOrNormal(false);
           }
 
           if (tempDisplayMode == TEMP_IP_ADDR1) {
             if (useWiFi > 0) {
               loadNumberArrayIP(ourIP[0]);
+              showDisplayIP();
             } else {
               // we can't show the IP address if we have the RTC, just skip
               tempDisplayMode++;
@@ -1405,6 +1342,7 @@ void processCurrentMode() {
           if (tempDisplayMode == TEMP_IP_ADDR2) {
             if (useWiFi > 0) {
               loadNumberArrayIP(ourIP[1]);
+              showDisplayIP();
             } else {
               // we can't show the IP address if we have the RTC, just skip
               tempDisplayMode++;
@@ -1414,6 +1352,7 @@ void processCurrentMode() {
           if (tempDisplayMode == TEMP_IP_ADDR3) {
             if (useWiFi > 0) {
               loadNumberArrayIP(ourIP[2]);
+              showDisplayIP();
             } else {
               // we can't show the IP address if we have the RTC, just skip
               tempDisplayMode++;
@@ -1423,6 +1362,7 @@ void processCurrentMode() {
           if (tempDisplayMode == TEMP_IP_ADDR4) {
             if (useWiFi > 0) {
               loadNumberArrayIP(ourIP[3]);
+              showDisplayIP();
             } else {
               // we can't show the IP address if we have the RTC, just skip
               tempDisplayMode++;
@@ -1431,10 +1371,8 @@ void processCurrentMode() {
 
           if (tempDisplayMode == TEMP_IMPR) {
             loadNumberArrayInt(lastImpressionsPerSec);
+            allFadeOrNormal(false);
           }
-
-          allFadeOrNormal(false);
-
         } else {
           if (acpOffset > 0) {
             loadNumberArrayACP();
@@ -1480,20 +1418,25 @@ void processCurrentMode() {
         }
         break;
       }
+    case MODE_HOURS_SET: {
+        if (useWiFi > 0) {
+          // skip past the time and date settings
+          nextMode += 6;
+          currentMode += 6;
+        }
+        if (button1.isButtonPressedAndReleased()) {
+          incHours();
+        }
+        loadNumberArrayTime();
+        highlight0and1();
+        break;
+      }
     case MODE_MINS_SET: {
         if (button1.isButtonPressedAndReleased()) {
           incMins();
         }
         loadNumberArrayTime();
         highlight2and3();
-        break;
-      }
-    case MODE_HOURS_SET: {
-        if (button1.isButtonPressedAndReleased()) {
-          incHours();
-        }
-        loadNumberArrayTime();
-        highlight0and1();
         break;
       }
     case MODE_SECS_SET: {
@@ -1532,7 +1475,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           hourMode = ! hourMode;
         }
-        loadNumberArrayConfBool(hourMode, currentMode);
+        loadNumberArrayConfBool(hourMode, displayMode);
         displayConfig();
         break;
       }
@@ -1540,7 +1483,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           blankLeading = !blankLeading;
         }
-        loadNumberArrayConfBool(blankLeading, currentMode);
+        loadNumberArrayConfBool(blankLeading, displayMode);
         displayConfig();
         break;
       }
@@ -1548,7 +1491,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           scrollback = !scrollback;
         }
-        loadNumberArrayConfBool(scrollback, currentMode);
+        loadNumberArrayConfBool(scrollback, displayMode);
         displayConfig();
         break;
       }
@@ -1556,7 +1499,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           fade = !fade;
         }
-        loadNumberArrayConfBool(fade, currentMode);
+        loadNumberArrayConfBool(fade, displayMode);
         displayConfig();
         break;
       }
@@ -1567,7 +1510,7 @@ void processCurrentMode() {
             dateFormat = DATE_FORMAT_MIN;
           }
         }
-        loadNumberArrayConfInt(dateFormat, currentMode);
+        loadNumberArrayConfInt(dateFormat, displayMode);
         displayConfig();
         break;
       }
@@ -1578,7 +1521,7 @@ void processCurrentMode() {
             dayBlanking = DAY_BLANKING_MIN;
           }
         }
-        loadNumberArrayConfInt(dayBlanking, currentMode);
+        loadNumberArrayConfInt(dayBlanking, displayMode);
         displayConfig();
         break;
       }
@@ -1589,7 +1532,7 @@ void processCurrentMode() {
             blankHourStart = 0;
           }
         }
-        loadNumberArrayConfInt(blankHourStart, currentMode);
+        loadNumberArrayConfInt(blankHourStart, displayMode);
         displayConfig();
         break;
       }
@@ -1600,7 +1543,7 @@ void processCurrentMode() {
             blankHourEnd = 0;
           }
         }
-        loadNumberArrayConfInt(blankHourEnd, currentMode);
+        loadNumberArrayConfInt(blankHourEnd, displayMode);
         displayConfig();
         break;
       }
@@ -1608,7 +1551,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           suppressACP = !suppressACP;
         }
-        loadNumberArrayConfBool(suppressACP, currentMode);
+        loadNumberArrayConfBool(suppressACP, displayMode);
         displayConfig();
         break;
       }
@@ -1619,7 +1562,7 @@ void processCurrentMode() {
             blankMode = BLANK_MODE_MIN;
           }
         }
-        loadNumberArrayConfInt(blankMode, currentMode);
+        loadNumberArrayConfInt(blankMode, displayMode);
         displayConfig();
         break;
       }
@@ -1627,7 +1570,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           useLDR = !useLDR;
         }
-        loadNumberArrayConfBool(useLDR, currentMode);
+        loadNumberArrayConfBool(useLDR, displayMode);
         displayConfig();
         break;
       }
@@ -1638,7 +1581,7 @@ void processCurrentMode() {
             fadeSteps = FADE_STEPS_MIN;
           }
         }
-        loadNumberArrayConfInt(fadeSteps, currentMode);
+        loadNumberArrayConfInt(fadeSteps, displayMode);
         displayConfig();
         fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
         break;
@@ -1650,7 +1593,7 @@ void processCurrentMode() {
             fadeSteps = FADE_STEPS_MAX;
           }
         }
-        loadNumberArrayConfInt(fadeSteps, currentMode);
+        loadNumberArrayConfInt(fadeSteps, displayMode);
         displayConfig();
         fadeStep = DIGIT_DISPLAY_COUNT / fadeSteps;
         break;
@@ -1662,7 +1605,7 @@ void processCurrentMode() {
             scrollSteps = SCROLL_STEPS_MAX;
           }
         }
-        loadNumberArrayConfInt(scrollSteps, currentMode);
+        loadNumberArrayConfInt(scrollSteps, displayMode);
         displayConfig();
         break;
       }
@@ -1673,7 +1616,7 @@ void processCurrentMode() {
             scrollSteps = SCROLL_STEPS_MIN;
           }
         }
-        loadNumberArrayConfInt(scrollSteps, currentMode);
+        loadNumberArrayConfInt(scrollSteps, displayMode);
         displayConfig();
         break;
       }
@@ -1684,7 +1627,7 @@ void processCurrentMode() {
             slotsMode = SLOTS_MODE_MIN;
           }
         }
-        loadNumberArrayConfInt(slotsMode, currentMode);
+        loadNumberArrayConfInt(slotsMode, displayMode);
         displayConfig();
         break;
       }
@@ -1695,7 +1638,7 @@ void processCurrentMode() {
             backlightMode = BACKLIGHT_MIN;
           }
         }
-        loadNumberArrayConfInt(backlightMode, currentMode);
+        loadNumberArrayConfInt(backlightMode, displayMode);
         displayConfig();
         break;
       }
@@ -1712,7 +1655,7 @@ void processCurrentMode() {
             redCnl = COLOUR_CNL_MIN;
           }
         }
-        loadNumberArrayConfInt(redCnl, currentMode);
+        loadNumberArrayConfInt(redCnl, displayMode);
         displayConfig();
         break;
       }
@@ -1729,7 +1672,7 @@ void processCurrentMode() {
             grnCnl = COLOUR_CNL_MIN;
           }
         }
-        loadNumberArrayConfInt(grnCnl, currentMode);
+        loadNumberArrayConfInt(grnCnl, displayMode);
         displayConfig();
         break;
       }
@@ -1746,7 +1689,7 @@ void processCurrentMode() {
             bluCnl = COLOUR_CNL_MIN;
           }
         }
-        loadNumberArrayConfInt(bluCnl, currentMode);
+        loadNumberArrayConfInt(bluCnl, displayMode);
         displayConfig();
         break;
       }
@@ -1757,7 +1700,7 @@ void processCurrentMode() {
             cycleSpeed = CYCLE_SPEED_MIN;
           }
         }
-        loadNumberArrayConfInt(cycleSpeed, currentMode);
+        loadNumberArrayConfInt(cycleSpeed, displayMode);
         displayConfig();
         break;
       }
@@ -1768,7 +1711,7 @@ void processCurrentMode() {
             hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MIN;
           }
         }
-        loadNumberArrayConfInt(hvTargetVoltage, currentMode);
+        loadNumberArrayConfInt(hvTargetVoltage, displayMode);
         rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
         displayConfig();
         break;
@@ -1780,7 +1723,7 @@ void processCurrentMode() {
             hvTargetVoltage = HVGEN_TARGET_VOLTAGE_MAX;
           }
         }
-        loadNumberArrayConfInt(hvTargetVoltage, currentMode);
+        loadNumberArrayConfInt(hvTargetVoltage, displayMode);
         rawHVADCThreshold = getRawHVADCThreshold(hvTargetVoltage);
         displayConfig();
         break;
@@ -1793,7 +1736,7 @@ void processCurrentMode() {
           }
           setPWMOnTime(pwmOn);
         }
-        loadNumberArrayConfInt(pwmOn, currentMode);
+        loadNumberArrayConfInt(pwmOn, displayMode);
         displayConfig();
         break;
       }
@@ -1805,7 +1748,7 @@ void processCurrentMode() {
           }
           setPWMOnTime(pwmOn);
         }
-        loadNumberArrayConfInt(pwmOn, currentMode);
+        loadNumberArrayConfInt(pwmOn, displayMode);
         displayConfig();
         break;
       }
@@ -1816,7 +1759,7 @@ void processCurrentMode() {
             minDim = MIN_DIM_MAX;
           }
         }
-        loadNumberArrayConfInt(minDim, currentMode);
+        loadNumberArrayConfInt(minDim, displayMode);
         displayConfig();
         break;
       }
@@ -1827,7 +1770,7 @@ void processCurrentMode() {
             minDim = MIN_DIM_MIN;
           }
         }
-        loadNumberArrayConfInt(minDim, currentMode);
+        loadNumberArrayConfInt(minDim, displayMode);
         displayConfig();
         break;
       }
@@ -1839,7 +1782,7 @@ void processCurrentMode() {
           }
           dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
         }
-        loadNumberArrayConfInt(antiGhost, currentMode);
+        loadNumberArrayConfInt(antiGhost, displayMode);
         displayConfig();
         break;
       }
@@ -1851,7 +1794,7 @@ void processCurrentMode() {
           }
           dispCount = DIGIT_DISPLAY_COUNT + antiGhost;
         }
-        loadNumberArrayConfInt(antiGhost, currentMode);
+        loadNumberArrayConfInt(antiGhost, displayMode);
         displayConfig();
         break;
       }
@@ -1861,7 +1804,7 @@ void processCurrentMode() {
         break;
       }
     case MODE_VERSION: {
-        loadNumberArrayConfInt(SOFTWARE_VERSION, currentMode);
+        loadNumberArrayConfInt(SOFTWARE_VERSION, displayMode);
         displayConfig();
         break;
       }
@@ -2102,10 +2045,10 @@ void loadNumberArrayConfBool(boolean confValue, byte mode) {
 // Show an integer configuration value
 // ************************************************************
 void loadNumberArrayIP(byte byte1) {
-  NumberArray[3] = 0;
-  NumberArray[2] = (byte1) % 10;
-  NumberArray[1] = (byte1 / 10) % 10;
-  NumberArray[0] = (byte1 / 100) % 10;
+  NumberArray[3] = (byte1) % 10;
+  NumberArray[2] = (byte1 / 10) % 10;
+  NumberArray[1] = (byte1 / 100) % 10;
+  NumberArray[0] = 0;
 }
 
 // ************************************************************
@@ -2116,6 +2059,191 @@ void loadNumberArrayConfItem(byte val) {
   NumberArray[2] = val / 10;
   NumberArray[1] = 0;
   NumberArray[0] = 0;
+}
+
+// ************************************************************
+// Display preset - apply leading zero blanking
+// ************************************************************
+void applyBlanking() {
+  // If we are not blanking, just get out
+  if (blankLeading == false) {
+    return;
+  }
+
+  // We only want to blank the hours tens digit
+  if (NumberArray[0] == 0) {
+    if (displayType[0] != BLANKED) {
+      displayType[0] = BLANKED;
+    }
+  }
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void allFadeOrNormal(boolean blanking) {
+  if (fade) {
+    allFade();
+  } else {
+    allNormal();
+  }
+
+  if (blanking) {
+    applyBlanking();
+  }
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void allFade() {
+  if (displayType[0] != FADE) displayType[0] = FADE;
+  if (displayType[1] != FADE) displayType[1] = FADE;
+  if (displayType[2] != FADE) displayType[2] = FADE;
+  if (displayType[3] != FADE) displayType[3] = FADE;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void allBright() {
+  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
+  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
+  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
+  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
+}
+
+// ************************************************************
+// highlight months taking into account the date format
+// ************************************************************
+void highlightMonthsDateFormat() {
+  switch (dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight2and3();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight0and1();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight2and3();
+      break;
+  }
+}
+
+// ************************************************************
+// highlight days taking into account the date format
+// ************************************************************
+void highlightDaysDateFormat() {
+  switch (dateFormat) {
+    case DATE_FORMAT_YYMMDD:
+      highlight0and1();
+      break;
+    case DATE_FORMAT_MMDDYY:
+      highlight2and3();
+      break;
+    case DATE_FORMAT_DDMMYY:
+      highlight0and1();
+      break;
+  }
+}
+
+// ************************************************************
+// Display preset, highlight digits 0 and 1
+// ************************************************************
+void highlight0and1() {
+  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
+  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
+  if (displayType[2] != DIMMED) displayType[2] = DIMMED;
+  if (displayType[3] != DIMMED) displayType[3] = DIMMED;
+}
+
+// ************************************************************
+// Display preset, highlight digits 2 and 3
+// ************************************************************
+void highlight2and3() {
+  if (displayType[0] != DIMMED) displayType[0] = DIMMED;
+  if (displayType[1] != DIMMED) displayType[1] = DIMMED;
+  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
+  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
+}
+
+// ************************************************************
+// Display preset, highlight digits 0 and 1
+// ************************************************************
+void highlightAll() {
+  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
+  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
+  if (displayType[2] != DIMMED) displayType[2] = BRIGHT;
+  if (displayType[3] != DIMMED) displayType[3] = BRIGHT;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void allNormal() {
+  if (displayType[0] != NORMAL) displayType[0] = NORMAL;
+  if (displayType[1] != NORMAL) displayType[1] = NORMAL;
+  if (displayType[2] != NORMAL) displayType[2] = NORMAL;
+  if (displayType[3] != NORMAL) displayType[3] = NORMAL;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void displayConfig() {
+  if (displayType[0] != BLINK) displayType[0] = BLINK;
+  if (displayType[1] != BLINK) displayType[1] = BLINK;
+  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
+  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
+}
+
+// Display preset
+// ************************************************************
+void displayConfig3() {
+  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
+  if (displayType[1] != NORMAL) displayType[1] = BRIGHT;
+  if (displayType[2] != NORMAL) displayType[2] = BRIGHT;
+  if (displayType[3] != NORMAL) displayType[3] = BRIGHT;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void displayConfig2() {
+  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
+  if (displayType[1] != BLANKED) displayType[1] = BLANKED;
+  if (displayType[2] != NORMAL) displayType[2] = BRIGHT;
+  if (displayType[3] != NORMAL) displayType[3] = BRIGHT;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void allBlanked() {
+  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
+  if (displayType[1] != BLANKED) displayType[1] = BLANKED;
+  if (displayType[2] != BLANKED) displayType[2] = BLANKED;
+  if (displayType[3] != BLANKED) displayType[3] = BLANKED;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void confBlink() {
+  if (displayType[0] != BLINK) displayType[0] = BLINK;
+  if (displayType[1] != BLINK) displayType[1] = BLINK;
+  if (displayType[2] != BLINK) displayType[2] = BLINK;
+  if (displayType[3] != BLINK) displayType[3] = BLINK;
+}
+
+// ************************************************************
+// Display preset
+// ************************************************************
+void showDisplayIP() {
+  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
+  if (displayType[1] != FADE) displayType[1] = FADE;
+  if (displayType[2] != FADE) displayType[2] = FADE;
+  if (displayType[3] != FADE) displayType[3] = FADE;
 }
 
 // ************************************************************
@@ -2322,181 +2450,6 @@ void digitOff() {
   // turn all digits off - equivalent to digitalWrite(ledPin_a_n,LOW); (n=1,2,3,4,5,6) but much faster
   PORTC = PORTC & B11110011;
   PORTD = PORTD & B11101000;
-}
-
-// ************************************************************
-// Display preset - apply leading zero blanking
-// ************************************************************
-void applyBlanking() {
-  // If we are not blanking, just get out
-  if (blankLeading == false) {
-    return;
-  }
-
-  // We only want to blank the hours tens digit
-  if (NumberArray[0] == 0) {
-    if (displayType[0] != BLANKED) {
-      displayType[0] = BLANKED;
-    }
-  }
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void allFadeOrNormal(boolean blanking) {
-  if (fade) {
-    allFade();
-  } else {
-    allNormal();
-  }
-
-  if (blanking) {
-    applyBlanking();
-  }
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void allFade() {
-  if (displayType[0] != FADE) displayType[0] = FADE;
-  if (displayType[1] != FADE) displayType[1] = FADE;
-  if (displayType[2] != FADE) displayType[2] = FADE;
-  if (displayType[3] != FADE) displayType[3] = FADE;
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void allBright() {
-  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
-  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
-  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
-  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
-}
-
-// ************************************************************
-// highlight months taking into account the date format
-// ************************************************************
-void highlightMonthsDateFormat() {
-  switch (dateFormat) {
-    case DATE_FORMAT_YYMMDD:
-      highlight2and3();
-      break;
-    case DATE_FORMAT_MMDDYY:
-      highlight0and1();
-      break;
-    case DATE_FORMAT_DDMMYY:
-      highlight2and3();
-      break;
-  }
-}
-
-// ************************************************************
-// highlight days taking into account the date format
-// ************************************************************
-void highlightDaysDateFormat() {
-  switch (dateFormat) {
-    case DATE_FORMAT_YYMMDD:
-      highlight0and1();
-      break;
-    case DATE_FORMAT_MMDDYY:
-      highlight2and3();
-      break;
-    case DATE_FORMAT_DDMMYY:
-      highlight0and1();
-      break;
-  }
-}
-
-// ************************************************************
-// Display preset, highlight digits 0 and 1
-// ************************************************************
-void highlight0and1() {
-  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
-  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
-  if (displayType[2] != DIMMED) displayType[2] = DIMMED;
-  if (displayType[3] != DIMMED) displayType[3] = DIMMED;
-}
-
-// ************************************************************
-// Display preset, highlight digits 2 and 3
-// ************************************************************
-void highlight2and3() {
-  if (displayType[0] != DIMMED) displayType[0] = DIMMED;
-  if (displayType[1] != DIMMED) displayType[1] = DIMMED;
-  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
-  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
-}
-
-// ************************************************************
-// Display preset, highlight digits 0 and 1
-// ************************************************************
-void highlightAll() {
-  if (displayType[0] != BRIGHT) displayType[0] = BRIGHT;
-  if (displayType[1] != BRIGHT) displayType[1] = BRIGHT;
-  if (displayType[2] != DIMMED) displayType[2] = BRIGHT;
-  if (displayType[3] != DIMMED) displayType[3] = BRIGHT;
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void allNormal() {
-  if (displayType[0] != NORMAL) displayType[0] = NORMAL;
-  if (displayType[1] != NORMAL) displayType[1] = NORMAL;
-  if (displayType[2] != NORMAL) displayType[2] = NORMAL;
-  if (displayType[3] != NORMAL) displayType[3] = NORMAL;
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void displayConfig() {
-  if (displayType[0] != BLINK) displayType[0] = BLINK;
-  if (displayType[1] != BLINK) displayType[1] = BLINK;
-  if (displayType[2] != BRIGHT) displayType[2] = BRIGHT;
-  if (displayType[3] != BRIGHT) displayType[3] = BRIGHT;
-}
-
-// Display preset
-// ************************************************************
-void displayConfig3() {
-  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
-  if (displayType[1] != NORMAL) displayType[1] = BRIGHT;
-  if (displayType[2] != NORMAL) displayType[2] = BRIGHT;
-  if (displayType[3] != NORMAL) displayType[3] = BRIGHT;
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void displayConfig2() {
-  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
-  if (displayType[1] != BLANKED) displayType[1] = BLANKED;
-  if (displayType[2] != NORMAL) displayType[2] = BRIGHT;
-  if (displayType[3] != NORMAL) displayType[3] = BRIGHT;
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void allBlanked() {
-  if (displayType[0] != BLANKED) displayType[0] = BLANKED;
-  if (displayType[1] != BLANKED) displayType[1] = BLANKED;
-  if (displayType[2] != BLANKED) displayType[2] = BLANKED;
-  if (displayType[3] != BLANKED) displayType[3] = BLANKED;
-}
-
-// ************************************************************
-// Display preset
-// ************************************************************
-void confBlink() {
-  if (displayType[0] != BLINK) displayType[0] = BLINK;
-  if (displayType[1] != BLINK) displayType[1] = BLINK;
-  if (displayType[2] != BLINK) displayType[2] = BLINK;
-  if (displayType[3] != BLINK) displayType[3] = BLINK;
 }
 
 // ************************************************************
