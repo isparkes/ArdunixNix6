@@ -21,6 +21,9 @@
 #include <Wire.h>
 #include <TimeLib.h>
 
+// Other parts of the code, broken out for clarity
+#include "ClockButton.h"
+
 //**********************************************************************************
 //**********************************************************************************
 //*                               Constants                                        *
@@ -570,212 +573,6 @@ protected:
 
 Transition transition(500, 1000, 3000);
 
-//**********************************************************************************
-
-// Structure for encapsulating button debounce and management
-struct Button {
-  public:
-    // Constructor
-    Button(byte newInputPin, boolean newActiveLow) : inputPin(0), activeLow(false) {
-      inputPin = newInputPin;
-      activeLow = newActiveLow;
-    }
-
-    // ************************************************************
-    // MAIN BUTTON CHECK ENTRY POINT - should be called periodically
-    // See if the button was pressed and debounce. We perform a
-    // sort of preview here, then confirm by releasing. We track
-    // 3 lengths of button press: momentarily, 1S and 2S.
-    // ************************************************************
-    void checkButton(unsigned long nowMillis) {
-      checkButtonInternal(nowMillis);
-    }
-
-    // ************************************************************
-    // Reset everything
-    // ************************************************************
-    void reset() {
-      resetInternal();
-    }
-
-    // ************************************************************
-    // Check if button is pressed right now (just debounce)
-    // ************************************************************
-    boolean isButtonPressedNow() {
-      return button1PressedCount == debounceCounter;
-    }
-
-    // ************************************************************
-    // Check if button is pressed momentarily
-    // ************************************************************
-    boolean isButtonPressed() {
-      return buttonPress;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a long time (> 1S)
-    // ************************************************************
-    boolean isButtonPressed1S() {
-      return buttonPress1S;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a moderately long time (> 2S)
-    // ************************************************************
-    boolean isButtonPressed2S() {
-      return buttonPress2S;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a very long time (> 8S)
-    // ************************************************************
-    boolean isButtonPressed8S() {
-      return buttonPress8S;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a short time (> 200mS) and released
-    // ************************************************************
-    boolean isButtonPressedAndReleased() {
-      if (buttonPressRelease) {
-        buttonPressRelease = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a long time (> 2) and released
-    // ************************************************************
-    boolean isButtonPressedReleased1S() {
-      if (buttonPressRelease1S) {
-        buttonPressRelease1S = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a very moderately time (> 2) and released
-    // ************************************************************
-    boolean isButtonPressedReleased2S() {
-      if (buttonPressRelease2S) {
-        buttonPressRelease2S = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a very long time (> 8) and released
-    // ************************************************************
-    boolean isButtonPressedReleased8S() {
-      if (buttonPressRelease8S) {
-        buttonPressRelease8S = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-  private:
-    byte inputPin;
-    boolean activeLow;
-
-    int  button1PressedCount = 0;
-    unsigned long button1PressStartMillis = 0;
-    const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
-    boolean buttonWasReleased = false;
-    boolean buttonPress8S = false;
-    boolean buttonPress2S = false;
-    boolean buttonPress1S = false;
-    boolean buttonPress = false;
-    boolean buttonPressRelease8S = false;
-    boolean buttonPressRelease2S = false;
-    boolean buttonPressRelease1S = false;
-    boolean buttonPressRelease = false;
-
-    void checkButtonInternal(unsigned long nowMillis) {
-      if (digitalRead(inputPin) == 0) {
-        buttonWasReleased = false;
-
-        // We need consecutive pressed counts to treat this is pressed
-        if (button1PressedCount < debounceCounter) {
-          button1PressedCount += 1;
-          // If we reach the debounce point, mark the start time
-          if (button1PressedCount == debounceCounter) {
-            button1PressStartMillis = nowMillis;
-          }
-        } else {
-          // We are pressed and held, maintain the press states
-          if ((nowMillis - button1PressStartMillis) > 8000) {
-            buttonPress8S = true;
-            buttonPress2S = true;
-            buttonPress1S = true;
-            buttonPress = true;
-          } else if ((nowMillis - button1PressStartMillis) > 2000) {
-            buttonPress8S = false;
-            buttonPress2S = true;
-            buttonPress1S = true;
-            buttonPress = true;
-          } else if ((nowMillis - button1PressStartMillis) > 1000) {
-            buttonPress8S = false;
-            buttonPress2S = false;
-            buttonPress1S = true;
-            buttonPress = true;
-          } else {
-            buttonPress8S = false;
-            buttonPress2S = false;
-            buttonPress1S = false;
-            buttonPress = true;
-          }
-        }
-      } else {
-        // mark this as a press and release if we were pressed for less than a long press
-        if (button1PressedCount == debounceCounter) {
-          buttonWasReleased = true;
-
-          buttonPressRelease8S = false;
-          buttonPressRelease2S = false;
-          buttonPressRelease1S = false;
-          buttonPressRelease = false;
-
-          if (buttonPress8S) {
-            buttonPressRelease8S = true;
-          } else if (buttonPress2S) {
-            buttonPressRelease2S = true;
-          } else if (buttonPress1S) {
-            buttonPressRelease1S = true;
-          } else if (buttonPress) {
-            buttonPressRelease = true;
-          }
-        }
-
-        // Reset the switch flags debounce counter
-        buttonPress8S = false;
-        buttonPress2S = false;
-        buttonPress1S = false;
-        buttonPress = false;
-        button1PressedCount = 0;
-      }
-    }
-
-    void resetInternal() {
-      buttonPressRelease8S = false;
-      buttonPressRelease2S = false;
-      buttonPressRelease1S = false;
-      buttonPressRelease = false;
-      buttonPress8S = false;
-      buttonPress2S = false;
-      buttonPress1S = false;
-      buttonPress = false;
-      button1PressedCount = 0;
-    }
-};
-
 // ********************** HV generator variables *********************
 int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
@@ -905,7 +702,7 @@ int impressionsPerSec = 0;
 int lastImpressionsPerSec = 0;
 
 // ********************** Input switch management **********************
-Button button1(inputPin1, false);
+ClockButton button1(inputPin1, false);
 
 // **************************** digit healing ****************************
 // This is a special mode which repairs cathode poisoning by driving a
