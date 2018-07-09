@@ -21,6 +21,9 @@
 #include <Wire.h>
 #include <TimeLib.h>
 
+// Other parts of the code, broken out for clarity
+#include "ClockButton.h"
+
 //**********************************************************************************
 //**********************************************************************************
 //*                               Constants                                        *
@@ -64,7 +67,7 @@
 #define EE_SLOTS_MODE       36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION      51
+#define SOFTWARE_VERSION      53
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -209,16 +212,17 @@
 
 // Temporary display modes - accessed by a short press ( < 1S ) on the button when in MODE_TIME
 #define TEMP_MODE_MIN                   0
-#define TEMP_MODE_DATE                  0 // Display the date for 5 S
-#define TEMP_MODE_TEMP                  1 // Display the temperature for 5 S
-#define TEMP_MODE_LDR                   2 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
-#define TEMP_MODE_VERSION               3 // Display the version for 5S
-#define TEMP_IP_ADDR1                   4 // IP xxx.yyy.zzz.aaa: xxx
-#define TEMP_IP_ADDR2                   5 // IP xxx.yyy.zzz.aaa: yyy
-#define TEMP_IP_ADDR3                   6 // IP xxx.yyy.zzz.aaa: zzz
-#define TEMP_IP_ADDR4                   7 // IP xxx.yyy.zzz.aaa: aaa
-#define TEMP_IMPR                       8 // number of impressions per second
-#define TEMP_MODE_MAX                   8
+#define TEMP_MODE_SECS                  0 // Display mins and secs
+#define TEMP_MODE_DATE                  1 // Display the date
+#define TEMP_MODE_TEMP                  2 // Display the temperature
+#define TEMP_MODE_LDR                   3 // Display the normalised LDR reading for 5S, returns a value from 100 (dark) to 999 (bright)
+#define TEMP_MODE_VERSION               4 // Display the version
+#define TEMP_IP_ADDR1                   5 // IP xxx.yyy.zzz.aaa: xxx
+#define TEMP_IP_ADDR2                   6 // IP xxx.yyy.zzz.aaa: yyy
+#define TEMP_IP_ADDR3                   7 // IP xxx.yyy.zzz.aaa: zzz
+#define TEMP_IP_ADDR4                   8 // IP xxx.yyy.zzz.aaa: aaa
+#define TEMP_IMPR                       9 // number of impressions per second
+#define TEMP_MODE_MAX                   9
 
 #define DATE_FORMAT_MIN                 0
 #define DATE_FORMAT_YYMMDD              0
@@ -572,212 +576,6 @@ protected:
 
 Transition transition(500, 1000, 3000);
 
-//**********************************************************************************
-
-// Structure for encapsulating button debounce and management
-struct Button {
-  public:
-    // Constructor
-    Button(byte newInputPin, boolean newActiveLow) : inputPin(0), activeLow(false) {
-      inputPin = newInputPin;
-      activeLow = newActiveLow;
-    }
-
-    // ************************************************************
-    // MAIN BUTTON CHECK ENTRY POINT - should be called periodically
-    // See if the button was pressed and debounce. We perform a
-    // sort of preview here, then confirm by releasing. We track
-    // 3 lengths of button press: momentarily, 1S and 2S.
-    // ************************************************************
-    void checkButton(unsigned long nowMillis) {
-      checkButtonInternal(nowMillis);
-    }
-
-    // ************************************************************
-    // Reset everything
-    // ************************************************************
-    void reset() {
-      resetInternal();
-    }
-
-    // ************************************************************
-    // Check if button is pressed right now (just debounce)
-    // ************************************************************
-    boolean isButtonPressedNow() {
-      return button1PressedCount == debounceCounter;
-    }
-
-    // ************************************************************
-    // Check if button is pressed momentarily
-    // ************************************************************
-    boolean isButtonPressed() {
-      return buttonPress;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a long time (> 1S)
-    // ************************************************************
-    boolean isButtonPressed1S() {
-      return buttonPress1S;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a moderately long time (> 2S)
-    // ************************************************************
-    boolean isButtonPressed2S() {
-      return buttonPress2S;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a very long time (> 8S)
-    // ************************************************************
-    boolean isButtonPressed8S() {
-      return buttonPress8S;
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a short time (> 200mS) and released
-    // ************************************************************
-    boolean isButtonPressedAndReleased() {
-      if (buttonPressRelease) {
-        buttonPressRelease = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a long time (> 2) and released
-    // ************************************************************
-    boolean isButtonPressedReleased1S() {
-      if (buttonPressRelease1S) {
-        buttonPressRelease1S = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a very moderately time (> 2) and released
-    // ************************************************************
-    boolean isButtonPressedReleased2S() {
-      if (buttonPressRelease2S) {
-        buttonPressRelease2S = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    // ************************************************************
-    // Check if button is pressed for a very long time (> 8) and released
-    // ************************************************************
-    boolean isButtonPressedReleased8S() {
-      if (buttonPressRelease8S) {
-        buttonPressRelease8S = false;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-  private:
-    byte inputPin;
-    boolean activeLow;
-
-    int  button1PressedCount = 0;
-    unsigned long button1PressStartMillis = 0;
-    const byte debounceCounter = 5; // Number of successive reads before we say the switch is down
-    boolean buttonWasReleased = false;
-    boolean buttonPress8S = false;
-    boolean buttonPress2S = false;
-    boolean buttonPress1S = false;
-    boolean buttonPress = false;
-    boolean buttonPressRelease8S = false;
-    boolean buttonPressRelease2S = false;
-    boolean buttonPressRelease1S = false;
-    boolean buttonPressRelease = false;
-
-    void checkButtonInternal(unsigned long nowMillis) {
-      if (digitalRead(inputPin) == 0) {
-        buttonWasReleased = false;
-
-        // We need consecutive pressed counts to treat this is pressed
-        if (button1PressedCount < debounceCounter) {
-          button1PressedCount += 1;
-          // If we reach the debounce point, mark the start time
-          if (button1PressedCount == debounceCounter) {
-            button1PressStartMillis = nowMillis;
-          }
-        } else {
-          // We are pressed and held, maintain the press states
-          if ((nowMillis - button1PressStartMillis) > 8000) {
-            buttonPress8S = true;
-            buttonPress2S = true;
-            buttonPress1S = true;
-            buttonPress = true;
-          } else if ((nowMillis - button1PressStartMillis) > 2000) {
-            buttonPress8S = false;
-            buttonPress2S = true;
-            buttonPress1S = true;
-            buttonPress = true;
-          } else if ((nowMillis - button1PressStartMillis) > 1000) {
-            buttonPress8S = false;
-            buttonPress2S = false;
-            buttonPress1S = true;
-            buttonPress = true;
-          } else {
-            buttonPress8S = false;
-            buttonPress2S = false;
-            buttonPress1S = false;
-            buttonPress = true;
-          }
-        }
-      } else {
-        // mark this as a press and release if we were pressed for less than a long press
-        if (button1PressedCount == debounceCounter) {
-          buttonWasReleased = true;
-
-          buttonPressRelease8S = false;
-          buttonPressRelease2S = false;
-          buttonPressRelease1S = false;
-          buttonPressRelease = false;
-
-          if (buttonPress8S) {
-            buttonPressRelease8S = true;
-          } else if (buttonPress2S) {
-            buttonPressRelease2S = true;
-          } else if (buttonPress1S) {
-            buttonPressRelease1S = true;
-          } else if (buttonPress) {
-            buttonPressRelease = true;
-          }
-        }
-
-        // Reset the switch flags debounce counter
-        buttonPress8S = false;
-        buttonPress2S = false;
-        buttonPress1S = false;
-        buttonPress = false;
-        button1PressedCount = 0;
-      }
-    }
-
-    void resetInternal() {
-      buttonPressRelease8S = false;
-      buttonPressRelease2S = false;
-      buttonPressRelease1S = false;
-      buttonPressRelease = false;
-      buttonPress8S = false;
-      buttonPress2S = false;
-      buttonPress1S = false;
-      buttonPress = false;
-      button1PressedCount = 0;
-    }
-};
-
 // ********************** HV generator variables *********************
 int hvTargetVoltage = HVGEN_TARGET_VOLTAGE_DEFAULT;
 int pwmTop = PWM_TOP_DEFAULT;
@@ -798,11 +596,11 @@ int rawHVADCThreshold;
 double sensorHVSmoothed = 0;
 
 // ************************ Display management ************************
-byte NumberArray[4]    = {0, 0, 0, 0};
+byte NumberArray[4]     = {0, 0, 0, 0};
 byte currNumberArray[4] = {0, 0, 0, 0};
-byte displayType[6]    = {FADE, FADE, FADE, FADE};
-byte fadeState[4]      = {0, 0, 0, 0};
-byte ourIP[4]          = {0, 0, 0, 0}; // set by the WiFi module
+byte displayType[6]     = {FADE, FADE, FADE, FADE};
+byte fadeState[4]       = {0, 0, 0, 0};
+byte ourIP[4]           = {0, 0, 0, 0}; // set by the WiFi module, if attached
 
 // how many fade steps to increment (out of DIGIT_DISPLAY_COUNT) each impression
 // 100 is about 1 second
@@ -898,7 +696,7 @@ int impressionsPerSec = 0;
 int lastImpressionsPerSec = 0;
 
 // ********************** Input switch management **********************
-Button button1(inputPin1, false);
+ClockButton button1(inputPin1, false);
 
 // **************************** digit healing ****************************
 // This is a special mode which repairs cathode poisoning by driving a
@@ -1168,6 +966,8 @@ void loop()
   // shows us how fast the inner loop is running
   impressionsPerSec++;
 
+  // -------------------------------------------------------------------------------
+  
   // We don't want to get the time from the external time provider always,
   // just enough to keep the internal time provider correct
   // This keeps the outer loop fast and responsive
@@ -1187,6 +987,8 @@ void loop()
 
     lastCheckMillis = nowMillis;
   }
+  
+  // -------------------------------------------------------------------------------
 
   // Check button, we evaluate below
   button1.checkButton(nowMillis);
@@ -1568,6 +1370,10 @@ void processCurrentMode() {
         if (tempDisplayModeDuration > 0) {
           blanked = false;
           setTubesAndLEDSBlankMode();
+          if (tempDisplayMode == TEMP_MODE_SECS) {
+            loadNumberArrayMinsSecs();
+          }
+
           if (tempDisplayMode == TEMP_MODE_DATE) {
             loadNumberArrayDayMonth();
           }
@@ -1580,7 +1386,7 @@ void processCurrentMode() {
           }
 
           if (tempDisplayMode == TEMP_MODE_LDR) {
-            loadNumberArrayLDR();
+            loadNumberArrayInt(digitOffCount);
           }
 
           if (tempDisplayMode == TEMP_MODE_VERSION) {
@@ -1624,7 +1430,7 @@ void processCurrentMode() {
           }
 
           if (tempDisplayMode == TEMP_IMPR) {
-            loadNumberArrayConfInt(lastImpressionsPerSec, currentMode);
+            loadNumberArrayInt(lastImpressionsPerSec);
           }
 
           allFadeOrNormal(false);
@@ -1694,7 +1500,7 @@ void processCurrentMode() {
         if (button1.isButtonPressedAndReleased()) {
           resetSecond();
         }
-        loadNumberArraySecs();
+        loadNumberArrayMinsSecs();
         highlight2and3();
         break;
       }
@@ -2072,7 +1878,7 @@ void processCurrentMode() {
 
             digitOff();
             digitBurnDigit += 1;
-            if (digitBurnDigit > 5) {
+            if (digitBurnDigit > 3) {
               digitBurnDigit = 0;
             }
           }
@@ -2173,7 +1979,7 @@ void loadNumberArrayTime() {
   }
 }
 
-void loadNumberArraySecs() {
+void loadNumberArrayMinsSecs() {
   NumberArray[3] = second() % 10;
   NumberArray[2] = second() / 10;
   NumberArray[1] = minute() % 10;
@@ -2237,13 +2043,13 @@ void loadNumberArrayTemp() {
 }
 
 // ************************************************************
-// Break the LDR reading into displayable digits
+// Break an integer value into displayable digits
 // ************************************************************
-void loadNumberArrayLDR() {
-  NumberArray[3] = (digitOffCount / 1) % 10;
-  NumberArray[2] = (digitOffCount / 10) % 10;
-  NumberArray[1] = (digitOffCount / 100) % 10;
-  NumberArray[0] = (digitOffCount / 1000) % 10;
+void loadNumberArrayInt(int value) {
+  NumberArray[3] = (value / 1) % 10;
+  NumberArray[2] = (value / 10) % 10;
+  NumberArray[1] = (value / 100) % 10;
+  NumberArray[0] = (value / 1000) % 10;
 }
 
 // ************************************************************
@@ -3238,9 +3044,17 @@ void factoryReset() {
 // ************************************************************
 void checkHVVoltage() {
   if (getSmoothedHVSensorReading() > rawHVADCThreshold) {
-    setPWMTopTime(pwmTop + 1);
+    int diff = getSmoothedHVSensorReading() - rawHVADCThreshold;
+    int inc = 1;
+    if (diff > 20) inc = 50;
+    else if (diff > 10) inc = 5;
+    setPWMTopTime(pwmTop + inc);
   } else {
-    setPWMTopTime(pwmTop - 1);
+    int diff = rawHVADCThreshold - getSmoothedHVSensorReading();
+    int inc = 1;
+    if (diff > 20) inc = 50;
+    else if (diff > 10) inc = 5;
+    setPWMTopTime(pwmTop - inc);
   }
 }
 
@@ -3355,7 +3169,7 @@ void calibrateHVG() {
   setPWMOnTime(PWM_PULSE_MIN);
   for (int i = 0 ; i < 768 ; i++ ) {
     //loadNumberArray8s();
-    loadNumberArrayConfInt(pwmOn, currentMode);
+    loadNumberArrayInt(pwmOn);
     allBright();
     outputDisplay();
 
@@ -3373,7 +3187,7 @@ void calibrateHVG() {
   setPWMOnTime(pwmOn + 50);
   for (int i = 0 ; i < 768 ; i++ ) {
     //loadNumberArray8s();
-    loadNumberArrayConfInt(pwmOn, currentMode);
+    loadNumberArrayInt(pwmOn);
     allBright();
     outputDisplay();
 
