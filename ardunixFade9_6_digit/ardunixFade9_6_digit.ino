@@ -23,51 +23,54 @@
 
 // Other parts of the code, broken out for clarity
 #include "ClockButton.h"
+#include "Transition.h"
+#include "DisplayDefs.h"
+#include "I2CDefs.h"
 
 //**********************************************************************************
 //**********************************************************************************
 //*                               Constants                                        *
 //**********************************************************************************
 //**********************************************************************************
-#define EE_12_24            1      // 12 or 24 hour mode
-#define EE_FADE_STEPS       2      // How quickly we fade, higher = slower
-#define EE_DATE_FORMAT      3      // Date format to display
-#define EE_DAY_BLANKING     4      // Blanking setting
-#define EE_DIM_DARK_LO      5      // Dimming dark value
-#define EE_DIM_DARK_HI      6      // Dimming dark value
-#define EE_BLANK_LEAD_ZERO  7      // If we blank leading zero on hours
-#define EE_DIGIT_COUNT_HI   8      // The number of times we go round the main loop
-#define EE_DIGIT_COUNT_LO   9      // The number of times we go round the main loop
-#define EE_SCROLLBACK       10     // if we use scollback or not
-#define EE_FADE             11     // if we use fade or not
-#define EE_PULSE_LO         12     // The pulse on width for the PWM mode
-#define EE_PULSE_HI         13     // The pulse on width for the PWM mode
-#define EE_SCROLL_STEPS     14     // The steps in a scrollback
-#define EE_BACKLIGHT_MODE   15     // The back light node
-#define EE_DIM_BRIGHT_LO    16     // Dimming bright value
-#define EE_DIM_BRIGHT_HI    17     // Dimming bright value
-#define EE_DIM_SMOOTH_SPEED 18     // Dimming adaptation speed
-#define EE_RED_INTENSITY    19     // Red channel backlight max intensity
-#define EE_GRN_INTENSITY    20     // Green channel backlight max intensity
-#define EE_BLU_INTENSITY    21     // Blue channel backlight max intensity
-#define EE_HV_VOLTAGE       22     // The HV voltage we want to use
-#define EE_SUPPRESS_ACP     23     // Do we want to suppress ACP during dimmed time
-#define EE_HOUR_BLANK_START 24     // Start of daily blanking period
-#define EE_HOUR_BLANK_END   25     // End of daily blanking period
-#define EE_CYCLE_SPEED      26     // How fast the color cycling does it's stuff
-#define EE_PWM_TOP_LO       27     // The PWM top value if we know it, 0xFF if we need to calculate
-#define EE_PWM_TOP_HI       28     // The PWM top value if we know it, 0xFF if we need to calculate
-#define EE_HVG_NEED_CALIB   29     // 1 if we need to calibrate the HVGenerator, otherwise 0
-#define EE_MIN_DIM_LO       30     // The min dim value
-#define EE_MIN_DIM_HI       31     // The min dim value
-#define EE_ANTI_GHOST       32     // The value we use for anti-ghosting
-#define EE_NEED_SETUP       33     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
-#define EE_USE_LDR          34     // if we use the LDR or not (if we don't use the LDR, it has 100% brightness
-#define EE_BLANK_MODE       35     // blank tubes, or LEDs or both
-#define EE_SLOTS_MODE       36     // Show date every now and again
+#define EE_12_24              1      // 12 or 24 hour mode
+#define EE_FADE_STEPS         2      // How quickly we fade, higher = slower
+#define EE_DATE_FORMAT        3      // Date format to display
+#define EE_DAY_BLANKING       4      // Blanking setting
+#define EE_DIM_DARK_LO        5      // Dimming dark value
+#define EE_DIM_DARK_HI        6      // Dimming dark value
+#define EE_BLANK_LEAD_ZERO    7      // If we blank leading zero on hours
+#define EE_DIGIT_COUNT_HI     8      // The number of times we go round the main loop
+#define EE_DIGIT_COUNT_LO     9      // The number of times we go round the main loop
+#define EE_SCROLLBACK         10     // if we use scollback or not
+#define EE_FADE               11     // if we use fade or not
+#define EE_PULSE_LO           12     // The pulse on width for the PWM mode
+#define EE_PULSE_HI           13     // The pulse on width for the PWM mode
+#define EE_SCROLL_STEPS       14     // The steps in a scrollback
+#define EE_BACKLIGHT_MODE     15     // The back light node
+#define EE_DIM_BRIGHT_LO      16     // Dimming bright value
+#define EE_DIM_BRIGHT_HI      17     // Dimming bright value
+#define EE_DIM_SMOOTH_SPEED   18     // Dimming adaptation speed
+#define EE_RED_INTENSITY      19     // Red channel backlight max intensity
+#define EE_GRN_INTENSITY      20     // Green channel backlight max intensity
+#define EE_BLU_INTENSITY      21     // Blue channel backlight max intensity
+#define EE_HV_VOLTAGE         22     // The HV voltage we want to use
+#define EE_SUPPRESS_ACP       23     // Do we want to suppress ACP during dimmed time
+#define EE_HOUR_BLANK_START   24     // Start of daily blanking period
+#define EE_HOUR_BLANK_END     25     // End of daily blanking period
+#define EE_CYCLE_SPEED        26     // How fast the color cycling does it's stuff
+#define EE_PWM_TOP_LO         27     // The PWM top value if we know it, 0xFF if we need to calculate
+#define EE_PWM_TOP_HI         28     // The PWM top value if we know it, 0xFF if we need to calculate
+#define EE_HVG_NEED_CALIB     29     // 1 if we need to calibrate the HVGenerator, otherwise 0
+#define EE_MIN_DIM_LO         30     // The min dim value
+#define EE_MIN_DIM_HI         31     // The min dim value
+#define EE_ANTI_GHOST         32     // The value we use for anti-ghosting
+#define EE_NEED_SETUP         33     // used for detecting auto config for startup. By default the flashed, empty EEPROM shows us we need to do a setup 
+#define EE_USE_LDR            34     // if we use the LDR or not (if we don't use the LDR, it has 100% brightness
+#define EE_BLANK_MODE         35     // blank tubes, or LEDs or both
+#define EE_SLOTS_MODE         36     // Show date every now and again
 
 // Software version shown in config menu
-#define SOFTWARE_VERSION      52
+#define SOFTWARE_VERSION      54
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -118,15 +121,6 @@
 #define FADE_STEPS_DEFAULT 50
 #define FADE_STEPS_MAX     200
 #define FADE_STEPS_MIN     20
-
-// Display mode, set per digit
-#define BLANKED  0
-#define DIMMED   1
-#define FADE     2
-#define NORMAL   3
-#define BLINK    4
-#define SCROLL   5
-#define BRIGHT   6
 
 #define SECS_MAX  60
 #define MINS_MAX  60
@@ -282,31 +276,6 @@
 // RTC address
 #define RTC_I2C_ADDRESS                0x68
 
-// I2C Slave Interface definition
-#define I2C_SLAVE_ADDR                 0x69
-#define I2C_TIME_UPDATE                0x00
-#define I2C_GET_OPTIONS                0x01
-#define I2C_SET_OPTION_12_24           0x02
-#define I2C_SET_OPTION_BLANK_LEAD      0x03
-#define I2C_SET_OPTION_SCROLLBACK      0x04
-#define I2C_SET_OPTION_SUPPRESS_ACP    0x05
-#define I2C_SET_OPTION_DATE_FORMAT     0x06
-#define I2C_SET_OPTION_DAY_BLANKING    0x07
-#define I2C_SET_OPTION_BLANK_START     0x08
-#define I2C_SET_OPTION_BLANK_END       0x09
-#define I2C_SET_OPTION_FADE_STEPS      0x0a
-#define I2C_SET_OPTION_SCROLL_STEPS    0x0b
-#define I2C_SET_OPTION_BACKLIGHT_MODE  0x0c
-#define I2C_SET_OPTION_RED_CHANNEL     0x0d
-#define I2C_SET_OPTION_GREEN_CHANNEL   0x0e
-#define I2C_SET_OPTION_BLUE_CHANNEL    0x0f
-#define I2C_SET_OPTION_CYCLE_SPEED     0x10
-#define I2C_SHOW_IP_ADDR               0x11
-#define I2C_SET_OPTION_FADE            0x12
-#define I2C_SET_OPTION_USE_LDR         0x13
-#define I2C_SET_OPTION_BLANK_MODE      0x14
-#define I2C_SET_OPTION_SLOTS_MODE      0x15
-
 #define MAX_WIFI_TIME                  5
 
 //**********************************************************************************
@@ -350,227 +319,6 @@
 #define LDRPin      A1    // Package pin 24 // PC1 // Analog input for Light dependent resistor.
 
 //**********************************************************************************
-
-/**
- * A class that displays a message by scrolling it into and out of the display
- *
- * Thanks judge!
- */
-extern byte NumberArray[];
-extern byte displayType[];
-extern boolean scrollback;
-
-struct Transition {
-  /**
-   * Default the effect and hold duration.
-   */
-  Transition() : Transition(500, 500, 3000) {}
-
-  Transition(int effectDuration, int holdDuration) : Transition(effectDuration, effectDuration, holdDuration) {}
-
-  Transition(int effectInDuration, int effectOutDuration, int holdDuration) {
-    this->effectInDuration = effectInDuration;
-    this->effectOutDuration = effectOutDuration;
-    this->holdDuration = holdDuration;
-    this->started = 0;
-    this->end = 0;
-  }
-
-  void start(unsigned long now) {
-    if (end < now) {
-      this->started = now;
-      this->end = getEnd();
-      saveCurrentDisplayType(); 
-    }
-    // else we are already running!
-  }
-
-  boolean isMessageOnDisplay(unsigned long now)
-  {
-    return (now < end);
-  }
-
-  // we need to get the seconds updated, otherwise we show the old
-  // time at the end of the stunt
-  void updateRegularDisplaySeconds() {
-    regularDisplay[5] = second() % 10;
-    regularDisplay[4] = second() / 10;
-  }
-
-  boolean scrollMsg(unsigned long now)
-  {
-    if (now < end) {
-      int msCount = now - started;
-      if (msCount < effectInDuration) {
-        loadRegularValues();
-        // Scroll -1 -> -6
-        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
-      } else if (msCount < effectInDuration * 2) {
-        loadAlternateValues();
-        // Scroll 5 -> 0
-        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
-      } else if (msCount < effectInDuration * 2 + holdDuration) {
-        loadAlternateValues();
-      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
-        loadAlternateValues();
-        // Scroll 1 -> 6
-        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
-      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
-        loadRegularValues();
-        // Scroll 0 -> -5
-        scroll(((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration - 5);
-      }
-
-      return true;  // we are still running
-    }
-
-    return false;   // We aren't running
-  }
-
-  boolean scrambleMsg(unsigned long now)
-  {
-    if (now < end) {
-      int msCount = now - started;
-      if (msCount < effectInDuration) {
-        loadRegularValues();
-        scramble(msCount, 5 - (msCount % effectInDuration) * 6 / effectInDuration, 6);
-      } else if (msCount < effectInDuration * 2) {
-        loadAlternateValues();
-        scramble(msCount, 0, 5 - (msCount % effectInDuration) * 6 / effectInDuration);
-      } else if (msCount < effectInDuration * 2 + holdDuration) {
-        loadAlternateValues();
-      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
-        loadAlternateValues();
-        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
-      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
-        loadRegularValues();
-        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
-      }
-      return true;  // we are still running
-    }
-    return false;   // We aren't running
-  }
-
-  boolean scrollInScrambleOut(unsigned long now)
-  {
-    if (now < end) {
-      int msCount = now - started;
-      if (msCount < effectInDuration) {
-        loadRegularValues();
-        scroll(-(msCount % effectInDuration) * 6 / effectInDuration - 1);
-      } else if (msCount < effectInDuration * 2) {
-        restoreCurrentDisplayType();
-        loadAlternateValues();
-        scroll(5 - (msCount % effectInDuration) * 6 / effectInDuration);
-      } else if (msCount < effectInDuration * 2 + holdDuration) {
-        loadAlternateValues();
-      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration) {
-        loadAlternateValues();
-        scramble(msCount, 0, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1);
-      } else if (msCount < effectInDuration * 2 + holdDuration + effectOutDuration * 2) {
-        loadRegularValues();
-        scramble(msCount, ((msCount - holdDuration) % effectOutDuration) * 6 / effectOutDuration + 1, 6);
-      }
-      return true;  // we are still running
-    }
-    return false;   // We aren't running
-  }
-
-  /**
-   * +ve scroll right
-   * -ve scroll left
-   */
-  static int scroll(char count) {
-    byte copy[6] = {0, 0, 0, 0, 0, 0};
-    memcpy(copy, NumberArray, sizeof(copy));
-    char offset = 0;
-    char slope = 1;
-    if (count < 0) {
-      count = -count;
-      offset = 5;
-      slope = -1;
-    }
-    for (char i=0; i<6; i++) {
-      if (i < count) {
-        displayType[offset + i * slope] = BLANKED;
-      }
-      if (i >= count) {
-        NumberArray[offset + i * slope] = copy[offset + (i-count) * slope];
-      }
-    }
-
-    return count;
-  }
-
-  static unsigned long hash(unsigned long x) {
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = (x >> 16) ^ x;
-    return x;
-  }
-
-  // In these functions we want something that changes quickly
-  // hence msCount/20. Plus it needs to be different for different
-  // indices, hence +i. Plus it needs to be 'random', hence hash function
-  static int scramble(int msCount, byte start, byte end) {
-    for (int i=start; i < end; i++) {
-      NumberArray[i] = hash(msCount / 20 + i) % 10;
-    }
-
-    return start;
-  }
-
-  void setRegularValues() {
-    memcpy(regularDisplay, NumberArray, sizeof(regularDisplay));    
-  }
-  
-  void setAlternateValues() {
-    memcpy(alternateDisplay, NumberArray, sizeof(alternateDisplay));    
-  }
-
-  void loadRegularValues() {
-    memcpy(NumberArray, regularDisplay, sizeof(regularDisplay));    
-  }
-
-  void loadAlternateValues() {
-    memcpy(NumberArray, alternateDisplay, sizeof(alternateDisplay));    
-  }
-  
-  void saveCurrentDisplayType() {
-    memcpy(savedDisplayType, displayType, sizeof(savedDisplayType));  
-    savedScrollback = scrollback;
-    scrollback = false;
-  }
-  
-  void restoreCurrentDisplayType() {
-    memcpy(displayType, savedDisplayType, sizeof(savedDisplayType));
-    scrollback = savedScrollback;
-  }
-  
-protected:
-  /**** Don't let Joe Public see this stuff ****/
-
-  int effectInDuration;  // How long an effect should take in ms
-  int effectOutDuration; // How long an effect should take in ms
-  int holdDuration;      // How long the message should be displayed for in ms
-  unsigned long started; // When we were started (timestamp)
-  unsigned long end;     // When the whole thing will end (timestamp)
-
-  /**
-   * The end time has to match what displayMessage() wants,
-   * so let sub-classes override it.
-   */
-  unsigned long getEnd() {
-    return started + effectInDuration * 2 + holdDuration + effectOutDuration * 2;
-  }
-
-  // buffer variables for doing the scrolling/scrambling with
-  byte regularDisplay[6] = {0, 0, 0, 0, 0, 0};
-  byte alternateDisplay[6] = {0, 0, 0, 0, 0, 0};
-  boolean savedScrollback;
-  byte savedDisplayType[6] = {FADE, FADE, FADE, FADE, FADE, FADE};
-};
-
 Transition transition(500, 1000, 3000);
 
 // ********************** HV generator variables *********************
@@ -1579,7 +1327,6 @@ void processCurrentMode() {
           } else {
             if (slotsMode > SLOTS_MODE_MIN) {
               if (second() == 50) {
-
                 // initialise the slots values
                 loadNumberArrayDate();
                 transition.setAlternateValues();
@@ -1600,7 +1347,7 @@ void processCurrentMode() {
               }
 
               if (msgDisplaying) {
-                transition.updateRegularDisplaySeconds();
+                transition.updateRegularDisplaySeconds(second());
               } else {
                 // do normal time thing when we are not in slots
                 loadNumberArrayTime();
@@ -3546,6 +3293,12 @@ void receiveEvent(int bytes) {
   } else if (operation == I2C_SET_OPTION_SLOTS_MODE) {
     slotsMode = Wire.read();
     EEPROM.write(EE_SLOTS_MODE, slotsMode);
+  } else if (operation == I2C_SET_OPTION_MIN_DIM) {
+    byte dimHI = Wire.read();
+    byte dimLO = Wire.read();
+    minDim = dimHI * 256 + dimLO;
+    EEPROM.write(EE_MIN_DIM_HI, dimHI);
+    EEPROM.write(EE_MIN_DIM_LO, dimLO);
   }
 }
 
@@ -3553,9 +3306,9 @@ void receiveEvent(int bytes) {
    send information to the master
 */
 void requestEvent() {
-  byte configArray[20];
+  byte configArray[I2C_DATA_SIZE];
   int idx = 0;
-  configArray[idx++] = 48;  // protocol version
+  configArray[idx++] = I2C_PROTOCOL_NUMBER;  // protocol version
   configArray[idx++] = encodeBooleanForI2C(hourMode);
   configArray[idx++] = encodeBooleanForI2C(blankLeading);
   configArray[idx++] = encodeBooleanForI2C(scrollback);
@@ -3575,8 +3328,10 @@ void requestEvent() {
   configArray[idx++] = encodeBooleanForI2C(useLDR);
   configArray[idx++] = blankMode;
   configArray[idx++] = slotsMode;
+  configArray[idx++] = minDim / 256;
+  configArray[idx++] = minDim % 256;
 
-  Wire.write(configArray, 20);
+  Wire.write(configArray, I2C_DATA_SIZE);
 }
 
 byte encodeBooleanForI2C(boolean valueToProcess) {

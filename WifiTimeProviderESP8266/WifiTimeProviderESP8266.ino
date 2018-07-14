@@ -24,8 +24,9 @@
 #include <Wire.h>
 #include <EEPROM.h>
 #include <time.h>
+#include "I2CDefs.h"
   
-#define SOFTWARE_VERSION "Rev4_v0051"
+#define SOFTWARE_VERSION "v54"
 #define DEFAULT_TIME_SERVER_URL "http://time-zone-server.scapp.io/getTime/Europe/Zurich"
 
 #define DEBUG_OFF             // DEBUG or DEBUG_OFF
@@ -55,30 +56,6 @@ String timeServerURL = "";
 
 ADC_MODE(ADC_VCC);
 
-// I2C Interface definition
-#define I2C_TIME_UPDATE               0x00
-#define I2C_GET_OPTIONS               0x01
-#define I2C_SET_OPTION_12_24          0x02
-#define I2C_SET_OPTION_BLANK_LEAD     0x03
-#define I2C_SET_OPTION_SCROLLBACK     0x04
-#define I2C_SET_OPTION_SUPPRESS_ACP   0x05
-#define I2C_SET_OPTION_DATE_FORMAT    0x06
-#define I2C_SET_OPTION_DAY_BLANKING   0x07
-#define I2C_SET_OPTION_BLANK_START    0x08
-#define I2C_SET_OPTION_BLANK_END      0x09
-#define I2C_SET_OPTION_FADE_STEPS     0x0a
-#define I2C_SET_OPTION_SCROLL_STEPS   0x0b
-#define I2C_SET_OPTION_BACKLIGHT_MODE 0x0c
-#define I2C_SET_OPTION_RED_CHANNEL    0x0d
-#define I2C_SET_OPTION_GREEN_CHANNEL  0x0e
-#define I2C_SET_OPTION_BLUE_CHANNEL   0x0f
-#define I2C_SET_OPTION_CYCLE_SPEED    0x10
-#define I2C_SHOW_IP_ADDR              0x11
-#define I2C_SET_OPTION_FADE           0x12
-#define I2C_SET_OPTION_USE_LDR        0x13
-#define I2C_SET_OPTION_BLANK_MODE     0x14
-#define I2C_SET_OPTION_SLOTS_MODE     0x15
-
 // Clock config
 byte configHourMode;
 byte configBlankLead;
@@ -99,6 +76,7 @@ byte configUseFade;
 byte configUseLDR;
 byte configBlankMode;
 byte configSlotsMode;
+unsigned int configMinDim;
 
 ESP8266WebServer server(80);
 
@@ -765,6 +743,17 @@ void clockConfigPageHandler()
 
   // -----------------------------------------------------------------------------
 
+  if (server.hasArg("minDim")) {
+    debugMsg("Got minDim param: " + server.arg("minDim"));
+    int newMinDim = atoi(server.arg("minDim").c_str());
+    if (newMinDim != configMinDim) {
+      setClockOptionMinDim(newMinDim);
+      debugMsg("I2C --> Set minDim: " + newMinDim);
+    }
+  }
+
+  // -----------------------------------------------------------------------------
+
   // Get the options, put the result into variables called "config*"
   getClockOptionsFromI2C();
 
@@ -910,6 +899,9 @@ void clockConfigPageHandler()
   response_message += getDropDownOption("1", "Scroll In, Scramble Out", (configSlotsMode == 1));
   response_message += getDropDownFooter();
 
+  // Min dim
+  response_message += getNumberInput("Min Dim:", "minDim", 100, 500, configMinDim, false);
+  
   // form footer
   response_message += getSubmitButton("Set");
 
@@ -1232,97 +1224,129 @@ boolean sendTimeToI2C(String timeString) {
    Get the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
 boolean getClockOptionsFromI2C() {
-  int available = Wire.requestFrom((int)preferredI2CSlaveAddress, 20);
+  int available = Wire.requestFrom((int)preferredI2CSlaveAddress, I2C_DATA_SIZE);
   debugMsg("I2C <-- Received bytes (expecting 20): " + available);
-  if (available == 20) {
+  if (available == I2C_DATA_SIZE) {
 
+    // IDX 
     byte receivedByte = Wire.read();
     debugMsg("I2C <-- Got protocol header: " + receivedByte);
 
-    if (receivedByte != 48) {
-      debugMsg("I2C Protocol ERROR! Expected header 48, but got: " + receivedByte);
+    if (receivedByte != I2C_PROTOCOL_NUMBER) {
+      debugMsg("I2C Protocol ERROR! Expected header " + String(I2C_PROTOCOL_NUMBER)  + ", but got: " + String(receivedByte));
       return false;
     }
     
+    // IDX 1
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got hour mode: " + receivedByte);
     configHourMode = receivedByte;
 
+    // IDX 2
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got blank lead: " + receivedByte);
     configBlankLead = receivedByte;
 
+    // IDX 3
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got scrollback: " + receivedByte);
     configScrollback = receivedByte;
 
+    // IDX 4
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got suppress ACP: " + receivedByte);
     configSuppressACP = receivedByte;
 
+    // IDX 5
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got useFade: " + receivedByte);
     configUseFade = receivedByte;
 
+    // IDX 6
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got date format: " + receivedByte);
     configDateFormat = receivedByte;
 
+    // IDX 7
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got day blanking: " + receivedByte);
     configDayBlanking = receivedByte;
 
+    // IDX 8
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got blank hour start: " + receivedByte);
     configBlankFrom = receivedByte;
 
+    // IDX 9
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got blank hour end: " + receivedByte);
     configBlankTo = receivedByte;
 
+    // IDX 10
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got fade steps: " + receivedByte);
     configFadeSteps = receivedByte;
 
+    // IDX 11
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got scroll steps: " + receivedByte);
     configScrollSteps = receivedByte;
 
+    // IDX 12
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got backlight mode: " + receivedByte);
     configBacklightMode = receivedByte;
 
+    // IDX 13
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got red channel: " + receivedByte);
     configRedCnl = receivedByte;
 
+    // IDX 14
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got green channel: " + receivedByte);
     configGreenCnl = receivedByte;
 
+    // IDX 15
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got blue channel: " + receivedByte);
     configBlueCnl = receivedByte;
 
+    // IDX 16
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got cycle speed: " + receivedByte);
     configCycleSpeed = receivedByte;
 
+    // IDX 17
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got useLDR: " + receivedByte);
     configUseLDR = receivedByte;
 
+    // IDX 18
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got blankMode: " + receivedByte);
     configBlankMode = receivedByte;
 
+    // IDX 19
     receivedByte = Wire.read();
     debugMsg("I2C <-- Got slotsMode: " + receivedByte);
     configSlotsMode = receivedByte;
+    
+    // IDX 20
+    receivedByte = Wire.read();
+    debugMsg("I2C <-- Got minDim Hi: " + receivedByte);
+    int newMinDim = receivedByte * 256;
+    
+    // IDX 21
+    receivedByte = Wire.read();
+    debugMsg("I2C <-- Got minDim Lo: " + receivedByte);
+    newMinDim += receivedByte;
+    debugMsg("I2C <-- Got minDim combined: " + newMinDim);
+    configMinDim = newMinDim;
 
   } else {
     // didn't get the right number of bytes
-    debugMsg("I2C <-- Got wrong number of bytes, expected 20, got: " + available);
+    debugMsg("I2C <-- Got wrong number of bytes, expected " + String(I2C_DATA_SIZE) +" bytes, got: " + String(available));
   }
   
   int error = Wire.endTransmission();
@@ -1419,6 +1443,10 @@ boolean setClockOptionSlotsMode(byte newMode) {
   return setClockOptionByte(I2C_SET_OPTION_SLOTS_MODE, newMode);
 }
 
+boolean setClockOptionMinDim(unsigned int newMinDim) {
+  return setClockOptionInt(I2C_SET_OPTION_MIN_DIM, newMinDim);
+}
+
 /**
    Send the options from the I2C slave. If the transmission went OK, return true, otherwise false.
 */
@@ -1452,6 +1480,24 @@ boolean setClockOptionByte(byte option, byte newMode) {
   delay(10);
   return (error == 0);
 }
+
+/**
+   Send the options from the I2C slave. If the transmission went OK, return true, otherwise false.
+*/
+boolean setClockOptionInt(byte option, int newMode) {
+  byte loByte = newMode % 256;
+  byte hiByte = newMode / 256; 
+  debugMsg("I2C --> setting int option: " + String(option) + " with value: " + String(newMode));
+
+  Wire.beginTransmission(preferredI2CSlaveAddress);
+  Wire.write(option);
+  Wire.write(hiByte);
+  Wire.write(loByte);
+  int error = Wire.endTransmission();
+  delay(10);
+  return (error == 0);
+}
+
 
 boolean scanI2CBus() {
   debugMsg("Scanning I2C bus");
@@ -1648,7 +1694,7 @@ String getDropDownFooter() {
   return "</select></div></div>";
 }
 
-String getNumberInput(String heading, String input_name, byte minVal, byte maxVal, byte value, boolean disabled) {
+String getNumberInput(String heading, String input_name, unsigned int minVal, unsigned int maxVal, unsigned int value, boolean disabled) {
   String result = "<div class=\"form-group\"><label class=\"control-label col-xs-3\" for=\"";
   result += input_name;
   result += "\">";
