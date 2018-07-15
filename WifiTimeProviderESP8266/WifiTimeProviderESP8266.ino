@@ -1225,7 +1225,7 @@ boolean sendTimeToI2C(String timeString) {
 */
 boolean getClockOptionsFromI2C() {
   int available = Wire.requestFrom((int)preferredI2CSlaveAddress, I2C_DATA_SIZE);
-  debugMsg("I2C <-- Received bytes (expecting 20): " + available);
+  debugMsg("I2C <-- Received bytes (expecting " + String(I2C_DATA_SIZE) + "): " + available);
   if (available == I2C_DATA_SIZE) {
 
     // IDX 

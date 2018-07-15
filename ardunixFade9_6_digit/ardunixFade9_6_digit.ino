@@ -107,7 +107,7 @@
 #define PWM_TOP_MIN       300
 #define PWM_TOP_MAX       10000
 #define PWM_PULSE_DEFAULT 200
-#define PWM_PULSE_MIN     50
+#define PWM_PULSE_MIN     100
 #define PWM_PULSE_MAX     500
 #define PWM_OFF_MIN       50
 
@@ -2959,20 +2959,21 @@ void factoryReset() {
 // ************************************************************
 void checkHVVoltage() {
   if (getSmoothedHVSensorReading() > rawHVADCThreshold) {
-    int diff = getSmoothedHVSensorReading() - rawHVADCThreshold;
-    int inc = 1;
-    if (diff > 20) inc = 50;
-    else if (diff > 10) inc = 5;
-    setPWMTopTime(pwmTop + inc);
+    setPWMTopTime(pwmTop + getInc());
   } else {
-    int diff = rawHVADCThreshold - getSmoothedHVSensorReading();
-    int inc = 1;
-    if (diff > 20) inc = 50;
-    else if (diff > 10) inc = 5;
-    setPWMTopTime(pwmTop - inc);
+    setPWMTopTime(pwmTop - getInc());
   }
 }
 
+// Get the increment value we are going to use based on the magnitude of the 
+// difference we have measured
+int getInc() {
+  int diffValue = abs(getSmoothedHVSensorReading() - rawHVADCThreshold);
+  int incValue = 1;
+  if (diffValue > 20) incValue = 50;
+  else if (diffValue > 10) incValue = 5;
+  return incValue;  
+}
 // ************************************************************
 // Calculate the target value for the ADC reading to get the
 // defined voltage
