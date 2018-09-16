@@ -15,10 +15,14 @@
 //*                                                                                *
 //**********************************************************************************
 //**********************************************************************************
+// Standard Libraries
 #include <avr/io.h>
 #include <EEPROM.h>
-#include <DS3231.h>
 #include <Wire.h>
+
+// Clock specific libraries, install these with "Sketch -> Include Library -> Add .ZIP library
+// using the ZIP files in the "libraries" directory
+#include <DS3231.h>
 #include <TimeLib.h>
 
 // Other parts of the code, broken out for clarity
@@ -71,6 +75,9 @@
 
 // Software version shown in config menu
 #define SOFTWARE_VERSION      54
+
+// how often we make reference to the external time provider
+#define READ_TIME_PROVIDER_MILLIS 60000 // Update the internal time provider from the external source once every minute
 
 // Display handling
 #define DIGIT_DISPLAY_COUNT   1000 // The number of times to traverse inner fade loop per digit
@@ -274,9 +281,12 @@
 #define SLOTS_MODE_DEFAULT              1
 
 // RTC address
-#define RTC_I2C_ADDRESS                0x68
+#define RTC_I2C_ADDRESS                 0x68
 
 #define MAX_WIFI_TIME                  5
+
+#define DO_NOT_APPLY_LEAD_0_BLANK     false
+#define APPLY_LEAD_0_BLANK            true
 
 //**********************************************************************************
 //**********************************************************************************
@@ -330,7 +340,7 @@ int pwmOn = PWM_PULSE_DEFAULT;
 // correct.
 #define NOT_AIO_REV1 // [AIO_REV1,NOT_AIO_REV1]
 
-// Used for special mappings of the 74141 -> digit (wiring aid)
+// Used for special mappings of the K155ID1 -> digit (wiring aid)
 // allows the board wiring to be much simpler
 #ifdef AIO_REV1 
   // This is a mapping for All-In-One Revision 1 ONLY! Not generally used.
@@ -423,7 +433,6 @@ boolean triggeredThisSec = false;
 
 byte useRTC = false;  // true if we detect an RTC
 byte useWiFi = 0; // the number of minutes ago we recevied information from the WiFi module, 0 = don't use WiFi
-
 
 // **************************** LED management ***************************
 boolean upOrDown;
@@ -553,11 +562,6 @@ void setup()
 
   // **********************************************************************
 
-  // Test if the button is pressed for factory reset
-  for (int i = 0 ; i < 20 ; i++ ) {
-    button1.checkButton(nowMillis);
-  }
-
   // Set up the PRNG with something so that it looks random
   randomSeed(analogRead(LDRPin));
 
@@ -581,7 +585,7 @@ void setup()
     // mark that we have done the EEPROM setup
     EEPROM.write(EE_NEED_SETUP, true);
   }
-  
+
   // If the button is held down while we are flashing, then do the test pattern
   boolean doTestPattern = false;
 
@@ -617,10 +621,11 @@ void setup()
 
   if (doTestPattern) {
     boolean oldUseLDR = useLDR;
-    
+    byte oldBacklightMode = backlightMode;
+
     // reset the EEPROM values
     factoryReset();
-    
+
     // turn off LDR
     useLDR = false;
 
@@ -663,6 +668,7 @@ void setup()
     }
 
     useLDR = oldUseLDR;
+    backlightMode = oldBacklightMode;
   }
 
   // reset the LEDs
@@ -772,7 +778,7 @@ void loop()
     saveEEPROMValues();
 
     // Preset the display
-    allFadeOrNormal(false);
+    allFadeOrNormal(DO_NOT_APPLY_LEAD_0_BLANK);
 
     nextMode = currentMode;
   } else if (button1.isButtonPressedReleased1S()) {
@@ -785,7 +791,7 @@ void loop()
       saveEEPROMValues();
 
       // Preset the display
-      allFadeOrNormal(false);
+      allFadeOrNormal(DO_NOT_APPLY_LEAD_0_BLANK);
     }
 
     nextMode = currentMode;
@@ -1009,7 +1015,7 @@ void setNextMode() {
   switch (nextMode) {
     case MODE_TIME: {
         loadNumberArrayTime();
-        allFadeOrNormal(true);
+        allFadeOrNormal(APPLY_LEAD_0_BLANK);
         break;
       }
     case MODE_HOURS_SET: {
@@ -1318,7 +1324,7 @@ void processCurrentMode() {
             loadNumberArrayConfInt(lastImpressionsPerSec, 0);
           }
 
-          allFadeOrNormal(false);
+          allFadeOrNormal(DO_NOT_APPLY_LEAD_0_BLANK);
 
         } else {
           if (acpOffset > 0) {
@@ -1327,16 +1333,18 @@ void processCurrentMode() {
           } else {
             if (slotsMode > SLOTS_MODE_MIN) {
               if (second() == 50) {
+
                 // initialise the slots values
                 loadNumberArrayDate();
                 transition.setAlternateValues();
                 loadNumberArrayTime();
                 transition.setRegularValues();
-                allFadeOrNormal(false);
+                allFadeOrNormal(DO_NOT_APPLY_LEAD_0_BLANK);
 
                 transition.start(nowMillis);
               }
 
+              // initialise the slots mode
               boolean msgDisplaying;
               switch (slotsMode) {
                 case SLOTS_MODE_1M_SCR_SCR:
@@ -2041,6 +2049,7 @@ void SetSN74141Chip(int num1)
 // Do a single complete display, including any fading and
 // dimming requested. Performs the display loop
 // DIGIT_DISPLAY_COUNT times for each digit, with no delays.
+// This is the heart of the display processing!
 // ************************************************************
 void outputDisplay()
 {
@@ -2680,12 +2689,12 @@ void getRTCTime() {
     byte mins = Clock.getMinute();
     byte secs = Clock.getSecond();
     setTime(hours, mins, secs, days, months, years);
-      
+
     // Make sure the clock keeps running even on battery
     if (!Clock.oscillatorCheck())
       Clock.enableOscillator(true, true, 0);
   }
-  
+
   // Return back to I2C in slave mode
   Wire.end();
   Wire.begin(I2C_SLAVE_ADDR);
@@ -2974,6 +2983,7 @@ int getInc() {
   else if (diffValue > 10) incValue = 5;
   return incValue;  
 }
+
 // ************************************************************
 // Calculate the target value for the ADC reading to get the
 // defined voltage
@@ -3208,16 +3218,16 @@ int getSmoothedHVSensorReading() {
 //**********************************************************************************
 
 /**
-   receive information from the master
-*/
-void receiveEvent(int bytes) {  
+ * receive information from the master
+ */
+void receiveEvent(int bytes) {
   // the operation tells us what we are getting
   int operation = Wire.read();
 
   if (operation == I2C_TIME_UPDATE) {
     // If we're getting time from the WiFi module, mark that we have an active WiFi with a 5 min time out
     useWiFi = MAX_WIFI_TIME;
-    
+
     int newYears = Wire.read();
     int newMonths = Wire.read();
     int newDays = Wire.read();
