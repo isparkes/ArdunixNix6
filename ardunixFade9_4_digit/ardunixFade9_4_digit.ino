@@ -968,20 +968,25 @@ void loop()
 
   // -------------------------------------------------------------------------------
   
-  // We don't want to get the time from the external time provider always,
-  // just enough to keep the internal time provider correct
-  // This keeps the outer loop fast and responsive
-  // We do this once per minute
   if (abs(nowMillis - lastCheckMillis) >= 1000) {
-    performOncePerSecondProcessing();
-
-    // we only want to once per minute processing to be called once each minute 
     if ((second() == 0) && (!triggeredThisSec)) {
+      if ((minute() == 0)) {
+        if (hour() == 0) {
+          performOncePerDayProcessing();
+        }
+        
+        performOncePerHourProcessing();
+      }
+      
       performOncePerMinuteProcessing();
-      triggeredThisSec = true;
     }
 
-    if ((second() == 1) && triggeredThisSec) {
+    performOncePerSecondProcessing();
+
+    // Make sure we don't call multiple times
+    triggeredThisSec = true;
+    
+    if ((second() > 0) && triggeredThisSec) {
       triggeredThisSec = false;
     }
 
@@ -1153,6 +1158,8 @@ void performOncePerSecondProcessing() {
 // Called once per minute
 // ************************************************************
 void performOncePerMinuteProcessing() {
+  // We want to call the RTC every minute to keep the internal time
+  // provider in sync with the external time provider
   if (useWiFi > 0) {
     if (useWiFi == MAX_WIFI_TIME) {
       // We recently got an update, send to the RTC (if installed)
@@ -1163,6 +1170,18 @@ void performOncePerMinuteProcessing() {
     // get the time from the external RTC provider - (if installed)
     getRTCTime();
   }
+}
+
+// ************************************************************
+// Called once per hour
+// ************************************************************
+void performOncePerHourProcessing() {
+}
+
+// ************************************************************
+// Called once per day
+// ************************************************************
+void performOncePerDayProcessing() {
 }
 
 // ************************************************************
