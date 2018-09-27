@@ -730,6 +730,11 @@ const byte dim_curve[] = {
 
 const byte rgb_backlight_curve[] = {0, 16, 32, 48, 64, 80, 99, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255};
 
+// ********************** Chimes management **********************
+byte chimesRemaining = 0;
+long chimePulseEndMs = 0; // When we want the pule to end
+#define chimePulseLengthMs 100;
+#define chimesPin ledPin_a_6_old // use the old Anode 6 pin
 
 //**********************************************************************************
 //**********************************************************************************
@@ -1103,6 +1108,16 @@ void loop()
 
   // Prepare the tick and backlight LEDs
   setLeds();
+  
+  // --- CHIMES --- CHIMES --- CHIMES --- CHIMES ---
+  if ((chimePulseEndMs > 0) && (nowMillis > chimePulseEndMs)) {
+    // reset the chime pin
+    digitalWrite(chimesPin, LOW);
+
+    // reset the end time
+    chimePulseEndMs = 0;
+  }
+  // --- CHIMES --- CHIMES --- CHIMES --- CHIMES ---
 }
 
 // ************************************************************
@@ -1152,6 +1167,14 @@ void performOncePerSecondProcessing() {
     blanked = false;
   }
   setTubesAndLEDSBlankMode();
+
+  // --- CHIMES --- CHIMES --- CHIMES --- CHIMES ---
+  if (chimesRemaining > 0) {
+    chimePulseEndMs = nowMillis + chimePulseLengthMs;
+    digitalWrite(chimesPin, HIGH);
+    chimesRemaining--;
+  }
+  // --- CHIMES --- CHIMES --- CHIMES --- CHIMES ---
 }
 
 // ************************************************************
@@ -1176,6 +1199,10 @@ void performOncePerMinuteProcessing() {
 // Called once per hour
 // ************************************************************
 void performOncePerHourProcessing() {
+  // --- CHIMES --- CHIMES --- CHIMES --- CHIMES ---
+  // Put the number of chimes to do into the counter
+  chimesRemaining = hour();
+  // --- CHIMES --- CHIMES --- CHIMES --- CHIMES ---
 }
 
 // ************************************************************
