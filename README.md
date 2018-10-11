@@ -9,7 +9,7 @@ This is the main code for an Arduino based Nixie clock, intended for the followi
 
 It is not suitable for clocks with NeoPixels! For those you shoud be using [NixieClockFirmwareV2](https://bitbucket.org/isparkes/nixiefirmwarev2)
 
-####Features:
+#### Features:
 - Open source
 - Wifi Interface for an ESP8266
 - Real Time Clock interface for DS3231
@@ -24,7 +24,7 @@ It is not suitable for clocks with NeoPixels! For those you shoud be using [Nixi
 - Automatic linear dimming using light sensor
 
 
-####File Description:
+#### File Description:
 - ardunixFade9_6_digit.ino: Main code for the 6 Digit Nixie Clock
 - ardunixFade9_4_digit.ino: Main code for the 4 Digit Nixie Clock
 - WiFiTimeProviderESP8266.ino: Time provider module code
