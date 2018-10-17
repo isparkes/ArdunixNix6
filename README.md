@@ -2,7 +2,7 @@
 
 This repository is now maintained at:
 
-[BitBucket NixieFirmware V1 Repository](bitbucket.org/isparkes/nixiefirmwarev1/)
+[BitBucket NixieFirmware V1 Repository](https://bitbucket.org/isparkes/nixiefirmwarev1)
 
 
 # ArdunixNix6 / ArdunixNix4
